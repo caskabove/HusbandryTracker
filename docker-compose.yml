@@ -1,0 +1,23 @@
+# See ADR 0001 (docs/adr/) for why govee-collector is NOT here: BLE doesn't pass through Docker
+# Desktop on Windows cleanly. Run it on the host instead: python -u collectors/govee_collector.py
+
+services:
+  web:
+    build: .
+    command: uvicorn web.main:app --host 0.0.0.0 --port 22255
+    ports:
+      - "127.0.0.1:22255:22255"   # localhost only, per the design decision
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  tuya-collector:
+    build: .
+    command: python -u collectors/tuya_collector.py
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    network_mode: host   # local-Tuya devices are found via LAN broadcast; host networking is simplest on Linux.
+                          # On Docker Desktop (Windows/Mac), host networking isn't supported the same way —
+                          # if plug discovery fails, pin each plug's IP via tuya_ip_address (register_device.py
+                          # plug-add --ip) instead of relying on broadcast discovery.

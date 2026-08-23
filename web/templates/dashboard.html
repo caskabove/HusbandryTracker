@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HerpMonitor</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="page-header">
+        <h1>HerpMonitor</h1>
+    </header>
+
+    <main class="panel-grid">
+        {% for enclosure in enclosures %}
+        <section class="panel">
+            <header class="panel-header">
+                <h2>{{ enclosure.name }}{% if enclosure.bioactive %}<span class="badge">bioactive</span>{% endif %}</h2>
+                {% for animal in enclosure.animals %}
+                <div class="animal">
+                    <span class="animal-name">{{ animal.name }}</span>
+                    <span class="animal-species">{{ animal.species_common }} <em>({{ animal.species_scientific }})</em></span>
+                    <span class="animal-dob">DOB: {{ animal.dob or "unknown" }}</span>
+                </div>
+                {% else %}
+                <div class="animal animal-none">No animals registered</div>
+                {% endfor %}
+            </header>
+
+            <div class="panel-body">
+                <div class="section">
+                    <h3>Temp / Humidity</h3>
+                    {% for sensor in enclosure.sensors %}
+                        {% set reading = sensor.latest_reading %}
+                        {% set temp_status = target_range_status(reading.temperature_c if reading else None, sensor.target_temp_min_c, sensor.target_temp_max_c) %}
+                        {% set humidity_status = target_range_status(reading.humidity_pct if reading else None, sensor.target_humidity_min, sensor.target_humidity_max) %}
+                        <div class="reading-row">
+                            <span class="reading-label">{{ sensor.label }}</span>
+                            {% if reading %}
+                            <span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span>
+                            <span class="pill status-{{ humidity_status.value }}">{{ "%.0f"|format(reading.humidity_pct) }}%</span>
+                            <span class="reading-meta">as of {{ reading.recorded_at }}</span>
+                            {% else %}
+                            <span class="pill status-unknown">no data yet</span>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <p class="empty">No sensors registered</p>
+                    {% endfor %}
+                </div>
+
+                <div class="section">
+                    <h3>Schedules</h3>
+                    {% for plug in enclosure.plugs %}
+                        <div class="reading-row">
+                            <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
+                            {% if plug.inferred_schedule %}
+                            <span class="pill status-unknown">{{ plug.inferred_schedule }}</span>
+                            {% else %}
+                            <span class="pill status-unknown">no schedule data yet</span>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <p class="empty">No plugs registered</p>
+                    {% endfor %}
+                </div>
+
+                <div class="section">
+                    <h3>Care</h3>
+                    {% for kind in care_kinds %}
+                        {% set entry = enclosure.care[kind] %}
+                        {% set interval = enclosure[kind ~ "_interval_days"] %}
+                        {% set status = care_interval_status(entry.days_since, interval) %}
+                        <div class="reading-row care-row">
+                            <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
+                            <span class="pill status-{{ status.value }}">
+                                {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
+                            </span>
+                            <form method="post" action="/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                                <button type="submit">Log now</button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        {% else %}
+        <p class="empty">No enclosures registered yet — use tools/register_device.py.</p>
+        {% endfor %}
+    </main>
+</body>
+</html>
