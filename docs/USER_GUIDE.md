@@ -63,30 +63,33 @@ different computer.
 
 ## 3. Starting HerpMonitor
 
-Every time you want to use HerpMonitor (e.g. after restarting the computer), you start **two
-things**, each in its own Command Prompt window. Leave both windows open (minimized is fine) —
-closing either one stops that part.
+### The easy way
 
-### Start the website
+Double-click **`start.bat`** in the HerpMonitor folder. It opens two windows (the website and the
+sensor listener) and automatically opens the dashboard in your browser after a few seconds.
 
-Open a Command Prompt, navigate to the HerpMonitor folder (same `cd` command as above), then run:
+Leave both windows open (minimized is fine) — closing one stops that part. You can close the
+first little window that says "HerpMonitor is running" once it says so; the other two keep going.
+
+### The manual way
+
+Useful if `start.bat` doesn't work for some reason, or you want to see what it's actually doing.
+Every time you want to use HerpMonitor, you start **two things**, each in its own Command Prompt
+window:
+
+**Website:**
 ```
 .venv\Scripts\activate
 python -u -m uvicorn web.main:app --host 127.0.0.1 --port 22255
 ```
 
-### Start the sensor listener
-
-Open a **second** Command Prompt window, navigate to the folder, and run:
+**Sensor listener** (open a second Command Prompt window for this one):
 ```
 .venv\Scripts\activate
 python -u collectors\govee_collector.py
 ```
-This is the part that's actually listening to your Govee sensors and saving their readings.
 
-### Open the website
-
-In a web browser, go to:
+Then open a web browser to:
 ```
 http://localhost:22255
 ```
@@ -189,8 +192,8 @@ it — it asks you to confirm first, since that can't be undone.
 
 ## 6. Stopping HerpMonitor
 
-Click into each Command Prompt window (website and sensor listener) and press `Ctrl+C`, or just
-close the windows.
+Close the **"HerpMonitor - Website"** and **"HerpMonitor - Sensor Listener"** windows (or click
+into each and press `Ctrl+C`).
 
 You don't strictly need to stop either one — it's fine to leave both running all the time (that's
 actually the normal way to use it, so history keeps accumulating). Stopping is only needed if
@@ -200,11 +203,10 @@ you're restarting the computer, updating the software, or troubleshooting.
 
 ## 7. If Something's Not Working
 
-- **The website won't load at `localhost:22255`** — Check that its Command Prompt window is still
-  open and didn't show an error. If it's closed, follow the "Start the website" steps again.
-- **Temp/Humidity is stuck on "no data yet"** — The sensor listener window either isn't running,
-  or got closed. Reopen a Command Prompt and follow the "Start the sensor listener" steps again.
-  Also double check Bluetooth is turned on.
+- **The website won't load at `localhost:22255`, or Temp/Humidity is stuck on "no data yet"** —
+  One of the two windows isn't running anymore. Easiest fix: close whatever HerpMonitor windows
+  are still open and double-click `start.bat` again. Also double check Bluetooth is turned on (the
+  sensor listener needs it).
 - **A reading looks obviously wrong** (like a huge negative number) — Let me know rather than
   trusting it; that's a sign the sensor decoding needs another look for that specific device.
 
