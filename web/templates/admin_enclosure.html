@@ -97,15 +97,17 @@
         <section class="admin-card">
             <h2>Plugs (Gosund / Tuya)</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Device ID</th><th>IP</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Device ID</th><th>Outlet</th><th>IP</th><th></th></tr></thead>
                 <tbody>
                 {% for p in enclosure.plugs %}
                     <tr>
                         <td>{{ p.label }}</td>
                         <td>{{ p.purpose }}</td>
                         <td>{{ p.tuya_device_id }}</td>
+                        <td>{{ p.switch_dps_key }}</td>
                         <td>{{ p.tuya_ip_address or "auto" }}</td>
                         <td>
+                            <a href="/admin/plugs/{{ p.id }}/edit">reassign</a> ·
                             <form method="post" action="/admin/plugs/{{ p.id }}/delete" class="inline-form">
                                 <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                 <button type="submit" class="danger-small">remove</button>
@@ -113,7 +115,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="5" class="empty">No plugs registered</td></tr>
+                    <tr><td colspan="6" class="empty">No plugs registered</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -128,9 +130,16 @@
                 </label>
                 <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
                 <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
+                <label>Outlet / DPS key
+                    <input type="text" name="switch_dps_key" value="1" style="width:3em">
+                </label>
                 <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
                 <button type="submit">Add Plug</button>
             </form>
+            <p class="empty">Most plugs use outlet "1". Power strips with multiple outlets need one row per
+                outlet here, all sharing the same device_id/local_key — use "2", "3", etc. (or "7" for a USB
+                port) for the others. Run <code>tools/tuya_probe.py</code> against the device_id first if
+                you're not sure which number is which outlet.</p>
         </section>
     </main>
 </body>

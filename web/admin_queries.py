@@ -84,15 +84,31 @@ def delete_sensor(sensor_id: int) -> None:
 
 
 def create_plug(enclosure_id: int, label: str, purpose: str, tuya_device_id: str, tuya_local_key: str,
-                 tuya_ip_address: str | None) -> None:
+                 tuya_ip_address: str | None, switch_dps_key: str = "1") -> None:
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO plug (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address or None),
+            """INSERT INTO plug (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address or None, switch_dps_key or "1"),
         )
 
 
 def delete_plug(plug_id: int) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM plug WHERE id = ?", (plug_id,))
+
+
+def get_plug(plug_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM plug WHERE id = ?", (plug_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_plug(plug_id: int, enclosure_id: int, label: str, purpose: str, switch_dps_key: str) -> None:
+    # Deliberately does not touch tuya_device_id/tuya_local_key/tuya_ip_address — reassigning a
+    # plug to its real enclosure never needs those re-entered, only which enclosure/purpose it is.
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE plug SET enclosure_id = ?, label = ?, purpose = ?, switch_dps_key = ? WHERE id = ?",
+            (enclosure_id, label, purpose, switch_dps_key or "1", plug_id),
+        )

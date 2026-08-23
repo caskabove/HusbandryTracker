@@ -124,12 +124,35 @@ def admin_create_plug(
     tuya_device_id: str = Form(...),
     tuya_local_key: str = Form(...),
     tuya_ip_address: str = Form(""),
+    switch_dps_key: str = Form("1"),
 ):
-    q.create_plug(enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address)
+    q.create_plug(enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
 @router.post("/plugs/{plug_id}/delete")
 def admin_delete_plug(plug_id: int, enclosure_id: int = Form(...)):
     q.delete_plug(plug_id)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.get("/plugs/{plug_id}/edit")
+def admin_edit_plug(request: Request, plug_id: int):
+    plug = q.get_plug(plug_id)
+    if plug is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    return templates.TemplateResponse(
+        request, "admin_plug_edit.html", {"plug": plug, "enclosures": q.list_enclosures()}
+    )
+
+
+@router.post("/plugs/{plug_id}/reassign")
+def admin_reassign_plug(
+    plug_id: int,
+    enclosure_id: int = Form(...),
+    label: str = Form(...),
+    purpose: str = Form(...),
+    switch_dps_key: str = Form("1"),
+):
+    q.update_plug(plug_id, enclosure_id, label, purpose, switch_dps_key)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)

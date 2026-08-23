@@ -5,9 +5,11 @@ Polls each registered Plug's raw status over the LAN and writes a plug_state_tra
 when the on/off DPS value actually changes (edge-triggered, not a poll log) — Schedule is derived
 from these transitions later.
 
-DPS key "1" is assumed to be the on/off switch, which holds for most single-outlet Tuya plugs but
-is NOT guaranteed for every model. If transitions look wrong (or never fire), run
-tools/tuya_probe.py against that device_id first to find the real switch DPS key.
+Each Plug row has its own switch_dps_key (default "1") — most single-outlet Tuya plugs use "1",
+but multi-outlet power strips expose several switches ("1"/"2"/"3" for AC outlets, "7" for USB) on
+ONE device_id, registered as separate Plug rows sharing that device_id (see db/schema.sql). If
+transitions look wrong (or never fire) for a given Plug, run tools/tuya_probe.py against that
+device_id first to confirm which DPS key its switch_dps_key should actually be.
 """
 from __future__ import annotations
 
@@ -22,7 +24,6 @@ import tinytuya
 
 from db.db import get_connection, init_db
 
-SWITCH_DPS_KEY = "1"
 POLL_INTERVAL_SECONDS = 5
 REFRESH_REGISTRY_SECONDS = 60
 
@@ -30,7 +31,7 @@ REFRESH_REGISTRY_SECONDS = 60
 def _load_registered_plugs() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, label, tuya_device_id, tuya_local_key, tuya_ip_address FROM plug"
+            "SELECT id, label, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key FROM plug"
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -51,20 +52,21 @@ def _poll_plug(plug: dict, stop_event: threading.Event) -> None:
         version="3.3",
     )
     last_state: bool | None = None
-    print(f"[tuya] watching {plug['label']!r} ({plug['tuya_device_id']})")
+    switch_dps_key = plug["switch_dps_key"]
+    print(f"[tuya] watching {plug['label']!r} ({plug['tuya_device_id']} dps={switch_dps_key})")
 
     while not stop_event.is_set():
         try:
             status = device.status()
             dps = status.get("dps", {})
-            if SWITCH_DPS_KEY in dps:
-                current_state = bool(dps[SWITCH_DPS_KEY])
+            if switch_dps_key in dps:
+                current_state = bool(dps[switch_dps_key])
                 if current_state != last_state:
                     _record_transition(plug["id"], current_state)
                     print(f"[tuya] {plug['label']!r} -> {'ON' if current_state else 'OFF'}")
                     last_state = current_state
             else:
-                print(f"[tuya] {plug['label']!r}: no DPS key {SWITCH_DPS_KEY!r} in {dps} "
+                print(f"[tuya] {plug['label']!r}: no DPS key {switch_dps_key!r} in {dps} "
                       f"(run tools/tuya_probe.py to find the right key)")
         except Exception as exc:  # tinytuya raises plain exceptions on timeout/network errors
             print(f"[tuya] {plug['label']!r}: poll failed ({exc})")

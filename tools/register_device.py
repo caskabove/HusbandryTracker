@@ -104,11 +104,11 @@ def sensor_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
 def plug_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     enclosure_id = _enclosure_id(conn, args.enclosure)
     conn.execute(
-        """INSERT INTO plug (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (enclosure_id, args.label, args.purpose, args.device_id, args.local_key, args.ip),
+        """INSERT INTO plug (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (enclosure_id, args.label, args.purpose, args.device_id, args.local_key, args.ip, args.dps_key),
     )
-    print(f"Registered plug {args.device_id!r} ({args.purpose}: {args.label}) in {args.enclosure!r}")
+    print(f"Registered plug {args.device_id!r} dps={args.dps_key} ({args.purpose}: {args.label}) in {args.enclosure!r}")
 
 
 def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
@@ -121,7 +121,7 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
         for sensor in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ?", (enclosure["id"],)):
             print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
         for plug in conn.execute("SELECT * FROM plug WHERE enclosure_id = ?", (enclosure["id"],)):
-            print(f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']}")
+            print(f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -180,6 +180,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("device_id", help="Tuya device_id, from the tinytuya wizard")
     p.add_argument("local_key", help="Tuya local_key, from the tinytuya wizard")
     p.add_argument("--ip", default=None, help="Optional: pin the plug's LAN IP instead of relying on discovery")
+    p.add_argument("--dps-key", default="1", help='DPS switch key for this outlet (default "1"; power strips '
+                                                    'use "2", "3", etc., or "7" for USB — see tools/tuya_probe.py)')
     p.set_defaults(func=plug_add)
 
     p = sub.add_parser("list", help="List everything registered")

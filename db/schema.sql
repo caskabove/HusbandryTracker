@@ -37,15 +37,23 @@ CREATE TABLE IF NOT EXISTS sensor (
 );
 
 -- A Gosund plug assigned to an Enclosure. See CONTEXT.md: Plug, Purpose.
+--
+-- Not every physical Tuya device is a single-outlet plug: multi-outlet power strips expose
+-- several independently-switched DPS keys (e.g. "1"/"2"/"3" for three AC outlets, "7" for a USB
+-- port) on ONE device_id. Each outlet is its own Plug row here, sharing the same device_id/
+-- local_key/ip but a different switch_dps_key — hence the unique constraint being on the pair,
+-- not on tuya_device_id alone.
 CREATE TABLE IF NOT EXISTS plug (
     id              INTEGER PRIMARY KEY,
     enclosure_id    INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
     label           TEXT NOT NULL,                  -- e.g. "basking bulb", "UTH"
     purpose         TEXT NOT NULL CHECK (purpose IN ('light', 'heat', 'cooling')),
-    tuya_device_id  TEXT NOT NULL UNIQUE,
+    tuya_device_id  TEXT NOT NULL,
     tuya_local_key  TEXT NOT NULL,
     tuya_ip_address TEXT,                           -- optional pin; tinytuya can also auto-discover on LAN
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    switch_dps_key  TEXT NOT NULL DEFAULT '1',      -- which outlet on the device this Plug controls
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (tuya_device_id, switch_dps_key)
 );
 
 -- Raw Sensor readings, captured continuously (see CONTEXT.md decision: capture everything, no charts in v1).

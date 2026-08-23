@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HerpMonitor Admin - Reassign Plug</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="page-header">
+        <h1>Reassign Plug</h1>
+        <nav><a href="/admin">All Enclosures</a> · <a href="/">Dashboard</a> · <a href="/guide">Guide</a></nav>
+    </header>
+
+    <main class="admin-main">
+        <section class="admin-card">
+            <h2>{{ plug.label }}</h2>
+            <p class="empty">Device ID: {{ plug.tuya_device_id }} &middot; outlet {{ plug.switch_dps_key }}
+                &middot; local_key and IP are unchanged by this form.</p>
+            <form method="post" action="/admin/plugs/{{ plug.id }}/reassign" class="admin-form">
+                <label>Enclosure
+                    <select name="enclosure_id">
+                        {% for e in enclosures %}
+                        <option value="{{ e.id }}" {% if e.id == plug.enclosure_id %}selected{% endif %}>{{ e.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Label <input type="text" name="label" value="{{ plug.label }}" required></label>
+                <label>Purpose
+                    <select name="purpose">
+                        <option value="light" {% if plug.purpose == "light" %}selected{% endif %}>light</option>
+                        <option value="heat" {% if plug.purpose == "heat" %}selected{% endif %}>heat</option>
+                        <option value="cooling" {% if plug.purpose == "cooling" %}selected{% endif %}>cooling</option>
+                    </select>
+                </label>
+                <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="{{ plug.switch_dps_key }}" style="width:3em"></label>
+                <button type="submit">Save</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

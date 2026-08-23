@@ -31,8 +31,8 @@ out exactly.
   app.
 - **Bluetooth turned on** on the Windows computer.
 
-Gosund smart plugs (for tracking light/heat schedules) are a separate piece that isn't fully
-turned on yet — see the note at the end of this guide.
+Gosund smart plugs, for tracking light/heat/cooling — set up through the Smart Life app (not
+Google Home; see the note at the end of this guide for why).
 
 ---
 
@@ -65,16 +65,18 @@ different computer.
 
 ### The easy way
 
-Double-click **`start.bat`** in the HerpMonitor folder. It opens two windows (the website and the
-sensor listener) and automatically opens the dashboard in your browser after a few seconds.
+Double-click **`start.bat`** in the HerpMonitor folder. It opens three windows (the website, the
+sensor listener, and the plug listener) and automatically opens the dashboard in your browser
+after a few seconds.
 
-Leave both windows open (minimized is fine) — closing one stops that part. You can close the
-first little window that says "HerpMonitor is running" once it says so; the other two keep going.
+Leave all three windows open (minimized is fine) — closing one stops that part. You can close the
+first little window that says "HerpMonitor is running" once it says so; the other three keep
+going.
 
 ### The manual way
 
 Useful if `start.bat` doesn't work for some reason, or you want to see what it's actually doing.
-Every time you want to use HerpMonitor, you start **two things**, each in its own Command Prompt
+Every time you want to use HerpMonitor, you start **three things**, each in its own Command Prompt
 window:
 
 **Website:**
@@ -87,6 +89,12 @@ python -u -m uvicorn web.main:app --host 127.0.0.1 --port 22255
 ```
 .venv\Scripts\activate
 python -u collectors\govee_collector.py
+```
+
+**Plug listener** (open a third Command Prompt window for this one):
+```
+.venv\Scripts\activate
+python -u collectors\tuya_collector.py
 ```
 
 Then open a web browser to:
@@ -170,17 +178,27 @@ sensor's ID isn't something the website can do on its own yet.
 
 ### Adding a plug to an enclosure
 
-This is for tracking a Gosund plug's light/heat/cooling schedule (see the note at the end of this
-guide — this whole feature isn't rolled out to your real enclosures yet, so treat this as
-reference for later).
+This is for tracking a Gosund plug's light/heat/cooling status (see the note at the end of this
+guide for why this needs Smart Life instead of Google Home).
 
 Unlike a sensor's MAC address, a plug's ID and "local key" can't be found with a simple scan —
 getting them involves a one-time setup on Tuya's developer website (the company behind Gosund's
 underlying technology). That part still needs technical help to walk through the first time. Once
 you have a plug's **device ID** and **local key** in hand, adding it here is simple: on the
 enclosure's page, fill out the **"Add Plug"** form — a label (e.g. "UTH", "basking bulb"), whether
-it's for light/heat/cooling, and those two values. Leave the IP address blank unless a plug keeps
-failing to connect, in which case pinning its IP address can help.
+it's for light/heat/cooling, and those two values.
+
+Leave **Outlet / DPS key** as `1` unless the plug is a multi-outlet power strip — those expose
+each outlet as its own switch (`1`, `2`, `3`, or `7` for a USB port), so a strip needs one row here
+per outlet actually in use, all sharing the same device ID/local key. `tools\tuya_probe.py` (a
+Command Prompt tool) can confirm which number is which outlet if you're not sure.
+
+Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
+address can help.
+
+**Reassigning a plug already sitting in "Unassigned"**: open the Unassigned enclosure's page and
+click **"reassign"** next to that plug. Pick the real enclosure, fix the label/purpose, and save —
+no need to re-enter the device ID or local key, those stay attached to the physical plug.
 
 ### Removing something
 
@@ -192,8 +210,8 @@ it — it asks you to confirm first, since that can't be undone.
 
 ## 6. Stopping HerpMonitor
 
-Close the **"HerpMonitor - Website"** and **"HerpMonitor - Sensor Listener"** windows (or click
-into each and press `Ctrl+C`).
+Close the **"HerpMonitor - Website"**, **"HerpMonitor - Sensor Listener"**, and **"HerpMonitor -
+Plug Listener"** windows (or click into each and press `Ctrl+C`).
 
 You don't strictly need to stop either one — it's fine to leave both running all the time (that's
 actually the normal way to use it, so history keeps accumulating). Stopping is only needed if
@@ -212,9 +230,15 @@ you're restarting the computer, updating the software, or troubleshooting.
 
 ---
 
-## Note: Gosund plugs / schedules aren't live yet
+## Note: Gosund plugs and the "no schedule data yet" message
 
-Tracking light/heat/cooling schedules requires linking each Gosund plug individually, which
-involves a factory reset and a bit of setup per plug. This has been tested and works on spare
-plugs, but hasn't been rolled out to the plugs actually running your enclosures yet — so the
-"Schedules" section of each panel will say "no schedule data yet" until that happens.
+Gosund plugs are tracked through **Smart Life**, not Google Home — Google Home has no way to hand
+out the credentials this needs, so each plug had to be individually reset and re-added in Smart
+Life first (already done for all your plugs). Newly-added plugs sit in an **"Unassigned"**
+enclosure in Admin until you tell it which real enclosure and purpose (light/heat/cooling) each
+one is — see [Adding a plug to an enclosure](#adding-a-plug-to-an-enclosure) above for the
+reassignment steps.
+
+Even once a plug is properly assigned, the "Schedules" section will still say "no schedule data
+yet" for a while — HerpMonitor figures out a plug's on-time/duration by *watching* it over time,
+not by reading a schedule directly, so it needs to see at least one full on/off cycle first.
