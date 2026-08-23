@@ -119,9 +119,16 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
         for animal in conn.execute("SELECT * FROM animal WHERE enclosure_id = ?", (enclosure["id"],)):
             print(f"  animal: {animal['name']} ({animal['species_common']} / {animal['species_scientific']}) dob={animal['dob']}")
         for sensor in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ?", (enclosure["id"],)):
-            print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
+            if sensor["tracking_mode"] == "manual":
+                print(f"  sensor: {sensor['label']} (Manual — hand-logged readings)")
+            else:
+                print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
         for plug in conn.execute("SELECT * FROM plug WHERE enclosure_id = ?", (enclosure["id"],)):
-            print(f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}")
+            if plug["tracking_mode"] == "manual":
+                on, off = plug["declared_on_time"] or "?", plug["declared_off_time"] or "?"
+                print(f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — declared {on}-{off})")
+            else:
+                print(f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}")
 
 
 def build_parser() -> argparse.ArgumentParser:

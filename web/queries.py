@@ -54,6 +54,8 @@ def get_dashboard_enclosures() -> list[dict]:
                 plug["latest_transition"] = dict(latest) if latest else None
                 # Schedule inference (on-time + duration derived from transition history) isn't
                 # built yet — see docs/PHASE1.md "What's NOT built yet". Placeholder for now.
+                # A Manual Plug has no transitions to infer from at all — see CONTEXT.md: Schedule —
+                # it shows its Declared Schedule instead, entered directly in the Admin UI.
                 plug["inferred_schedule"] = None
             enclosure["plugs"] = plugs
 
@@ -71,11 +73,40 @@ def get_dashboard_enclosures() -> list[dict]:
     return enclosures
 
 
-def log_care_event(enclosure_id: int, kind: str, note: str | None = None) -> None:
+def log_care_event(enclosure_id: int, kind: str, note: str | None = None, occurred_at: str | None = None) -> None:
+    """occurred_at lets a Care Event be backdated to when it actually happened instead of always
+    being "now" — see CONTEXT.md: Care Event. Pass None (the default) to log it as now."""
     if kind not in CARE_EVENT_KINDS:
         raise ValueError(f"Unknown care event kind: {kind!r}")
     with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO care_event (enclosure_id, kind, note) VALUES (?, ?, ?)",
-            (enclosure_id, kind, note),
-        )
+        if occurred_at:
+            conn.execute(
+                "INSERT INTO care_event (enclosure_id, kind, occurred_at, note) VALUES (?, ?, ?, ?)",
+                (enclosure_id, kind, occurred_at, note),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO care_event (enclosure_id, kind, note) VALUES (?, ?, ?)",
+                (enclosure_id, kind, note),
+            )
+
+
+def log_reading(sensor_id: int, temperature_c: float | None, humidity_pct: float | None,
+                 recorded_at: str | None = None) -> None:
+    """Hand-logs a Reading for a Manual Sensor (see CONTEXT.md: Reading) — reuses the same
+    sensor_reading table a Smart Sensor's auto-collected Readings go into, so the dashboard's latest-
+    reading and Target Range color-coding work unchanged either way. recorded_at backdates it to when
+    the measurement was actually taken; pass None (the default) to log it as now."""
+    if temperature_c is None and humidity_pct is None:
+        raise ValueError("Enter at least one value (temperature or humidity) to log a Reading.")
+    with get_connection() as conn:
+        if recorded_at:
+            conn.execute(
+                "INSERT INTO sensor_reading (sensor_id, recorded_at, temperature_c, humidity_pct) VALUES (?, ?, ?, ?)",
+                (sensor_id, recorded_at, temperature_c, humidity_pct),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO sensor_reading (sensor_id, temperature_c, humidity_pct) VALUES (?, ?, ?)",
+                (sensor_id, temperature_c, humidity_pct),
+            )

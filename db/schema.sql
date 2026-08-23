@@ -23,37 +23,63 @@ CREATE TABLE IF NOT EXISTS animal (
     dob                 TEXT   -- ISO date, nullable (not always known)
 );
 
--- A Govee H5074 assigned to an Enclosure. See CONTEXT.md: Sensor, Target Range.
+-- A Sensor assigned to an Enclosure. See CONTEXT.md: Sensor, Tracking Mode, Target Range.
+--
+-- tracking_mode = 'smart': a real Govee H5074 BLE device, polled automatically — mac_address
+-- required. tracking_mode = 'manual': no physical device — mac_address stays NULL, and Readings
+-- are hand-logged through the Admin UI instead. A Manual Sensor must have a complete Target Range
+-- (min AND max) on at least one metric before it's useful, but which metric is up to the user (an
+-- IR thermometer spot-check has no humidity number to give) — that "at least one" rule is enforced
+-- in web/admin_queries.py with a friendly error, not here, so a bad value gets a clear message
+-- instead of a raw SQLite CHECK failure.
 CREATE TABLE IF NOT EXISTS sensor (
     id                  INTEGER PRIMARY KEY,
     enclosure_id        INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
     label               TEXT NOT NULL,             -- e.g. "warm side", "cool side"
-    mac_address         TEXT NOT NULL UNIQUE,       -- e.g. "A4:C1:38:XX:XX:XX"
+    tracking_mode       TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
+    mac_address         TEXT UNIQUE,               -- e.g. "A4:C1:38:XX:XX:XX"; NULL for Manual
     target_temp_min_c   REAL,
     target_temp_max_c   REAL,
     target_humidity_min REAL,
     target_humidity_max REAL,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (
+        (tracking_mode = 'smart' AND mac_address IS NOT NULL) OR
+        (tracking_mode = 'manual' AND mac_address IS NULL)
+    )
 );
 
--- A Gosund plug assigned to an Enclosure. See CONTEXT.md: Plug, Purpose.
+-- A Plug assigned to an Enclosure. See CONTEXT.md: Plug, Purpose, Tracking Mode, Schedule.
+--
+-- tracking_mode = 'smart': a real Tuya-controlled Gosund plug, polled automatically — Tuya
+-- credentials required. tracking_mode = 'manual': no device, e.g. a mechanical timer — the Tuya
+-- fields stay NULL and declared_on_time/declared_off_time hold the Declared Schedule the user
+-- entered instead of one inferred from observed transitions.
 --
 -- Not every physical Tuya device is a single-outlet plug: multi-outlet power strips expose
 -- several independently-switched DPS keys (e.g. "1"/"2"/"3" for three AC outlets, "7" for a USB
 -- port) on ONE device_id. Each outlet is its own Plug row here, sharing the same device_id/
 -- local_key/ip but a different switch_dps_key — hence the unique constraint being on the pair,
--- not on tuya_device_id alone.
+-- not on tuya_device_id alone. Manual Plugs all have tuya_device_id NULL, which SQLite treats as
+-- distinct per row in a UNIQUE index, so multiple Manual Plugs never collide on that constraint.
 CREATE TABLE IF NOT EXISTS plug (
-    id              INTEGER PRIMARY KEY,
-    enclosure_id    INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
-    label           TEXT NOT NULL,                  -- e.g. "basking bulb", "UTH"
-    purpose         TEXT NOT NULL CHECK (length(purpose) > 0),  -- free text; Admin suggests common values, doesn't restrict to them
-    tuya_device_id  TEXT NOT NULL,
-    tuya_local_key  TEXT NOT NULL,
-    tuya_ip_address TEXT,                           -- optional pin; tinytuya can also auto-discover on LAN
-    switch_dps_key  TEXT NOT NULL DEFAULT '1',      -- which outlet on the device this Plug controls
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (tuya_device_id, switch_dps_key)
+    id                  INTEGER PRIMARY KEY,
+    enclosure_id        INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    label               TEXT NOT NULL,                  -- e.g. "basking bulb", "UTH"
+    purpose             TEXT NOT NULL CHECK (length(purpose) > 0),  -- free text; Admin suggests common values, doesn't restrict to them
+    tracking_mode       TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
+    tuya_device_id      TEXT,
+    tuya_local_key      TEXT,
+    tuya_ip_address     TEXT,                           -- optional pin; tinytuya can also auto-discover on LAN
+    switch_dps_key      TEXT NOT NULL DEFAULT '1',      -- which outlet on the device this Plug controls
+    declared_on_time    TEXT,                           -- "HH:MM", Manual Plug only (see CONTEXT.md: Schedule)
+    declared_off_time   TEXT,                           -- "HH:MM", Manual Plug only
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (tuya_device_id, switch_dps_key),
+    CHECK (
+        (tracking_mode = 'smart' AND tuya_device_id IS NOT NULL AND tuya_local_key IS NOT NULL) OR
+        (tracking_mode = 'manual' AND tuya_device_id IS NULL AND tuya_local_key IS NULL)
+    )
 );
 
 -- Raw Sensor readings, captured continuously (see CONTEXT.md decision: capture everything, no charts in v1).

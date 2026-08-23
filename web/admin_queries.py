@@ -82,14 +82,37 @@ def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | No
         )
 
 
-def create_sensor(enclosure_id: int, label: str, mac_address: str, temp_min: float | None, temp_max: float | None,
-                   humidity_min: float | None, humidity_max: float | None) -> None:
+def _validate_sensor(tracking_mode: str, mac_address: str | None, temp_min: float | None, temp_max: float | None,
+                      humidity_min: float | None, humidity_max: float | None) -> None:
+    """See CONTEXT.md: Tracking Mode, Target Range. Raised as ValueError so the Admin route can show
+    a friendly message instead of a raw SQLite CHECK failure."""
+    if tracking_mode not in ("smart", "manual"):
+        raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
+    if tracking_mode == "smart":
+        if not mac_address:
+            raise ValueError("A Smart Sensor needs a MAC address.")
+    else:
+        if mac_address:
+            raise ValueError("A Manual Sensor has no physical device — leave the MAC address blank.")
+        temp_ranged = temp_min is not None and temp_max is not None
+        humidity_ranged = humidity_min is not None and humidity_max is not None
+        if not (temp_ranged or humidity_ranged):
+            raise ValueError(
+                "A Manual Sensor needs a complete Target Range (both min and max) on temperature or "
+                "humidity before it can be saved — there's nothing to judge a hand-logged Reading against otherwise."
+            )
+
+
+def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None, temp_min: float | None,
+                   temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
+    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO sensor (enclosure_id, label, mac_address, target_temp_min_c, target_temp_max_c,
-                                    target_humidity_min, target_humidity_max)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (enclosure_id, label, mac_address.upper(), temp_min, temp_max, humidity_min, humidity_max),
+            """INSERT INTO sensor (enclosure_id, label, tracking_mode, mac_address, target_temp_min_c,
+                                    target_temp_max_c, target_humidity_min, target_humidity_max)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+             temp_min, temp_max, humidity_min, humidity_max),
         )
 
 
@@ -104,23 +127,47 @@ def get_sensor(sensor_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def update_sensor(sensor_id: int, enclosure_id: int, label: str, mac_address: str, temp_min: float | None,
-                   temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
+def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
+                   temp_min: float | None, temp_max: float | None, humidity_min: float | None,
+                   humidity_max: float | None) -> None:
+    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
     with get_connection() as conn:
         conn.execute(
-            """UPDATE sensor SET enclosure_id = ?, label = ?, mac_address = ?, target_temp_min_c = ?,
-                                  target_temp_max_c = ?, target_humidity_min = ?, target_humidity_max = ? WHERE id = ?""",
-            (enclosure_id, label, mac_address.upper(), temp_min, temp_max, humidity_min, humidity_max, sensor_id),
+            """UPDATE sensor SET enclosure_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
+                                  target_temp_min_c = ?, target_temp_max_c = ?, target_humidity_min = ?,
+                                  target_humidity_max = ? WHERE id = ?""",
+            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+             temp_min, temp_max, humidity_min, humidity_max, sensor_id),
         )
 
 
-def create_plug(enclosure_id: int, label: str, purpose: str, tuya_device_id: str, tuya_local_key: str,
-                 tuya_ip_address: str | None, switch_dps_key: str = "1") -> None:
+def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_key: str | None,
+                    declared_on_time: str | None, declared_off_time: str | None) -> None:
+    """See CONTEXT.md: Tracking Mode, Schedule (Declared). Raised as ValueError so the Admin route can
+    show a friendly message instead of a raw SQLite CHECK failure."""
+    if tracking_mode not in ("smart", "manual"):
+        raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
+    if tracking_mode == "smart":
+        if not tuya_device_id or not tuya_local_key:
+            raise ValueError("A Smart Plug needs both a Tuya device_id and local_key.")
+    else:
+        if tuya_device_id or tuya_local_key:
+            raise ValueError("A Manual Plug has no device credentials — leave the Tuya fields blank.")
+        if bool(declared_on_time) != bool(declared_off_time):
+            raise ValueError("Enter both a declared on-time and off-time, or leave both blank.")
+
+
+def create_plug(enclosure_id: int, label: str, purpose: str, tracking_mode: str, tuya_device_id: str | None,
+                 tuya_local_key: str | None, tuya_ip_address: str | None, switch_dps_key: str = "1",
+                 declared_on_time: str | None = None, declared_off_time: str | None = None) -> None:
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time)
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO plug (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address or None, switch_dps_key or "1"),
+            """INSERT INTO plug (enclosure_id, label, purpose, tracking_mode, tuya_device_id, tuya_local_key,
+                                  tuya_ip_address, switch_dps_key, declared_on_time, declared_off_time)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (enclosure_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
+             tuya_ip_address or None, switch_dps_key or "1", declared_on_time or None, declared_off_time or None),
         )
 
 
@@ -135,12 +182,16 @@ def get_plug(plug_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def update_plug(plug_id: int, enclosure_id: int, label: str, purpose: str, switch_dps_key: str,
-                 tuya_device_id: str, tuya_local_key: str, tuya_ip_address: str | None) -> None:
+def update_plug(plug_id: int, enclosure_id: int, label: str, purpose: str, tracking_mode: str, switch_dps_key: str,
+                 tuya_device_id: str | None, tuya_local_key: str | None, tuya_ip_address: str | None,
+                 declared_on_time: str | None = None, declared_off_time: str | None = None) -> None:
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time)
     with get_connection() as conn:
         conn.execute(
-            """UPDATE plug SET enclosure_id = ?, label = ?, purpose = ?, switch_dps_key = ?,
-                                tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ? WHERE id = ?""",
-            (enclosure_id, label, purpose, switch_dps_key or "1", tuya_device_id, tuya_local_key,
-             tuya_ip_address or None, plug_id),
+            """UPDATE plug SET enclosure_id = ?, label = ?, purpose = ?, tracking_mode = ?, switch_dps_key = ?,
+                                tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ?,
+                                declared_on_time = ?, declared_off_time = ? WHERE id = ?""",
+            (enclosure_id, label, purpose, tracking_mode, switch_dps_key or "1", tuya_device_id or None,
+             tuya_local_key or None, tuya_ip_address or None, declared_on_time or None, declared_off_time or None,
+             plug_id),
         )

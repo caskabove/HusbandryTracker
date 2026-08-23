@@ -13,6 +13,7 @@
     </header>
 
     <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>Enclosure Settings</h2>
             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/update" class="admin-form">
@@ -65,14 +66,15 @@
         </section>
 
         <section class="admin-card">
-            <h2>Sensors (Govee)</h2>
+            <h2>Sensors</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>MAC</th><th>Target Temp (F)</th><th>Target Humidity</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Target Temp (F)</th><th>Target Humidity</th><th></th></tr></thead>
                 <tbody>
                 {% for s in enclosure.sensors %}
                     <tr>
                         <td class="admin-table-primary">{{ s.label }}</td>
-                        <td>{{ s.mac_address }}</td>
+                        <td>{{ s.tracking_mode|capitalize }}</td>
+                        <td>{{ s.mac_address or "—" }}</td>
                         <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
                         <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
                         <td>
@@ -84,7 +86,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="5" class="empty">No sensors registered</td></tr>
+                    <tr><td colspan="6" class="empty">No sensors registered</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -92,7 +94,18 @@
                 <summary>+ Add Sensor</summary>
                 <form method="post" action="/admin/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
-                    <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+                    <label>Tracking Mode
+                        <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-sensor-smart', 'add-sensor-manual')">
+                            <option value="smart">Smart (Govee BLE sensor)</option>
+                            <option value="manual">Manual (hand-logged readings)</option>
+                        </select>
+                    </label>
+                    <div id="add-sensor-smart" class="mode-fields">
+                        <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF"></label>
+                    </div>
+                    <div id="add-sensor-manual" class="mode-fields" style="display:none">
+                        <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on temperature or humidity — whichever this Sensor tracks.</p>
+                    </div>
                     <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
                     <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
                     <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
@@ -103,17 +116,24 @@
         </section>
 
         <section class="admin-card">
-            <h2>Plugs (Gosund / Tuya)</h2>
+            <h2>Plugs</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Device ID</th><th>Outlet</th><th>IP</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Device ID / Declared Schedule</th><th>Outlet</th><th>IP</th><th></th></tr></thead>
                 <tbody>
                 {% for p in enclosure.plugs %}
                     <tr>
                         <td class="admin-table-primary">{{ p.label }}</td>
                         <td>{{ p.purpose }}</td>
+                        <td>{{ p.tracking_mode|capitalize }}</td>
+                        {% if p.tracking_mode == "manual" %}
+                        <td>{% if p.declared_on_time and p.declared_off_time %}{{ p.declared_on_time }}&ndash;{{ p.declared_off_time }}{% else %}not set{% endif %}</td>
+                        <td>—</td>
+                        <td>—</td>
+                        {% else %}
                         <td>{{ p.tuya_device_id }}</td>
                         <td>{{ p.switch_dps_key }}</td>
                         <td>{{ p.tuya_ip_address or "auto" }}</td>
+                        {% endif %}
                         <td>
                             <a href="/admin/plugs/{{ p.id }}/edit">edit</a> ·
                             <form method="post" action="/admin/plugs/{{ p.id }}/delete" class="inline-form">
@@ -123,7 +143,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="empty">No plugs registered</td></tr>
+                    <tr><td colspan="7" class="empty">No plugs registered</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -141,20 +161,34 @@
                             <option value="pump">
                         </datalist>
                     </label>
-                    <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
-                    <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
-                    <label>Outlet / DPS key
-                        <input type="text" name="switch_dps_key" value="1" style="width:3em">
+                    <label>Tracking Mode
+                        <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-plug-smart', 'add-plug-manual')">
+                            <option value="smart">Smart (Tuya-controlled)</option>
+                            <option value="manual">Manual (hand-switched, e.g. a timer)</option>
+                        </select>
                     </label>
-                    <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                    <div id="add-plug-smart" class="mode-fields">
+                        <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
+                        <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                        <label>Outlet / DPS key
+                            <input type="text" name="switch_dps_key" value="1" style="width:3em">
+                        </label>
+                        <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                    </div>
+                    <div id="add-plug-manual" class="mode-fields" style="display:none">
+                        <label>Declared on-time <input type="time" name="declared_on_time"></label>
+                        <label>Declared off-time <input type="time" name="declared_off_time"></label>
+                    </div>
                     <button type="submit">Add Plug</button>
                 </form>
                 <p class="empty">Most plugs use outlet "1". Power strips with multiple outlets need one row per
                     outlet here, all sharing the same device_id/local_key — use "2", "3", etc. (or "7" for a USB
                     port) for the others. Run <code>tools/tuya_probe.py</code> against the device_id first if
-                    you're not sure which number is which outlet.</p>
+                    you're not sure which number is which outlet. A Manual Plug (hand-switched — a mechanical
+                    timer, say) skips all of that: just its declared on/off time.</p>
             </details>
         </section>
     </main>
+    <script src="/static/app.js"></script>
 </body>
 </html>

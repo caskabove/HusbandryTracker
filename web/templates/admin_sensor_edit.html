@@ -13,6 +13,7 @@
     </header>
 
     <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>{{ sensor.label }}</h2>
             <form method="post" action="/admin/sensors/{{ sensor.id }}/update" class="admin-form">
@@ -24,7 +25,18 @@
                     </select>
                 </label>
                 <label>Label <input type="text" name="label" value="{{ sensor.label }}" required></label>
-                <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address }}" required></label>
+                <label>Tracking Mode
+                    <select name="tracking_mode" onchange="onTrackingModeChange(this, 'edit-sensor-smart', 'edit-sensor-manual')">
+                        <option value="smart" {% if sensor.tracking_mode == "smart" %}selected{% endif %}>Smart (Govee BLE sensor)</option>
+                        <option value="manual" {% if sensor.tracking_mode == "manual" %}selected{% endif %}>Manual (hand-logged readings)</option>
+                    </select>
+                </label>
+                <div id="edit-sensor-smart" class="mode-fields" {% if sensor.tracking_mode != "smart" %}style="display:none"{% endif %}>
+                    <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% endif %}></label>
+                </div>
+                <div id="edit-sensor-manual" class="mode-fields" {% if sensor.tracking_mode != "manual" %}style="display:none"{% endif %}>
+                    <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on temperature or humidity — whichever this Sensor tracks.</p>
+                </div>
                 <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f" value="{{ sensor.target_temp_min_f if sensor.target_temp_min_f is not none else '' }}"></label>
                 <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f" value="{{ sensor.target_temp_max_f if sensor.target_temp_max_f is not none else '' }}"></label>
                 <label>Target humidity min (%) <input type="number" step="1" name="humidity_min" value="{{ sensor.target_humidity_min if sensor.target_humidity_min is not none else '' }}"></label>
@@ -33,5 +45,6 @@
             </form>
         </section>
     </main>
+    <script src="/static/app.js"></script>
 </body>
 </html>

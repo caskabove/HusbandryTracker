@@ -29,9 +29,12 @@ REFRESH_REGISTRY_SECONDS = 60
 
 
 def _load_registered_plugs() -> list[dict]:
+    # Manual Plugs have no Tuya device to poll — see CONTEXT.md: Tracking Mode. They carry a
+    # Declared Schedule (on-time/off-time entered directly) instead of an observed one.
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, label, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key FROM plug"
+            """SELECT id, label, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
+               FROM plug WHERE tracking_mode = 'smart'"""
         ).fetchall()
     return [dict(row) for row in rows]
 

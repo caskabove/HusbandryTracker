@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -19,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 
 from db.db import init_db
 from web.admin import router as admin_router
-from web.queries import CARE_EVENT_KINDS, get_dashboard_enclosures, log_care_event
+from web.queries import CARE_EVENT_KINDS, get_dashboard_enclosures, log_care_event, log_reading
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,6 +43,19 @@ def _c_to_f(celsius: float | None) -> float | None:
     return None if celsius is None else celsius * 9 / 5 + 32
 
 
+def _f_to_c(fahrenheit: float | None) -> float | None:
+    return None if fahrenheit is None else (fahrenheit - 32) * 5 / 9
+
+
+def _normalize_datetime_local(value: str | None) -> str | None:
+    """Browser <input type="datetime-local"> submits "YYYY-MM-DDTHH:MM" — normalize to the
+    "YYYY-MM-DD HH:MM:SS" shape every other timestamp in the DB uses, so backdated rows sort/compare
+    consistently with auto-generated ones. Returns None for a blank value (meaning: log as now)."""
+    if not value:
+        return None
+    return value.replace("T", " ") + ":00"
+
+
 templates.env.filters["c_to_f"] = _c_to_f
 
 
@@ -49,7 +63,8 @@ templates.env.filters["c_to_f"] = _c_to_f
 def dashboard(request: Request):
     enclosures = get_dashboard_enclosures()
     return templates.TemplateResponse(
-        request, "dashboard.html", {"enclosures": enclosures, "care_kinds": CARE_EVENT_KINDS}
+        request, "dashboard.html",
+        {"enclosures": enclosures, "care_kinds": CARE_EVENT_KINDS, "error": request.query_params.get("error")}
     )
 
 
@@ -63,6 +78,23 @@ def guide(request: Request):
 
 
 @app.post("/enclosures/{enclosure_id}/care-events/{kind}")
-def create_care_event(enclosure_id: int, kind: str, note: str = Form(default=None)):
-    log_care_event(enclosure_id, kind, note)
+def create_care_event(enclosure_id: int, kind: str, note: str = Form(default=None), occurred_at: str = Form(default="")):
+    try:
+        log_care_event(enclosure_id, kind, note, _normalize_datetime_local(occurred_at))
+    except ValueError as exc:
+        return RedirectResponse(url=f"/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/sensors/{sensor_id}/readings")
+def create_reading(
+    sensor_id: int,
+    temperature_f: float | None = Form(default=None),
+    humidity_pct: float | None = Form(default=None),
+    recorded_at: str = Form(default=""),
+):
+    try:
+        log_reading(sensor_id, _f_to_c(temperature_f), humidity_pct, _normalize_datetime_local(recorded_at))
+    except ValueError as exc:
+        return RedirectResponse(url=f"/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/", status_code=303)

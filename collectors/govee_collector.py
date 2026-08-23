@@ -29,8 +29,10 @@ _logged_unknown: set[str] = set()
 
 
 def _refresh_registry() -> None:
+    # Manual Sensors have no mac_address to listen for — see CONTEXT.md: Tracking Mode. Their
+    # Readings are hand-logged through the Admin UI instead of collected here.
     with get_connection() as conn:
-        rows = conn.execute("SELECT id, mac_address FROM sensor").fetchall()
+        rows = conn.execute("SELECT id, mac_address FROM sensor WHERE tracking_mode = 'smart'").fetchall()
     _registered_macs.clear()
     _registered_macs.update({row["mac_address"].upper(): row["id"] for row in rows})
 

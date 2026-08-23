@@ -128,9 +128,17 @@ The dashboard is the main screen — one panel per enclosure. Each panel shows:
 
 ### Logging that you fed, watered, or cleaned an enclosure
 
-Click the **"Log now"** button next to Feeding, Watering, Spot-clean, or Deep-clean on that
-enclosure's panel. It logs it as done right now — no confirmation screen, so only click it when
-you've actually just done it.
+Click the **"Log"** button next to Feeding, Watering, Spot-clean, or Deep-clean on that
+enclosure's panel. It logs it as done right now, unless you fill in the small date/time box next
+to the button first — use that if you're logging something that already happened earlier (fed
+this morning but only logging it tonight, say).
+
+### Logging a Manual Sensor's reading
+
+A Manual Sensor (see below) has no physical device feeding it data, so it shows a small "Log
+Reading" form right under its row instead — enter whatever value(s) you just measured and click
+it. Same as Care Events, there's a date/time box if you're logging a reading from earlier rather
+than right now; leave it blank to log it as now.
 
 ---
 
@@ -159,8 +167,12 @@ you don't know the exact day).
 
 ### Adding a sensor to an enclosure
 
-This is the one step that needs a short detour into a Command Prompt, because finding a Govee
-sensor's ID isn't something the website can do on its own yet.
+Every Sensor is either **Smart** (a real Govee device, read automatically) or **Manual** (no
+device — you log readings by hand). Pick which one in the **"Add Sensor"** form's Tracking Mode
+dropdown; it shows only the fields that mode actually needs.
+
+**Smart Sensor** — this is the one step that needs a short detour into a Command Prompt, because
+finding a Govee sensor's ID isn't something the website can do on its own yet.
 
 1. Open a Command Prompt in the HerpMonitor folder, and run:
    ```
@@ -172,21 +184,31 @@ sensor's ID isn't something the website can do on its own yet.
 3. To figure out *which* sensor belongs to *which* enclosure: check the current reading it prints
    against what the Govee app (or the sensor's own little screen) shows for that enclosure — they
    should match.
-4. On the Admin page, in that enclosure's **"Add Sensor"** form, paste in that ID, give it a label
-   (e.g. "warm side"), and optionally set a target temperature/humidity range — that's what turns
-   the Temp/Humidity numbers green or red on the dashboard.
+4. On the Admin page, in that enclosure's **"Add Sensor"** form (Tracking Mode: Smart), paste in
+   that ID, give it a label (e.g. "warm side"), and optionally set a target temperature/humidity
+   range — that's what turns the Temp/Humidity numbers green or red on the dashboard.
+
+**Manual Sensor** — for a spot-check tool with no BLE of its own (an infrared thermometer, a
+moisture meter): pick Tracking Mode: Manual, give it a label, and set a target range (min *and*
+max) on whichever it measures — temperature, humidity, or both. That range is required for a
+Manual Sensor, since there'd otherwise be nothing to judge a hand-logged reading against. Once
+saved, its dashboard row grows a small "Log Reading" form you use whenever you take a measurement.
 
 ### Adding a plug to an enclosure
 
-This is for tracking a Gosund plug's light/heat/cooling status (see the note at the end of this
-guide for why this needs Smart Life instead of Google Home).
+Every Plug is either **Smart** (a real Tuya-controlled Gosund plug, read automatically) or
+**Manual** (no smart device — e.g. a light on a mechanical timer). Pick which one in the **"Add
+Plug"** form's Tracking Mode dropdown; it shows only the fields that mode actually needs.
+
+**Smart Plug** — this is for tracking a Gosund plug's light/heat/cooling status (see the note at
+the end of this guide for why this needs Smart Life instead of Google Home).
 
 Unlike a sensor's MAC address, a plug's ID and "local key" can't be found with a simple scan —
 getting them involves a one-time setup on Tuya's developer website (the company behind Gosund's
 underlying technology). That part still needs technical help to walk through the first time. Once
 you have a plug's **device ID** and **local key** in hand, adding it here is simple: on the
-enclosure's page, fill out the **"Add Plug"** form — a label (e.g. "UTH", "basking bulb"), whether
-it's for light/heat/cooling, and those two values.
+enclosure's page, fill out the **"Add Plug"** form (Tracking Mode: Smart) — a label (e.g. "UTH",
+"basking bulb"), whether it's for light/heat/cooling, and those two values.
 
 Leave **Outlet / DPS key** as `1` unless the plug is a multi-outlet power strip — those expose
 each outlet as its own switch (`1`, `2`, `3`, or `7` for a USB port), so a strip needs one row here
@@ -195,6 +217,11 @@ Command Prompt tool) can confirm which number is which outlet if you're not sure
 
 Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
 address can help.
+
+**Manual Plug** — for a light/heat source switched by hand or by a plain mechanical timer with no
+smart features: pick Tracking Mode: Manual, give it a label and Purpose, and enter the timer's
+on-time and off-time. No device ID or local key needed. The dashboard shows that as a "Declared"
+schedule — it's exactly what you entered, not something the app is verifying against the timer.
 
 **Reassigning a plug already sitting in "Unassigned"**: open the Unassigned enclosure's page and
 click **"reassign"** next to that plug. Pick the real enclosure, fix the label/purpose, and save —

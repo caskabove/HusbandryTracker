@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -55,7 +56,9 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
     enclosure = q.get_enclosure(enclosure_id)
     if enclosure is None:
         return RedirectResponse(url="/admin", status_code=303)
-    return templates.TemplateResponse(request, "admin_enclosure.html", {"enclosure": enclosure})
+    return templates.TemplateResponse(
+        request, "admin_enclosure.html", {"enclosure": enclosure, "error": request.query_params.get("error")}
+    )
 
 
 @router.post("/enclosures/{enclosure_id}/update")
@@ -123,13 +126,18 @@ def admin_update_animal(
 def admin_create_sensor(
     enclosure_id: int,
     label: str = Form(...),
-    mac_address: str = Form(...),
+    tracking_mode: str = Form("smart"),
+    mac_address: str = Form(""),
     temp_min_f: float | None = Form(None),
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
 ):
-    q.create_sensor(enclosure_id, label, mac_address, _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+    try:
+        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None,
+                         _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -147,7 +155,8 @@ def admin_edit_sensor(request: Request, sensor_id: int):
     sensor["target_temp_min_f"] = _c_to_f(sensor["target_temp_min_c"])
     sensor["target_temp_max_f"] = _c_to_f(sensor["target_temp_max_c"])
     return templates.TemplateResponse(
-        request, "admin_sensor_edit.html", {"sensor": sensor, "enclosures": q.list_enclosures()}
+        request, "admin_sensor_edit.html",
+        {"sensor": sensor, "enclosures": q.list_enclosures(), "error": request.query_params.get("error")}
     )
 
 
@@ -156,13 +165,18 @@ def admin_update_sensor(
     sensor_id: int,
     enclosure_id: int = Form(...),
     label: str = Form(...),
-    mac_address: str = Form(...),
+    tracking_mode: str = Form("smart"),
+    mac_address: str = Form(""),
     temp_min_f: float | None = Form(None),
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
 ):
-    q.update_sensor(sensor_id, enclosure_id, label, mac_address, _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+    try:
+        q.update_sensor(sensor_id, enclosure_id, label, tracking_mode, mac_address or None,
+                         _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -171,12 +185,19 @@ def admin_create_plug(
     enclosure_id: int,
     label: str = Form(...),
     purpose: str = Form(...),
-    tuya_device_id: str = Form(...),
-    tuya_local_key: str = Form(...),
+    tracking_mode: str = Form("smart"),
+    tuya_device_id: str = Form(""),
+    tuya_local_key: str = Form(""),
     tuya_ip_address: str = Form(""),
     switch_dps_key: str = Form("1"),
+    declared_on_time: str = Form(""),
+    declared_off_time: str = Form(""),
 ):
-    q.create_plug(enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
+    try:
+        q.create_plug(enclosure_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
+                       tuya_ip_address, switch_dps_key, declared_on_time or None, declared_off_time or None)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -192,7 +213,8 @@ def admin_edit_plug(request: Request, plug_id: int):
     if plug is None:
         return RedirectResponse(url="/admin", status_code=303)
     return templates.TemplateResponse(
-        request, "admin_plug_edit.html", {"plug": plug, "enclosures": q.list_enclosures()}
+        request, "admin_plug_edit.html",
+        {"plug": plug, "enclosures": q.list_enclosures(), "error": request.query_params.get("error")}
     )
 
 
@@ -202,10 +224,18 @@ def admin_update_plug(
     enclosure_id: int = Form(...),
     label: str = Form(...),
     purpose: str = Form(...),
+    tracking_mode: str = Form("smart"),
     switch_dps_key: str = Form("1"),
-    tuya_device_id: str = Form(...),
-    tuya_local_key: str = Form(...),
+    tuya_device_id: str = Form(""),
+    tuya_local_key: str = Form(""),
     tuya_ip_address: str = Form(""),
+    declared_on_time: str = Form(""),
+    declared_off_time: str = Form(""),
 ):
-    q.update_plug(plug_id, enclosure_id, label, purpose, switch_dps_key, tuya_device_id, tuya_local_key, tuya_ip_address)
+    try:
+        q.update_plug(plug_id, enclosure_id, label, purpose, tracking_mode, switch_dps_key,
+                       tuya_device_id or None, tuya_local_key or None, tuya_ip_address,
+                       declared_on_time or None, declared_off_time or None)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)

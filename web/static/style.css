@@ -132,6 +132,12 @@ body {
     padding: 0.35rem 0.5rem;
     font-size: 0.9rem;
 }
+.admin-form .mode-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: flex-end;
+}
 .admin-form button {
     background: var(--primary);
     color: var(--text);
@@ -329,7 +335,23 @@ button.danger {
 .status-unknown { background: var(--status-unknown); color: var(--text); }
 
 .care-row { justify-content: space-between; }
-.log-form { margin-left: auto; }
+.log-form {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.log-form input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+    width: 6rem;
+}
+.log-form input[type="datetime-local"] { width: 11rem; }
 .log-form button {
     background: var(--primary);
     color: var(--text);
@@ -340,5 +362,23 @@ button.danger {
     cursor: pointer;
 }
 .log-form button:hover { background: var(--primary-bright); color: #0d1913; }
+.reading-form {
+    margin: 0.2rem 0 0.6rem;
+    padding-left: 8rem;
+}
+
+.badge-muted {
+    background: var(--status-unknown);
+    color: var(--text);
+}
 
 .empty { color: var(--text-muted); font-style: italic; font-size: 0.85rem; }
+
+.error-banner {
+    grid-column: 1 / -1;
+    background: var(--status-red);
+    color: #fff;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+}
