@@ -1,8 +1,10 @@
 """HerpMonitor dashboard — FastAPI app, served by uvicorn on localhost:22255 (see docker-compose.yml).
 
 Phase 2, v1 scope only (see CONTEXT.md decisions): dashboard + logbook, no charts, no auth,
-no alerting. Schedule (Plug on-time/duration inference from transition history) isn't built yet —
-panels show "no schedule data yet" for now.
+no alerting. The dashboard is deliberately a glance-only view — Schedules and Care logging live on
+the Enclosure's Admin page instead (see web/admin.py), with the dashboard's Care pill linking
+straight there. Schedule (Plug on-time/duration inference from transition history) isn't built
+yet — the Admin page's Schedules section shows "no schedule data yet" for a Smart Plug until it is.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from db.db import init_db
 from web.admin import router as admin_router
-from web.queries import CARE_EVENT_KINDS, get_dashboard_enclosures, log_care_event, log_reading
+from web.queries import CARE_EVENT_KINDS, get_dashboard_enclosures, log_reading
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -47,15 +49,6 @@ def _f_to_c(fahrenheit: float | None) -> float | None:
     return None if fahrenheit is None else (fahrenheit - 32) * 5 / 9
 
 
-def _normalize_datetime_local(value: str | None) -> str | None:
-    """Browser <input type="datetime-local"> submits "YYYY-MM-DDTHH:MM" — normalize to the
-    "YYYY-MM-DD HH:MM:SS" shape every other timestamp in the DB uses, so backdated rows sort/compare
-    consistently with auto-generated ones. Returns None for a blank value (meaning: log as now)."""
-    if not value:
-        return None
-    return value.replace("T", " ") + ":00"
-
-
 templates.env.filters["c_to_f"] = _c_to_f
 
 
@@ -77,15 +70,6 @@ def guide(request: Request):
     return templates.TemplateResponse(request, "guide.html", {"content_html": content_html})
 
 
-@app.post("/enclosures/{enclosure_id}/care-events/{kind}")
-def create_care_event(enclosure_id: int, kind: str, note: str = Form(default=None), occurred_at: str = Form(default="")):
-    try:
-        log_care_event(enclosure_id, kind, note, _normalize_datetime_local(occurred_at))
-    except ValueError as exc:
-        return RedirectResponse(url=f"/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/", status_code=303)
-
-
 @app.post("/sensors/{sensor_id}/readings")
 def create_reading(
     sensor_id: int,
@@ -94,7 +78,7 @@ def create_reading(
     recorded_at: str = Form(default=""),
 ):
     try:
-        log_reading(sensor_id, _f_to_c(temperature_f), humidity_pct, _normalize_datetime_local(recorded_at))
+        log_reading(sensor_id, _f_to_c(temperature_f), humidity_pct, recorded_at)
     except ValueError as exc:
         return RedirectResponse(url=f"/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/", status_code=303)

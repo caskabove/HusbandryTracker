@@ -108,14 +108,18 @@ local-only dashboard, not accessible from other devices or the internet).
 
 ## 4. Using the Dashboard
 
-The dashboard is the main screen — one panel per enclosure. Each panel shows:
+The dashboard is a glance-only screen — one panel per enclosure, nothing to fill out here except a
+Manual Sensor's readings (see below). Each panel shows:
 
-- **Enclosure name**, and each animal living in it (name, species, date of birth), at the top.
+- **Enclosure name**, and each animal living in it (name, species, date of birth), at the top —
+  click it to jump to that enclosure's Admin page.
 - **Temp / Humidity** — the latest reading from that enclosure's sensor(s).
-- **Schedules** — light/heat/cooling on-times, once that feature is fully turned on (see note at
-  the end).
 - **Care** — how long it's been since the enclosure was last fed, watered, spot-cleaned, and
-  deep-cleaned, plus a **"Log now"** button for each.
+  deep-cleaned. Click any of those (e.g. "3d ago", "never") to jump straight to that specific log
+  entry on the enclosure's Admin page.
+
+Schedules (light/heat/cooling on-times) and the actual Care logging buttons live on each
+enclosure's Admin page instead — see Section 5.
 
 ### What the colors mean
 
@@ -126,26 +130,34 @@ The dashboard is the main screen — one panel per enclosure. Each panel shows:
 | 🔴 Red | Overdue / reading is outside the target range / never logged |
 | ⚪ Gray | No data yet, or no target range has been set for that sensor |
 
-### Logging that you fed, watered, or cleaned an enclosure
-
-Click the **"Log"** button next to Feeding, Watering, Spot-clean, or Deep-clean on that
-enclosure's panel. It logs it as done right now, unless you fill in the small date/time box next
-to the button first — use that if you're logging something that already happened earlier (fed
-this morning but only logging it tonight, say).
-
 ### Logging a Manual Sensor's reading
 
 A Manual Sensor (see below) has no physical device feeding it data, so it shows a small "Log
-Reading" form right under its row instead — enter whatever value(s) you just measured and click
-it. Same as Care Events, there's a date/time box if you're logging a reading from earlier rather
-than right now; leave it blank to log it as now.
+Reading" form right under its row on the dashboard — enter whatever value(s) you just measured and
+click it. There's a date/time box if you're logging a reading from earlier rather than right now;
+leave it blank to log it as now.
 
 ---
 
 ## 5. Using the Admin Page (adding/editing enclosures)
 
 Click **"Admin"** in the top-right of the dashboard, or go to `http://localhost:22255/admin`.
-This is where you set up enclosures, animals, sensors, and plugs.
+This is where you set up enclosures, animals, sensors, and plugs — and it's also where Care Events
+get logged and Schedules are shown (the dashboard is glance-only; clicking an enclosure name or a
+Care entry there brings you straight here).
+
+### Logging that you fed, watered, or cleaned an enclosure
+
+Each enclosure's Admin page has a **Care** card at the top. Click the **"Log"** button next to
+Feeding, Watering, Spot-clean, or Deep-clean. It logs it as done right now, unless you fill in the
+small date/time box next to the button first — use that if you're logging something that already
+happened earlier (fed this morning but only logging it tonight, say).
+
+### Checking a plug's schedule
+
+Each enclosure's Admin page has a **Schedules** card near the bottom, one row per Plug. A Smart
+Plug shows its inferred on-time once that feature is fully turned on (see note at the end); a
+Manual Plug shows the on/off time you declared for it when adding the plug.
 
 ### Adding a new enclosure
 

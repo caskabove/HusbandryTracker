@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
+from web.queries import CARE_EVENT_KINDS, days_since
 
 
 def list_enclosures() -> list[dict]:
@@ -26,6 +27,21 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         enclosure["animals"] = [dict(r) for r in conn.execute("SELECT * FROM animal WHERE enclosure_id = ? ORDER BY name", (enclosure_id,))]
         enclosure["sensors"] = [dict(r) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
         enclosure["plugs"] = [dict(r) for r in conn.execute("SELECT * FROM plug WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
+        for plug in enclosure["plugs"]:
+            # Schedule inference isn't built yet — see docs/PHASE1.md "What's NOT built yet". A Manual
+            # Plug shows its Declared Schedule instead (declared_on_time/declared_off_time columns).
+            plug["inferred_schedule"] = None
+
+        enclosure["care"] = {}
+        for kind in CARE_EVENT_KINDS:
+            latest = conn.execute(
+                """SELECT occurred_at FROM care_event
+                   WHERE enclosure_id = ? AND kind = ? ORDER BY occurred_at DESC LIMIT 1""",
+                (enclosure_id, kind),
+            ).fetchone()
+            occurred_at = latest["occurred_at"] if latest else None
+            enclosure["care"][kind] = {"occurred_at": occurred_at, "days_since": days_since(occurred_at)}
+
         return enclosure
 
 

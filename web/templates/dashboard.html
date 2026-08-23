@@ -70,28 +70,6 @@
                 </div>
 
                 <div class="section">
-                    <h3>Schedules</h3>
-                    {% for plug in enclosure.plugs %}
-                        <div class="reading-row">
-                            <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
-                            {% if plug.tracking_mode == "manual" %}
-                                {% if plug.declared_on_time and plug.declared_off_time %}
-                                <span class="pill status-unknown">Declared: {{ plug.declared_on_time }}&ndash;{{ plug.declared_off_time }}</span>
-                                {% else %}
-                                <span class="pill status-unknown">manual — no declared schedule set</span>
-                                {% endif %}
-                            {% elif plug.inferred_schedule %}
-                                <span class="pill status-unknown">{{ plug.inferred_schedule }}</span>
-                            {% else %}
-                                <span class="pill status-unknown">no schedule data yet</span>
-                            {% endif %}
-                        </div>
-                    {% else %}
-                        <p class="empty">No plugs registered</p>
-                    {% endfor %}
-                </div>
-
-                <div class="section">
                     <h3>Care</h3>
                     {% for kind in care_kinds %}
                         {% set entry = enclosure.care[kind] %}
@@ -99,13 +77,10 @@
                         {% set status = care_interval_status(entry.days_since, interval) %}
                         <div class="reading-row care-row">
                             <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
-                            <span class="pill status-{{ status.value }}">
+                            <a class="pill status-{{ status.value }}" href="/admin/enclosures/{{ enclosure.id }}#care-{{ kind }}"
+                               title="Log {{ kind|replace('_', ' ') }} on the Enclosure page">
                                 {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
-                            </span>
-                            <form method="post" action="/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
-                                <input type="datetime-local" name="occurred_at" title="When it happened — leave blank to log as now">
-                                <button type="submit">Log</button>
-                            </form>
+                            </a>
                         </div>
                     {% endfor %}
                 </div>

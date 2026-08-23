@@ -328,7 +328,9 @@ button.danger {
     font-size: 0.85rem;
     font-weight: 600;
     color: #0d1913;
+    text-decoration: none;
 }
+a.pill:hover { opacity: 0.85; }
 .status-green { background: var(--status-green); }
 .status-yellow { background: var(--status-yellow); }
 .status-red { background: var(--status-red); color: #fff; }

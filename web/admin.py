@@ -17,9 +17,12 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from web import admin_queries as q
+from web.queries import CARE_EVENT_KINDS, log_care_event
+from web.status import care_interval_status
 
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
+templates.env.globals["care_interval_status"] = care_interval_status
 
 
 def _f_to_c(fahrenheit: float | None) -> float | None:
@@ -57,8 +60,22 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
     if enclosure is None:
         return RedirectResponse(url="/admin", status_code=303)
     return templates.TemplateResponse(
-        request, "admin_enclosure.html", {"enclosure": enclosure, "error": request.query_params.get("error")}
+        request, "admin_enclosure.html",
+        {"enclosure": enclosure, "care_kinds": CARE_EVENT_KINDS, "error": request.query_params.get("error")}
     )
+
+
+@router.post("/enclosures/{enclosure_id}/care-events/{kind}")
+def admin_create_care_event(
+    enclosure_id: int, kind: str, note: str = Form(default=None), occurred_at: str = Form(default="")
+):
+    try:
+        log_care_event(enclosure_id, kind, note, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}#care-{kind}", status_code=303
+        )
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#care-{kind}", status_code=303)
 
 
 @router.post("/enclosures/{enclosure_id}/update")

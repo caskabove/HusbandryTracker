@@ -16,11 +16,20 @@ from db.db import get_connection
 CARE_EVENT_KINDS = ["feeding", "watering", "spot_clean", "deep_clean"]
 
 
-def _days_since(occurred_at: str | None) -> int | None:
+def days_since(occurred_at: str | None) -> int | None:
     if occurred_at is None:
         return None
     then = datetime.fromisoformat(occurred_at)
     return (datetime.now() - then).days
+
+
+def _normalize_datetime_local(value: str | None) -> str | None:
+    """Browser <input type="datetime-local"> submits "YYYY-MM-DDTHH:MM" — normalize to the
+    "YYYY-MM-DD HH:MM:SS" shape every other timestamp in the DB uses, so backdated rows sort/compare
+    consistently with auto-generated ones. Returns None for a blank value (meaning: log as now)."""
+    if not value:
+        return None
+    return value.replace("T", " ") + ":00"
 
 
 def get_dashboard_enclosures() -> list[dict]:
@@ -67,7 +76,7 @@ def get_dashboard_enclosures() -> list[dict]:
                     (eid, kind),
                 ).fetchone()
                 occurred_at = latest["occurred_at"] if latest else None
-                care[kind] = {"occurred_at": occurred_at, "days_since": _days_since(occurred_at)}
+                care[kind] = {"occurred_at": occurred_at, "days_since": days_since(occurred_at)}
             enclosure["care"] = care
 
     return enclosures
@@ -78,6 +87,7 @@ def log_care_event(enclosure_id: int, kind: str, note: str | None = None, occurr
     being "now" — see CONTEXT.md: Care Event. Pass None (the default) to log it as now."""
     if kind not in CARE_EVENT_KINDS:
         raise ValueError(f"Unknown care event kind: {kind!r}")
+    occurred_at = _normalize_datetime_local(occurred_at)
     with get_connection() as conn:
         if occurred_at:
             conn.execute(
@@ -99,6 +109,7 @@ def log_reading(sensor_id: int, temperature_c: float | None, humidity_pct: float
     the measurement was actually taken; pass None (the default) to log it as now."""
     if temperature_c is None and humidity_pct is None:
         raise ValueError("Enter at least one value (temperature or humidity) to log a Reading.")
+    recorded_at = _normalize_datetime_local(recorded_at)
     with get_connection() as conn:
         if recorded_at:
             conn.execute(
