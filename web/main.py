@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import markdown
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +23,7 @@ from web.queries import CARE_EVENT_KINDS, get_dashboard_enclosures, log_care_eve
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = Path(__file__).resolve().parent
+USER_GUIDE_PATH = BASE_DIR.parent / "docs" / "USER_GUIDE.md"
 
 app = FastAPI(title="HerpMonitor")
 app.include_router(admin_router)
@@ -49,6 +51,15 @@ def dashboard(request: Request):
     return templates.TemplateResponse(
         request, "dashboard.html", {"enclosures": enclosures, "care_kinds": CARE_EVENT_KINDS}
     )
+
+
+@app.get("/guide")
+def guide(request: Request):
+    # Rendered fresh on every request (not cached) — it's a local doc file that can be edited,
+    # and page loads here are rare enough that re-parsing markdown each time is a non-issue.
+    text = USER_GUIDE_PATH.read_text(encoding="utf-8")
+    content_html = markdown.markdown(text, extensions=["tables", "fenced_code", "toc"])
+    return templates.TemplateResponse(request, "guide.html", {"content_html": content_html})
 
 
 @app.post("/enclosures/{enclosure_id}/care-events/{kind}")

@@ -66,7 +66,7 @@ python tools\register_device.py list
 
 ## 5. Run the collectors
 
-Two separate processes (see ADR 0001 for why Govee stays out of Docker for now):
+Two separate processes (see ADR 0001 for why Govee runs on the host, not in a container):
 
 ```
 python -u collectors\govee_collector.py
@@ -83,8 +83,10 @@ should appear whenever a light/heat/cooling plug actually flips.
 
 ## What's NOT built yet
 
-- No web UI — this phase is collectors + raw data only, per the CONTEXT.md decisions.
 - No Schedule inference logic yet (deriving "on ~08:00 for ~12h" from `plug_state_transition`
-  history) — that's a Phase 2 concern once there's enough transition history to infer from.
-- No Docker/compose yet — these scripts run directly via the venv for now; containerizing
-  `tuya_collector` + the future `web` service comes with Phase 2.
+  history) — needs enough real transition history from live (not spare) plugs first.
+- Tuya credentials/local control are proven working end-to-end, but only against spare plugs — the
+  plugs actually running enclosure schedules haven't been re-paired yet.
+- The web app (`docs/USER_GUIDE.md`) and admin UI are built and running — see that guide for how to
+  use them day to day. `docker-compose.yml`/`Dockerfile` exist but aren't the default way to run
+  things (see ADR 0002) — run `web` directly via uvicorn, same as the collectors.
