@@ -16,16 +16,18 @@
         {% for enclosure in enclosures %}
         <section class="panel">
             <header class="panel-header">
-                <h2>{{ enclosure.name }}{% if enclosure.bioactive %}<span class="badge">bioactive</span>{% endif %}</h2>
-                {% for animal in enclosure.animals %}
-                <div class="animal">
-                    <span class="animal-name">{{ animal.name }}</span>
-                    <span class="animal-species">{{ animal.species_common }} <em>({{ animal.species_scientific }})</em></span>
-                    <span class="animal-dob">DOB: {{ animal.dob or "unknown" }}</span>
-                </div>
-                {% else %}
-                <div class="animal animal-none">No animals registered</div>
-                {% endfor %}
+                <a href="/admin/enclosures/{{ enclosure.id }}" class="panel-header-link" title="Edit {{ enclosure.name }}">
+                    <h2>{{ enclosure.name }}{% if enclosure.bioactive %}<span class="badge">bioactive</span>{% endif %}</h2>
+                    {% for animal in enclosure.animals %}
+                    <div class="animal">
+                        <span class="animal-name">{{ animal.name }}</span>
+                        <span class="animal-species">{{ animal.species_common }} <em>({{ animal.species_scientific }})</em></span>
+                        <span class="animal-dob">DOB: {{ animal.dob or "unknown" }}</span>
+                    </div>
+                    {% else %}
+                    <div class="animal animal-none">No animals registered</div>
+                    {% endfor %}
+                </a>
             </header>
 
             <div class="panel-body">

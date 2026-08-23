@@ -36,7 +36,7 @@
                 <tbody>
                 {% for a in enclosure.animals %}
                     <tr>
-                        <td>{{ a.name }}</td>
+                        <td class="admin-table-primary">{{ a.name }}</td>
                         <td>{{ a.species_common }} <em>({{ a.species_scientific }})</em></td>
                         <td>{{ a.dob or "unknown" }}</td>
                         <td>
@@ -51,13 +51,16 @@
                 {% endfor %}
                 </tbody>
             </table>
-            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/animals" class="admin-form">
-                <label>Name <input type="text" name="name" required></label>
-                <label>Common species <input type="text" name="common"></label>
-                <label>Scientific name <input type="text" name="scientific"></label>
-                <label>DOB <input type="text" name="dob" placeholder="YYYY-MM-DD or YYYY-MM"></label>
-                <button type="submit">Add Animal</button>
-            </form>
+            <details>
+                <summary>+ Add Animal</summary>
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/animals" class="admin-form">
+                    <label>Name <input type="text" name="name" required></label>
+                    <label>Common species <input type="text" name="common"></label>
+                    <label>Scientific name <input type="text" name="scientific"></label>
+                    <label>DOB <input type="text" name="dob" placeholder="YYYY-MM-DD or YYYY-MM"></label>
+                    <button type="submit">Add Animal</button>
+                </form>
+            </details>
         </section>
 
         <section class="admin-card">
@@ -67,7 +70,7 @@
                 <tbody>
                 {% for s in enclosure.sensors %}
                     <tr>
-                        <td>{{ s.label }}</td>
+                        <td class="admin-table-primary">{{ s.label }}</td>
                         <td>{{ s.mac_address }}</td>
                         <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
                         <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
@@ -83,15 +86,18 @@
                 {% endfor %}
                 </tbody>
             </table>
-            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
-                <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
-                <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
-                <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
-                <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
-                <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
-                <label>Target humidity max (%) <input type="number" step="1" name="humidity_max"></label>
-                <button type="submit">Add Sensor</button>
-            </form>
+            <details>
+                <summary>+ Add Sensor</summary>
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                    <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+                    <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
+                    <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
+                    <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
+                    <label>Target humidity max (%) <input type="number" step="1" name="humidity_max"></label>
+                    <button type="submit">Add Sensor</button>
+                </form>
+            </details>
         </section>
 
         <section class="admin-card">
@@ -101,7 +107,7 @@
                 <tbody>
                 {% for p in enclosure.plugs %}
                     <tr>
-                        <td>{{ p.label }}</td>
+                        <td class="admin-table-primary">{{ p.label }}</td>
                         <td>{{ p.purpose }}</td>
                         <td>{{ p.tuya_device_id }}</td>
                         <td>{{ p.switch_dps_key }}</td>
@@ -119,27 +125,30 @@
                 {% endfor %}
                 </tbody>
             </table>
-            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
-                <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
-                <label>Purpose
-                    <select name="purpose">
-                        <option value="light">light</option>
-                        <option value="heat">heat</option>
-                        <option value="cooling">cooling</option>
-                    </select>
-                </label>
-                <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
-                <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
-                <label>Outlet / DPS key
-                    <input type="text" name="switch_dps_key" value="1" style="width:3em">
-                </label>
-                <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
-                <button type="submit">Add Plug</button>
-            </form>
-            <p class="empty">Most plugs use outlet "1". Power strips with multiple outlets need one row per
-                outlet here, all sharing the same device_id/local_key — use "2", "3", etc. (or "7" for a USB
-                port) for the others. Run <code>tools/tuya_probe.py</code> against the device_id first if
-                you're not sure which number is which outlet.</p>
+            <details>
+                <summary>+ Add Plug</summary>
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
+                    <label>Purpose
+                        <select name="purpose">
+                            <option value="light">light</option>
+                            <option value="heat">heat</option>
+                            <option value="cooling">cooling</option>
+                        </select>
+                    </label>
+                    <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
+                    <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
+                    <label>Outlet / DPS key
+                        <input type="text" name="switch_dps_key" value="1" style="width:3em">
+                    </label>
+                    <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                    <button type="submit">Add Plug</button>
+                </form>
+                <p class="empty">Most plugs use outlet "1". Power strips with multiple outlets need one row per
+                    outlet here, all sharing the same device_id/local_key — use "2", "3", etc. (or "7" for a USB
+                    port) for the others. Run <code>tools/tuya_probe.py</code> against the device_id first if
+                    you're not sure which number is which outlet.</p>
+            </details>
         </section>
     </main>
 </body>

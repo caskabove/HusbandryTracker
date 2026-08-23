@@ -87,6 +87,24 @@ body {
     letter-spacing: 0.04em;
 }
 .admin-table a { color: var(--primary-bright); }
+.admin-table-primary {
+    font-weight: 700;
+    font-size: 1.05em;
+    color: var(--text);
+}
+
+.admin-card details {
+    margin-top: 0.5rem;
+}
+.admin-card details summary {
+    cursor: pointer;
+    color: var(--primary-bright);
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0.3rem 0;
+}
+.admin-card details summary:hover { text-decoration: underline; }
+.admin-card details[open] summary { margin-bottom: 0.75rem; }
 
 .admin-form {
     display: flex;
@@ -221,8 +239,17 @@ button.danger {
 
 .panel-header {
     background: var(--panel-header-bg);
-    padding: 0.9rem 1.1rem;
+    padding: 0;
     border-bottom: 1px solid var(--border);
+}
+.panel-header-link {
+    display: block;
+    padding: 0.9rem 1.1rem;
+    color: inherit;
+    text-decoration: none;
+}
+.panel-header-link:hover {
+    background: rgba(255, 255, 255, 0.04);
 }
 .panel-header h2 {
     margin: 0 0 0.5rem 0;

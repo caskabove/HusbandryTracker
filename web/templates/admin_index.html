@@ -20,7 +20,7 @@
                 <tbody>
                 {% for e in enclosures %}
                     <tr>
-                        <td><a href="/admin/enclosures/{{ e.id }}">{{ e.name }}</a></td>
+                        <td class="admin-table-primary"><a href="/admin/enclosures/{{ e.id }}">{{ e.name }}</a></td>
                         <td>{{ "yes" if e.bioactive else "no" }}</td>
                         <td>{{ e.feeding_interval_days }}d</td>
                         <td>{{ e.watering_interval_days }}d</td>
@@ -36,16 +36,18 @@
         </section>
 
         <section class="admin-card">
-            <h2>Add Enclosure</h2>
-            <form method="post" action="/admin/enclosures" class="admin-form">
-                <label>Name <input type="text" name="name" required></label>
-                <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
-                <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
-                <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
-                <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="7" min="1"></label>
-                <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="30" min="1"></label>
-                <button type="submit">Create</button>
-            </form>
+            <details>
+                <summary>+ Add Enclosure</summary>
+                <form method="post" action="/admin/enclosures" class="admin-form">
+                    <label>Name <input type="text" name="name" required></label>
+                    <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
+                    <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
+                    <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
+                    <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="7" min="1"></label>
+                    <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="30" min="1"></label>
+                    <button type="submit">Create</button>
+                </form>
+            </details>
         </section>
     </main>
 </body>
