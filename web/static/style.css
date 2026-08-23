@@ -26,11 +26,120 @@ body {
 .page-header {
     background: var(--primary);
     padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 .page-header h1 {
     margin: 0;
     font-size: 1.4rem;
     letter-spacing: 0.02em;
+}
+.page-header nav {
+    font-size: 0.9rem;
+}
+.page-header nav a {
+    color: var(--text);
+    text-decoration: none;
+    opacity: 0.85;
+}
+.page-header nav a:hover { opacity: 1; text-decoration: underline; }
+
+.admin-main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.admin-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+}
+.admin-card h2 {
+    margin: 0 0 0.9rem 0;
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+}
+.admin-table th, .admin-table td {
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.admin-table th {
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+}
+.admin-table a { color: var(--primary-bright); }
+
+.admin-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: flex-end;
+}
+.admin-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+.admin-form label.checkbox {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+}
+.admin-form input, .admin-form select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.9rem;
+}
+.admin-form button {
+    background: var(--primary);
+    color: var(--text);
+    border: 1px solid var(--primary-bright);
+    border-radius: 6px;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+    height: fit-content;
+}
+.admin-form button:hover { background: var(--primary-bright); color: #0d1913; }
+
+.danger-form { margin-top: 0.75rem; }
+button.danger {
+    background: var(--status-red);
+    border-color: var(--status-red);
+    color: #fff;
+}
+.inline-form { display: inline; }
+.danger-small {
+    background: none;
+    border: none;
+    color: var(--status-red);
+    cursor: pointer;
+    font-size: 0.8rem;
+    text-decoration: underline;
+    padding: 0;
 }
 
 .panel-grid {

@@ -17,12 +17,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from db.db import init_db
+from web.admin import router as admin_router
 from web.queries import CARE_EVENT_KINDS, get_dashboard_enclosures, log_care_event
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="HerpMonitor")
+app.include_router(admin_router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["target_range_status"] = target_range_status

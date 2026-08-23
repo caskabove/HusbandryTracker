@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HerpMonitor Admin - {{ enclosure.name }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="page-header">
+        <h1>{{ enclosure.name }}</h1>
+        <nav><a href="/admin">All Enclosures</a> · <a href="/">Dashboard</a></nav>
+    </header>
+
+    <main class="admin-main">
+        <section class="admin-card">
+            <h2>Enclosure Settings</h2>
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/update" class="admin-form">
+                <label>Name <input type="text" name="name" value="{{ enclosure.name }}" required></label>
+                <label class="checkbox"><input type="checkbox" name="bioactive" value="true" {% if enclosure.bioactive %}checked{% endif %}> Bioactive</label>
+                <label>Feeding interval (days) <input type="number" name="feeding_interval" value="{{ enclosure.feeding_interval_days }}" min="1"></label>
+                <label>Watering interval (days) <input type="number" name="watering_interval" value="{{ enclosure.watering_interval_days }}" min="1"></label>
+                <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="{{ enclosure.spot_clean_interval_days }}" min="1"></label>
+                <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="{{ enclosure.deep_clean_interval_days }}" min="1"></label>
+                <button type="submit">Save</button>
+            </form>
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete {{ enclosure.name }} and everything in it? This cannot be undone.');">
+                <button type="submit" class="danger">Delete Enclosure</button>
+            </form>
+        </section>
+
+        <section class="admin-card">
+            <h2>Animals</h2>
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Species</th><th>DOB</th><th></th></tr></thead>
+                <tbody>
+                {% for a in enclosure.animals %}
+                    <tr>
+                        <td>{{ a.name }}</td>
+                        <td>{{ a.species_common }} <em>({{ a.species_scientific }})</em></td>
+                        <td>{{ a.dob or "unknown" }}</td>
+                        <td>
+                            <form method="post" action="/admin/animals/{{ a.id }}/delete" class="inline-form">
+                                <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                <button type="submit" class="danger-small">remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="empty">No animals registered</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/animals" class="admin-form">
+                <label>Name <input type="text" name="name" required></label>
+                <label>Common species <input type="text" name="common"></label>
+                <label>Scientific name <input type="text" name="scientific"></label>
+                <label>DOB <input type="text" name="dob" placeholder="YYYY-MM-DD or YYYY-MM"></label>
+                <button type="submit">Add Animal</button>
+            </form>
+        </section>
+
+        <section class="admin-card">
+            <h2>Sensors (Govee)</h2>
+            <table class="admin-table">
+                <thead><tr><th>Label</th><th>MAC</th><th>Target Temp (F)</th><th>Target Humidity</th><th></th></tr></thead>
+                <tbody>
+                {% for s in enclosure.sensors %}
+                    <tr>
+                        <td>{{ s.label }}</td>
+                        <td>{{ s.mac_address }}</td>
+                        <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
+                        <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
+                        <td>
+                            <form method="post" action="/admin/sensors/{{ s.id }}/delete" class="inline-form">
+                                <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                <button type="submit" class="danger-small">remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="empty">No sensors registered</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
+                <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+                <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
+                <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
+                <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
+                <label>Target humidity max (%) <input type="number" step="1" name="humidity_max"></label>
+                <button type="submit">Add Sensor</button>
+            </form>
+        </section>
+
+        <section class="admin-card">
+            <h2>Plugs (Gosund / Tuya)</h2>
+            <table class="admin-table">
+                <thead><tr><th>Label</th><th>Purpose</th><th>Device ID</th><th>IP</th><th></th></tr></thead>
+                <tbody>
+                {% for p in enclosure.plugs %}
+                    <tr>
+                        <td>{{ p.label }}</td>
+                        <td>{{ p.purpose }}</td>
+                        <td>{{ p.tuya_device_id }}</td>
+                        <td>{{ p.tuya_ip_address or "auto" }}</td>
+                        <td>
+                            <form method="post" action="/admin/plugs/{{ p.id }}/delete" class="inline-form">
+                                <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                <button type="submit" class="danger-small">remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="empty">No plugs registered</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
+                <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
+                <label>Purpose
+                    <select name="purpose">
+                        <option value="light">light</option>
+                        <option value="heat">heat</option>
+                        <option value="cooling">cooling</option>
+                    </select>
+                </label>
+                <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
+                <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
+                <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                <button type="submit">Add Plug</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>
