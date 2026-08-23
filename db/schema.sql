@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS plug (
     id              INTEGER PRIMARY KEY,
     enclosure_id    INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
     label           TEXT NOT NULL,                  -- e.g. "basking bulb", "UTH"
-    purpose         TEXT NOT NULL CHECK (purpose IN ('light', 'heat', 'cooling')),
+    purpose         TEXT NOT NULL CHECK (length(purpose) > 0),  -- free text; Admin suggests common values, doesn't restrict to them
     tuya_device_id  TEXT NOT NULL,
     tuya_local_key  TEXT NOT NULL,
     tuya_ip_address TEXT,                           -- optional pin; tinytuya can also auto-discover on LAN

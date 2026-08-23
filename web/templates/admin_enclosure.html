@@ -40,6 +40,7 @@
                         <td>{{ a.species_common }} <em>({{ a.species_scientific }})</em></td>
                         <td>{{ a.dob or "unknown" }}</td>
                         <td>
+                            <a href="/admin/animals/{{ a.id }}/edit">edit</a> ·
                             <form method="post" action="/admin/animals/{{ a.id }}/delete" class="inline-form">
                                 <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                 <button type="submit" class="danger-small">remove</button>
@@ -75,6 +76,7 @@
                         <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
                         <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
                         <td>
+                            <a href="/admin/sensors/{{ s.id }}/edit">edit</a> ·
                             <form method="post" action="/admin/sensors/{{ s.id }}/delete" class="inline-form">
                                 <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                 <button type="submit" class="danger-small">remove</button>
@@ -113,7 +115,7 @@
                         <td>{{ p.switch_dps_key }}</td>
                         <td>{{ p.tuya_ip_address or "auto" }}</td>
                         <td>
-                            <a href="/admin/plugs/{{ p.id }}/edit">reassign</a> ·
+                            <a href="/admin/plugs/{{ p.id }}/edit">edit</a> ·
                             <form method="post" action="/admin/plugs/{{ p.id }}/delete" class="inline-form">
                                 <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                 <button type="submit" class="danger-small">remove</button>
@@ -130,11 +132,14 @@
                 <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
                     <label>Purpose
-                        <select name="purpose">
-                            <option value="light">light</option>
-                            <option value="heat">heat</option>
-                            <option value="cooling">cooling</option>
-                        </select>
+                        <input type="text" name="purpose" list="purpose-options" placeholder="light, heat, cooling, UVB, pump..." required>
+                        <datalist id="purpose-options">
+                            <option value="light">
+                            <option value="heat">
+                            <option value="cooling">
+                            <option value="UVB">
+                            <option value="pump">
+                        </datalist>
                     </label>
                     <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
                     <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>

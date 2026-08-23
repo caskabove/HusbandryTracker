@@ -3,21 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HerpMonitor Admin - Reassign Plug</title>
+    <title>HerpMonitor Admin - Edit Plug</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <header class="page-header">
-        <h1>Reassign Plug</h1>
+        <h1>Edit Plug</h1>
         <nav><a href="/admin">All Enclosures</a> · <a href="/">Dashboard</a> · <a href="/guide">Guide</a></nav>
     </header>
 
     <main class="admin-main">
         <section class="admin-card">
             <h2>{{ plug.label }}</h2>
-            <p class="empty">Device ID: {{ plug.tuya_device_id }} &middot; outlet {{ plug.switch_dps_key }}
-                &middot; local_key and IP are unchanged by this form.</p>
-            <form method="post" action="/admin/plugs/{{ plug.id }}/reassign" class="admin-form">
+            <form method="post" action="/admin/plugs/{{ plug.id }}/update" class="admin-form">
                 <label>Enclosure
                     <select name="enclosure_id">
                         {% for e in enclosures %}
@@ -27,13 +25,19 @@
                 </label>
                 <label>Label <input type="text" name="label" value="{{ plug.label }}" required></label>
                 <label>Purpose
-                    <select name="purpose">
-                        <option value="light" {% if plug.purpose == "light" %}selected{% endif %}>light</option>
-                        <option value="heat" {% if plug.purpose == "heat" %}selected{% endif %}>heat</option>
-                        <option value="cooling" {% if plug.purpose == "cooling" %}selected{% endif %}>cooling</option>
-                    </select>
+                    <input type="text" name="purpose" value="{{ plug.purpose }}" list="purpose-options" required>
+                    <datalist id="purpose-options">
+                        <option value="light">
+                        <option value="heat">
+                        <option value="cooling">
+                        <option value="UVB">
+                        <option value="pump">
+                    </datalist>
                 </label>
+                <label>Tuya device_id <input type="text" name="tuya_device_id" value="{{ plug.tuya_device_id }}" required></label>
+                <label>Tuya local_key <input type="text" name="tuya_local_key" value="{{ plug.tuya_local_key }}" required></label>
                 <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="{{ plug.switch_dps_key }}" style="width:3em"></label>
+                <label>LAN IP (optional) <input type="text" name="tuya_ip_address" value="{{ plug.tuya_ip_address or '' }}" placeholder="leave blank for auto-discovery"></label>
                 <button type="submit">Save</button>
             </form>
         </section>

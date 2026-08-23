@@ -67,6 +67,21 @@ def delete_animal(animal_id: int) -> None:
         conn.execute("DELETE FROM animal WHERE id = ?", (animal_id,))
 
 
+def get_animal(animal_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM animal WHERE id = ?", (animal_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | None,
+                   scientific: str | None, dob: str | None) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ? WHERE id = ?",
+            (enclosure_id, name, common or None, scientific or None, dob or None, animal_id),
+        )
+
+
 def create_sensor(enclosure_id: int, label: str, mac_address: str, temp_min: float | None, temp_max: float | None,
                    humidity_min: float | None, humidity_max: float | None) -> None:
     with get_connection() as conn:
@@ -81,6 +96,22 @@ def create_sensor(enclosure_id: int, label: str, mac_address: str, temp_min: flo
 def delete_sensor(sensor_id: int) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM sensor WHERE id = ?", (sensor_id,))
+
+
+def get_sensor(sensor_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM sensor WHERE id = ?", (sensor_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_sensor(sensor_id: int, enclosure_id: int, label: str, mac_address: str, temp_min: float | None,
+                   temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE sensor SET enclosure_id = ?, label = ?, mac_address = ?, target_temp_min_c = ?,
+                                  target_temp_max_c = ?, target_humidity_min = ?, target_humidity_max = ? WHERE id = ?""",
+            (enclosure_id, label, mac_address.upper(), temp_min, temp_max, humidity_min, humidity_max, sensor_id),
+        )
 
 
 def create_plug(enclosure_id: int, label: str, purpose: str, tuya_device_id: str, tuya_local_key: str,
@@ -104,11 +135,12 @@ def get_plug(plug_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def update_plug(plug_id: int, enclosure_id: int, label: str, purpose: str, switch_dps_key: str) -> None:
-    # Deliberately does not touch tuya_device_id/tuya_local_key/tuya_ip_address — reassigning a
-    # plug to its real enclosure never needs those re-entered, only which enclosure/purpose it is.
+def update_plug(plug_id: int, enclosure_id: int, label: str, purpose: str, switch_dps_key: str,
+                 tuya_device_id: str, tuya_local_key: str, tuya_ip_address: str | None) -> None:
     with get_connection() as conn:
         conn.execute(
-            "UPDATE plug SET enclosure_id = ?, label = ?, purpose = ?, switch_dps_key = ? WHERE id = ?",
-            (enclosure_id, label, purpose, switch_dps_key or "1", plug_id),
+            """UPDATE plug SET enclosure_id = ?, label = ?, purpose = ?, switch_dps_key = ?,
+                                tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ? WHERE id = ?""",
+            (enclosure_id, label, purpose, switch_dps_key or "1", tuya_device_id, tuya_local_key,
+             tuya_ip_address or None, plug_id),
         )

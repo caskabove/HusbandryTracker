@@ -17,11 +17,11 @@ A Govee H5074 BLE temp/humidity device assigned to an Enclosure. An Enclosure ma
 _Avoid_: Hygrometer, thermometer (use Sensor as the umbrella term)
 
 **Plug**:
-A Gosund smart plug assigned to an Enclosure, tagged with a Purpose (light / heat / cooling). An Enclosure may have more than one Plug.
+A Gosund smart plug assigned to an Enclosure, tagged with a Purpose. An Enclosure may have more than one Plug.
 _Avoid_: Outlet, switch
 
 **Purpose**:
-The role a Plug serves for its Enclosure: light, heat, or cooling. One Plug has exactly one Purpose.
+The role a Plug serves for its Enclosure — a free-text label (e.g. "light", "heat", "cooling", "UVB", "pump"), not a fixed set. Admin suggests the common ones but any value is valid, since husbandry setups use plugs for things beyond climate control (misting pumps, UVB fixtures distinct from general lighting, etc.). One Plug has exactly one Purpose.
 
 **Device Registration**:
 The manual, admin-screen mapping of a physical device's hardware identifier (Govee MAC address, Tuya `device_id`) to the Enclosure (and, for Plugs, Purpose) it belongs to. A one-time setup step per device, not an auto-discovery/pairing flow — edited only when hardware is added or swapped.

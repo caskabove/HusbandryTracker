@@ -96,6 +96,29 @@ def admin_delete_animal(animal_id: int, enclosure_id: int = Form(...)):
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
+@router.get("/animals/{animal_id}/edit")
+def admin_edit_animal(request: Request, animal_id: int):
+    animal = q.get_animal(animal_id)
+    if animal is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    return templates.TemplateResponse(
+        request, "admin_animal_edit.html", {"animal": animal, "enclosures": q.list_enclosures()}
+    )
+
+
+@router.post("/animals/{animal_id}/update")
+def admin_update_animal(
+    animal_id: int,
+    enclosure_id: int = Form(...),
+    name: str = Form(...),
+    common: str = Form(""),
+    scientific: str = Form(""),
+    dob: str = Form(""),
+):
+    q.update_animal(animal_id, enclosure_id, name, common, scientific, dob)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
 @router.post("/enclosures/{enclosure_id}/sensors")
 def admin_create_sensor(
     enclosure_id: int,
@@ -113,6 +136,33 @@ def admin_create_sensor(
 @router.post("/sensors/{sensor_id}/delete")
 def admin_delete_sensor(sensor_id: int, enclosure_id: int = Form(...)):
     q.delete_sensor(sensor_id)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.get("/sensors/{sensor_id}/edit")
+def admin_edit_sensor(request: Request, sensor_id: int):
+    sensor = q.get_sensor(sensor_id)
+    if sensor is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    sensor["target_temp_min_f"] = _c_to_f(sensor["target_temp_min_c"])
+    sensor["target_temp_max_f"] = _c_to_f(sensor["target_temp_max_c"])
+    return templates.TemplateResponse(
+        request, "admin_sensor_edit.html", {"sensor": sensor, "enclosures": q.list_enclosures()}
+    )
+
+
+@router.post("/sensors/{sensor_id}/update")
+def admin_update_sensor(
+    sensor_id: int,
+    enclosure_id: int = Form(...),
+    label: str = Form(...),
+    mac_address: str = Form(...),
+    temp_min_f: float | None = Form(None),
+    temp_max_f: float | None = Form(None),
+    humidity_min: float | None = Form(None),
+    humidity_max: float | None = Form(None),
+):
+    q.update_sensor(sensor_id, enclosure_id, label, mac_address, _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -146,13 +196,16 @@ def admin_edit_plug(request: Request, plug_id: int):
     )
 
 
-@router.post("/plugs/{plug_id}/reassign")
-def admin_reassign_plug(
+@router.post("/plugs/{plug_id}/update")
+def admin_update_plug(
     plug_id: int,
     enclosure_id: int = Form(...),
     label: str = Form(...),
     purpose: str = Form(...),
     switch_dps_key: str = Form("1"),
+    tuya_device_id: str = Form(...),
+    tuya_local_key: str = Form(...),
+    tuya_ip_address: str = Form(""),
 ):
-    q.update_plug(plug_id, enclosure_id, label, purpose, switch_dps_key)
+    q.update_plug(plug_id, enclosure_id, label, purpose, switch_dps_key, tuya_device_id, tuya_local_key, tuya_ip_address)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
