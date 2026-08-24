@@ -19,7 +19,14 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from collectors.govee_protocol import MANUFACTURER_ID, decode_h5074
+from collectors.govee_protocol import MANUFACTURER_ID, MANUFACTURER_ID_H5102, decode_h5074, decode_h5102
+
+# Each supported model broadcasts under its own company ID with its own decode function — see
+# collectors/govee_protocol.py's module docstring.
+_DECODERS = [
+    (MANUFACTURER_ID, decode_h5074),
+    (MANUFACTURER_ID_H5102, decode_h5102),
+]
 
 seen: set[str] = set()
 
@@ -28,7 +35,7 @@ def _looks_like_govee(device: BLEDevice, adv: AdvertisementData) -> bool:
     name = (device.name or adv.local_name or "").lower()
     if "govee" in name or "gvh" in name:
         return True
-    return MANUFACTURER_ID in adv.manufacturer_data
+    return any(manufacturer_id in adv.manufacturer_data for manufacturer_id, _decode in _DECODERS)
 
 
 def _on_detection(device: BLEDevice, adv: AdvertisementData) -> None:
@@ -41,10 +48,12 @@ def _on_detection(device: BLEDevice, adv: AdvertisementData) -> None:
     seen.add(key)
 
     print(f"\n[{device.address}] name={device.name or adv.local_name!r} rssi={adv.rssi}")
+    decoders_by_id = dict(_DECODERS)
     for company_id, raw in adv.manufacturer_data.items():
         print(f"  manufacturer_data[0x{company_id:04X}] = {raw.hex()}")
-        if company_id == MANUFACTURER_ID:
-            reading = decode_h5074(raw)
+        decode = decoders_by_id.get(company_id)
+        if decode:
+            reading = decode(raw)
             if reading:
                 print(
                     f"    best-effort decode -> temp={reading.temperature_c:.2f}C "

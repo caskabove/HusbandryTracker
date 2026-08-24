@@ -18,11 +18,18 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from collectors.govee_protocol import MANUFACTURER_ID, decode_h5074
+from collectors.govee_protocol import MANUFACTURER_ID, MANUFACTURER_ID_H5102, decode_h5074, decode_h5102
 from db.db import get_connection, init_db
 
 REFRESH_REGISTRY_SECONDS = 60
 UNKNOWN_MAC_LOG_LIMIT = 200  # avoid unbounded growth if something noisy is nearby for days
+
+# Each supported model broadcasts under its own company ID with its own decode function — see
+# collectors/govee_protocol.py's module docstring. A device only ever matches one of these.
+_DECODERS = [
+    (MANUFACTURER_ID, decode_h5074),
+    (MANUFACTURER_ID_H5102, decode_h5102),
+]
 
 _registered_macs: dict[str, int] = {}  # mac_address -> sensor_id
 _logged_unknown: set[str] = set()
@@ -38,8 +45,11 @@ def _refresh_registry() -> None:
 
 
 def _on_detection(device: BLEDevice, adv: AdvertisementData) -> None:
-    raw = adv.manufacturer_data.get(MANUFACTURER_ID)
-    if raw is None:
+    for manufacturer_id, decode in _DECODERS:
+        raw = adv.manufacturer_data.get(manufacturer_id)
+        if raw is not None:
+            break
+    else:
         return
 
     mac = device.address.upper()
@@ -50,7 +60,7 @@ def _on_detection(device: BLEDevice, adv: AdvertisementData) -> None:
             _logged_unknown.add(mac)
         return
 
-    reading = decode_h5074(raw)
+    reading = decode(raw)
     if reading is None:
         print(f"[govee] {mac}: couldn't decode advertisement (len={len(raw)})")
         return
