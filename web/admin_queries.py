@@ -26,11 +26,22 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         enclosure = dict(row)
         enclosure["animals"] = [dict(r) for r in conn.execute("SELECT * FROM animal WHERE enclosure_id = ? ORDER BY name", (enclosure_id,))]
         enclosure["sensors"] = [dict(r) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
-        enclosure["plugs"] = [dict(r) for r in conn.execute("SELECT * FROM plug WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
+        enclosure["plugs"] = [dict(r) for r in conn.execute(
+            """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
+               WHERE pe.enclosure_id = ? ORDER BY p.label""",
+            (enclosure_id,),
+        )]
         for plug in enclosure["plugs"]:
             # Schedule inference isn't built yet — see docs/PHASE1.md "What's NOT built yet". A Manual
             # Plug shows its Declared Schedule instead (declared_on_time/declared_off_time columns).
             plug["inferred_schedule"] = None
+            # "everything on one switch" — see CONTEXT.md: Plug, ADR 0006. Names the *other*
+            # Enclosures sharing this Plug, so it's obvious here it's not exclusive to this one.
+            plug["shared_with"] = [r["name"] for r in conn.execute(
+                """SELECT e.name FROM enclosure e JOIN plug_enclosure pe ON pe.enclosure_id = e.id
+                   WHERE pe.plug_id = ? AND pe.enclosure_id != ? ORDER BY e.name""",
+                (plug["id"], enclosure_id),
+            )]
 
         enclosure["care"] = {}
         for kind in CARE_EVENT_KINDS:
@@ -74,8 +85,33 @@ def update_enclosure(enclosure_id: int, name: str, bioactive: bool, feeding: int
         )
 
 
+def _get_or_create_unassigned_enclosure(conn, exclude_id: int | None = None) -> int:
+    """See CONTEXT.md: Unassigned. exclude_id skips a row by that id — used when the Enclosure
+    literally named "Unassigned" is itself the one being deleted, so a fresh one gets created
+    instead of pointing back at the row that's about to disappear."""
+    row = conn.execute("SELECT id FROM enclosure WHERE name = 'Unassigned' AND id != ?", (exclude_id or -1,)).fetchone()
+    if row:
+        return row["id"]
+    cur = conn.execute("INSERT INTO enclosure (name) VALUES ('Unassigned')")
+    return cur.lastrowid
+
+
 def delete_enclosure(enclosure_id: int) -> None:
+    # A Plug whose ONLY Enclosure link is this one would otherwise lose its last parent (and its
+    # Tuya credentials/history with it) — move it to Unassigned first instead. See ADR 0006.
     with get_connection() as conn:
+        orphaned = conn.execute(
+            """SELECT plug_id FROM plug_enclosure WHERE enclosure_id = ?
+               AND plug_id NOT IN (SELECT plug_id FROM plug_enclosure WHERE enclosure_id != ?)""",
+            (enclosure_id, enclosure_id),
+        ).fetchall()
+        if orphaned:
+            unassigned_id = _get_or_create_unassigned_enclosure(conn, exclude_id=enclosure_id)
+            for row in orphaned:
+                conn.execute(
+                    "INSERT OR IGNORE INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)",
+                    (row["plug_id"], unassigned_id),
+                )
         conn.execute("DELETE FROM enclosure WHERE id = ?", (enclosure_id,))  # cascades via FK
 
 
@@ -196,9 +232,11 @@ def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: 
 
 
 def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_key: str | None,
-                    declared_on_time: str | None, declared_off_time: str | None) -> None:
-    """See CONTEXT.md: Tracking Mode, Schedule (Declared). Raised as ValueError so the Admin route can
-    show a friendly message instead of a raw SQLite CHECK failure."""
+                    declared_on_time: str | None, declared_off_time: str | None,
+                    room_id: int | None, enclosure_ids: list[int]) -> None:
+    """See CONTEXT.md: Tracking Mode, Schedule (Declared), Plug. Raised as ValueError so the Admin
+    route can show a friendly message instead of a raw SQLite CHECK failure (the Room-XOR-Enclosure-
+    set rule can't be a CHECK at all — it depends on plug_enclosure row counts, a different table)."""
     if tracking_mode not in ("smart", "manual"):
         raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
     if tracking_mode == "smart":
@@ -209,20 +247,29 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
             raise ValueError("A Manual Plug has no device credentials — leave the Tuya fields blank.")
         if bool(declared_on_time) != bool(declared_off_time):
             raise ValueError("Enter both a declared on-time and off-time, or leave both blank.")
+    if bool(room_id) == bool(enclosure_ids):
+        raise ValueError("A Plug needs exactly one parent — pick a Room, or one or more Enclosures, not both or neither.")
 
 
-def create_plug(enclosure_id: int, label: str, purpose: str, tracking_mode: str, tuya_device_id: str | None,
+def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: str | None,
                  tuya_local_key: str | None, tuya_ip_address: str | None, switch_dps_key: str = "1",
-                 declared_on_time: str | None = None, declared_off_time: str | None = None) -> None:
-    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time)
+                 declared_on_time: str | None = None, declared_off_time: str | None = None,
+                 room_id: int | None = None, enclosure_ids: list[int] | None = None) -> int:
+    enclosure_ids = enclosure_ids or []
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time,
+                   room_id, enclosure_ids)
     with get_connection() as conn:
-        conn.execute(
-            """INSERT INTO plug (enclosure_id, label, purpose, tracking_mode, tuya_device_id, tuya_local_key,
+        cur = conn.execute(
+            """INSERT INTO plug (room_id, label, purpose, tracking_mode, tuya_device_id, tuya_local_key,
                                   tuya_ip_address, switch_dps_key, declared_on_time, declared_off_time)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (enclosure_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
+            (room_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
              tuya_ip_address or None, switch_dps_key or "1", declared_on_time or None, declared_off_time or None),
         )
+        plug_id = cur.lastrowid
+        for eid in enclosure_ids:
+            conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (plug_id, eid))
+        return plug_id
 
 
 def delete_plug(plug_id: int) -> None:
@@ -233,22 +280,53 @@ def delete_plug(plug_id: int) -> None:
 def get_plug(plug_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM plug WHERE id = ?", (plug_id,)).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        plug = dict(row)
+        plug["enclosure_ids"] = [r["enclosure_id"] for r in conn.execute(
+            "SELECT enclosure_id FROM plug_enclosure WHERE plug_id = ?", (plug_id,)
+        )]
+        return plug
 
 
-def update_plug(plug_id: int, enclosure_id: int, label: str, purpose: str, tracking_mode: str, switch_dps_key: str,
+def list_plugs() -> list[dict]:
+    """For the top-level Plugs admin list — each row's parent_label describes where it lives,
+    whichever side of the Room/Enclosure-set split it's on. See CONTEXT.md: Plug."""
+    with get_connection() as conn:
+        plugs = [dict(r) for r in conn.execute("SELECT * FROM plug ORDER BY label")]
+        room_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM room")}
+        for plug in plugs:
+            if plug["room_id"]:
+                plug["parent_label"] = f"Room: {room_names.get(plug['room_id'], '?')}"
+            else:
+                names = [r["name"] for r in conn.execute(
+                    """SELECT e.name FROM enclosure e JOIN plug_enclosure pe ON pe.enclosure_id = e.id
+                       WHERE pe.plug_id = ? ORDER BY e.name""",
+                    (plug["id"],),
+                )]
+                plug["parent_label"] = ", ".join(names) if names else "—"
+        return plugs
+
+
+def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, switch_dps_key: str,
                  tuya_device_id: str | None, tuya_local_key: str | None, tuya_ip_address: str | None,
-                 declared_on_time: str | None = None, declared_off_time: str | None = None) -> None:
-    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time)
+                 declared_on_time: str | None = None, declared_off_time: str | None = None,
+                 room_id: int | None = None, enclosure_ids: list[int] | None = None) -> None:
+    enclosure_ids = enclosure_ids or []
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time,
+                   room_id, enclosure_ids)
     with get_connection() as conn:
         conn.execute(
-            """UPDATE plug SET enclosure_id = ?, label = ?, purpose = ?, tracking_mode = ?, switch_dps_key = ?,
+            """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?, switch_dps_key = ?,
                                 tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ?,
                                 declared_on_time = ?, declared_off_time = ? WHERE id = ?""",
-            (enclosure_id, label, purpose, tracking_mode, switch_dps_key or "1", tuya_device_id or None,
+            (room_id, label, purpose, tracking_mode, switch_dps_key or "1", tuya_device_id or None,
              tuya_local_key or None, tuya_ip_address or None, declared_on_time or None, declared_off_time or None,
              plug_id),
         )
+        conn.execute("DELETE FROM plug_enclosure WHERE plug_id = ?", (plug_id,))
+        for eid in enclosure_ids:
+            conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (plug_id, eid))
 
 
 def list_rooms() -> list[dict]:
@@ -276,6 +354,11 @@ def get_room(room_id: int) -> dict | None:
                 (sensor["id"],),
             ).fetchone()
             sensor["latest_reading"] = dict(latest) if latest else None
+        room["plugs"] = [dict(r) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
+        for plug in room["plugs"]:
+            # Schedule inference isn't built yet — see docs/PHASE1.md "What's NOT built yet". A
+            # Manual Plug shows its Declared Schedule instead (declared_on_time/declared_off_time).
+            plug["inferred_schedule"] = None
         room["enclosures"] = [dict(r) for r in conn.execute("SELECT * FROM enclosure WHERE room_id = ? ORDER BY name", (room_id,))]
         return room
 

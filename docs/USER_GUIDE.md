@@ -242,11 +242,23 @@ max) on whichever it measures — temperature, humidity, or both. That range is 
 Manual Sensor, since there'd otherwise be nothing to judge a hand-logged reading against. Once
 saved, its dashboard row grows a small "Log Reading" form you use whenever you take a measurement.
 
-### Adding a plug to an enclosure
+### Adding a plug
 
-Every Plug is either **Smart** (a real Tuya-controlled Gosund plug, read automatically) or
-**Manual** (no smart device — e.g. a light on a mechanical timer). Pick which one in the **"Add
-Plug"** form's Tracking Mode dropdown; it shows only the fields that mode actually needs.
+Unlike Animals/Sensors (added from the Enclosure or Room they belong to), Plugs are added from the
+**main Admin page** (`/admin`) — its own **"Plugs"** card, since a Plug can belong to more than one
+place. Every Plug is either **Smart** (a real Tuya-controlled Gosund plug, read automatically) or
+**Manual** (no smart device — e.g. a light on a mechanical timer); pick which one in the **"Add
+Plug"** form's Tracking Mode dropdown, which shows only the fields that mode actually needs.
+
+**Belongs to** — the other dropdown on that form — is where you say what the Plug controls:
+- **Enclosure(s)**: check the box next to each Enclosure it serves. Almost always just one; check
+  more than one when a single physical switch controls several tubs at once ("everything on one
+  switch," common in smaller collections) — one Plug, several Enclosures, same on/off state for
+  all of them since it really is the same physical device.
+- **Room**: for a genuinely room-wide fixture (a rack's ambient light) that isn't tied to any
+  specific tub — pick the Room instead of any Enclosure.
+
+A Plug always belongs to exactly one of those, never both, never neither.
 
 **Smart Plug** — this is for tracking a Gosund plug's light/heat/cooling status (see the note at
 the end of this guide for why this needs Smart Life instead of Google Home).
@@ -254,9 +266,8 @@ the end of this guide for why this needs Smart Life instead of Google Home).
 Unlike a sensor's MAC address, a plug's ID and "local key" can't be found with a simple scan —
 getting them involves a one-time setup on Tuya's developer website (the company behind Gosund's
 underlying technology). That part still needs technical help to walk through the first time. Once
-you have a plug's **device ID** and **local key** in hand, adding it here is simple: on the
-enclosure's page, fill out the **"Add Plug"** form (Tracking Mode: Smart) — a label (e.g. "UTH",
-"basking bulb"), whether it's for light/heat/cooling, and those two values.
+you have a plug's **device ID** and **local key** in hand, adding it here is simple: a label (e.g.
+"UTH", "basking bulb"), a Purpose (light/heat/cooling/etc.), and those two values.
 
 Leave **Outlet / DPS key** as `1` unless the plug is a multi-outlet power strip — those expose
 each outlet as its own switch (`1`, `2`, `3`, or `7` for a USB port), so a strip needs one row here
@@ -271,15 +282,20 @@ smart features: pick Tracking Mode: Manual, give it a label and Purpose, and ent
 on-time and off-time. No device ID or local key needed. The dashboard shows that as a "Declared"
 schedule — it's exactly what you entered, not something the app is verifying against the timer.
 
-**Reassigning a plug already sitting in "Unassigned"**: open the Unassigned enclosure's page and
-click **"reassign"** next to that plug. Pick the real enclosure, fix the label/purpose, and save —
-no need to re-enter the device ID or local key, those stay attached to the physical plug.
+**Reassigning a plug already sitting in "Unassigned"**: open its edit page from the Plugs list on
+the main Admin page, check the box(es) for its real Enclosure(s) (or switch "Belongs to" over to
+Room), fix the label/Purpose, and save — no need to re-enter the device ID or local key, those stay
+attached to the physical plug. A Plug lands back in Unassigned on its own if it ever loses its last
+Enclosure (e.g. that Enclosure gets deleted) — it's a safety net, not something you manage directly.
 
 ### Removing something
 
-Every animal, sensor, and plug has a small **"remove"** link next to it. There's also a **"Delete
-Enclosure"** button on the enclosure's page, which removes the whole enclosure and everything in
-it — it asks you to confirm first, since that can't be undone.
+Every animal and sensor has a small **"remove"** link next to it, and a Plug has a **"Delete
+Plug"** button on its own edit page. There's also a **"Delete Enclosure"** button on the
+enclosure's page (and a matching one for a Room), which removes everything that belongs
+*exclusively* to it — it asks you to confirm first, since that can't be undone. A Plug shared with
+other Enclosures just loses that one link and keeps going; see "Reassigning" above for what happens
+if it loses its last one.
 
 ---
 

@@ -89,6 +89,85 @@
                 </form>
             </details>
         </section>
+
+        <section class="admin-card">
+            <h2>Plugs</h2>
+            <table class="admin-table">
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th></th></tr></thead>
+                <tbody>
+                {% for p in plugs %}
+                    <tr>
+                        <td class="admin-table-primary">{{ p.label }}</td>
+                        <td>{{ p.purpose }}</td>
+                        <td>{{ p.tracking_mode|capitalize }}</td>
+                        <td>{{ p.parent_label }}</td>
+                        <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="empty">No plugs yet — add one below.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <details>
+                <summary>+ Add Plug</summary>
+                <form method="post" action="/admin/plugs" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
+                    <label>Purpose
+                        <input type="text" name="purpose" list="purpose-options" placeholder="light, heat, cooling, UVB, pump..." required>
+                        <datalist id="purpose-options">
+                            <option value="light">
+                            <option value="heat">
+                            <option value="cooling">
+                            <option value="UVB">
+                            <option value="pump">
+                        </datalist>
+                    </label>
+                    <label>Belongs to
+                        <select name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-room', 'add-plug-enclosures')">
+                            <option value="enclosures" selected>Enclosure(s)</option>
+                            <option value="room">Room</option>
+                        </select>
+                    </label>
+                    <div id="add-plug-enclosures" class="mode-fields">
+                        {% for e in enclosures %}
+                        <label class="checkbox"><input type="checkbox" name="enclosure_ids" value="{{ e.id }}"> {{ e.name }}</label>
+                        {% endfor %}
+                    </div>
+                    <div id="add-plug-room" class="mode-fields" style="display:none">
+                        <label>Room
+                            <select name="room_id" disabled>
+                                {% for r in rooms %}
+                                <option value="{{ r.id }}">{{ r.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <label>Tracking Mode
+                        <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-plug-smart', 'add-plug-manual')">
+                            <option value="smart">Smart (Tuya-controlled)</option>
+                            <option value="manual">Manual (hand-switched, e.g. a timer)</option>
+                        </select>
+                    </label>
+                    <div id="add-plug-smart" class="mode-fields">
+                        <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
+                        <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                        <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
+                        <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                    </div>
+                    <div id="add-plug-manual" class="mode-fields" style="display:none">
+                        <label>Declared on-time <input type="time" name="declared_on_time"></label>
+                        <label>Declared off-time <input type="time" name="declared_off_time"></label>
+                    </div>
+                    <button type="submit">Add Plug</button>
+                </form>
+                <p class="empty">Most plugs use outlet "1". Power strips with multiple outlets need one row per
+                    outlet here, all sharing the same device_id/local_key — use "2", "3", etc. (or "7" for a USB
+                    port) for the others. Check any number of Enclosures if one physical switch covers several
+                    tubs at once ("everything on one switch"), or pick Room instead for a genuinely room-wide
+                    fixture not tied to specific tubs.</p>
+            </details>
+        </section>
     </main>
+    <script src="/static/app.js"></script>
 </body>
 </html>

@@ -1,16 +1,23 @@
-// Tracking Mode toggle for Sensor/Plug Admin forms (see CONTEXT.md: Tracking Mode).
+// Two-way field-group toggles for Admin forms — Tracking Mode (Smart/Manual) on Sensor/Plug forms,
+// and Parent Type (Room/Enclosure(s)) on the Plug form (see CONTEXT.md: Tracking Mode, Plug).
 //
-// Each form has a "Smart"/"Manual" block of fields; only one applies at a time. Hiding a block
-// also disables its inputs so a stale value from the other mode is never submitted (disabled
-// fields are excluded from form submission), rather than relying on the server to ignore them.
-function setTrackingModeBlock(block, active) {
+// Each form has two blocks of fields; only one applies at a time. Hiding a block also disables its
+// inputs so a stale value from the other side is never submitted (disabled fields are excluded
+// from form submission), rather than relying on the server to ignore them.
+function setToggleBlock(block, active) {
     if (!block) return;
     block.style.display = active ? "" : "none";
     block.querySelectorAll("input, select").forEach(function (el) { el.disabled = !active; });
 }
 
+// Generic: shows/enables firstBlockId when select's value equals firstValue, otherwise shows/
+// enables secondBlockId.
+function onToggleChange(select, firstValue, firstBlockId, secondBlockId) {
+    const isFirst = select.value === firstValue;
+    setToggleBlock(document.getElementById(firstBlockId), isFirst);
+    setToggleBlock(document.getElementById(secondBlockId), !isFirst);
+}
+
 function onTrackingModeChange(select, smartBlockId, manualBlockId) {
-    const isSmart = select.value === "smart";
-    setTrackingModeBlock(document.getElementById(smartBlockId), isSmart);
-    setTrackingModeBlock(document.getElementById(manualBlockId), !isSmart);
+    onToggleChange(select, "smart", smartBlockId, manualBlockId);
 }

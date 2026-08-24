@@ -17,13 +17,6 @@
         <section class="admin-card">
             <h2>{{ plug.label }}</h2>
             <form method="post" action="/admin/plugs/{{ plug.id }}/update" class="admin-form">
-                <label>Enclosure
-                    <select name="enclosure_id">
-                        {% for e in enclosures %}
-                        <option value="{{ e.id }}" {% if e.id == plug.enclosure_id %}selected{% endif %}>{{ e.name }}</option>
-                        {% endfor %}
-                    </select>
-                </label>
                 <label>Label <input type="text" name="label" value="{{ plug.label }}" required></label>
                 <label>Purpose
                     <input type="text" name="purpose" value="{{ plug.purpose }}" list="purpose-options" required>
@@ -35,6 +28,31 @@
                         <option value="pump">
                     </datalist>
                 </label>
+                <label>Belongs to
+                    <select name="parent_type" onchange="onToggleChange(this, 'room', 'edit-plug-room', 'edit-plug-enclosures')">
+                        <option value="enclosures" {% if not plug.room_id %}selected{% endif %}>Enclosure(s)</option>
+                        <option value="room" {% if plug.room_id %}selected{% endif %}>Room</option>
+                    </select>
+                </label>
+                <div id="edit-plug-enclosures" class="mode-fields" {% if plug.room_id %}style="display:none"{% endif %}>
+                    {% for e in enclosures %}
+                    <label class="checkbox">
+                        <input type="checkbox" name="enclosure_ids" value="{{ e.id }}"
+                               {% if e.id in plug.enclosure_ids %}checked{% endif %}
+                               {% if plug.room_id %}disabled{% endif %}>
+                        {{ e.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <div id="edit-plug-room" class="mode-fields" {% if not plug.room_id %}style="display:none"{% endif %}>
+                    <label>Room
+                        <select name="room_id" {% if not plug.room_id %}disabled{% endif %}>
+                            {% for r in rooms %}
+                            <option value="{{ r.id }}" {% if r.id == plug.room_id %}selected{% endif %}>{{ r.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
                 <label>Tracking Mode
                     <select name="tracking_mode" onchange="onTrackingModeChange(this, 'edit-plug-smart', 'edit-plug-manual')">
                         <option value="smart" {% if plug.tracking_mode == "smart" %}selected{% endif %}>Smart (Tuya-controlled)</option>
@@ -52,6 +70,9 @@
                     <label>Declared off-time <input type="time" name="declared_off_time" value="{{ plug.declared_off_time or '' }}" {% if plug.tracking_mode != "manual" %}disabled{% endif %}></label>
                 </div>
                 <button type="submit">Save</button>
+            </form>
+            <form method="post" action="/admin/plugs/{{ plug.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete {{ plug.label }}? This cannot be undone.');">
+                <button type="submit" class="danger">Delete Plug</button>
             </form>
         </section>
     </main>

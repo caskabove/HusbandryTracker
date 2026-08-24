@@ -78,7 +78,11 @@ CREATE TABLE IF NOT EXISTS sensor (
     )
 );
 
--- A Plug assigned to an Enclosure. See CONTEXT.md: Plug, Purpose, Tracking Mode, Schedule.
+-- A Plug, belonging to either one Room or one-or-more Enclosures (via plug_enclosure below), never
+-- both. See CONTEXT.md: Plug, Purpose, Tracking Mode, Schedule, Unassigned. See ADR 0006 for why
+-- the Enclosure side is a join table even for the common single-Enclosure case, and why an
+-- Enclosure-linked Plug moves to Unassigned (not deleted) if it loses its last Enclosure, while a
+-- Room-owned Plug is deleted along with its Room (matching how a Room's Sensors already cascade).
 --
 -- tracking_mode = 'smart': a real Tuya-controlled Gosund plug, polled automatically — Tuya
 -- credentials required. tracking_mode = 'manual': no device, e.g. a mechanical timer — the Tuya
@@ -91,9 +95,13 @@ CREATE TABLE IF NOT EXISTS sensor (
 -- local_key/ip but a different switch_dps_key — hence the unique constraint being on the pair,
 -- not on tuya_device_id alone. Manual Plugs all have tuya_device_id NULL, which SQLite treats as
 -- distinct per row in a UNIQUE index, so multiple Manual Plugs never collide on that constraint.
+--
+-- The Room-XOR-Enclosure-set invariant can't be a single-table CHECK (it depends on plug_enclosure
+-- row counts) — enforced in web/admin_queries.py instead, same pattern as Manual Sensor's Target
+-- Range requirement.
 CREATE TABLE IF NOT EXISTS plug (
     id                  INTEGER PRIMARY KEY,
-    enclosure_id        INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    room_id             INTEGER REFERENCES room(id) ON DELETE CASCADE,
     label               TEXT NOT NULL,                  -- e.g. "basking bulb", "UTH"
     purpose             TEXT NOT NULL CHECK (length(purpose) > 0),  -- free text; Admin suggests common values, doesn't restrict to them
     tracking_mode       TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
@@ -109,6 +117,15 @@ CREATE TABLE IF NOT EXISTS plug (
         (tracking_mode = 'smart' AND tuya_device_id IS NOT NULL AND tuya_local_key IS NOT NULL) OR
         (tracking_mode = 'manual' AND tuya_device_id IS NULL AND tuya_local_key IS NULL)
     )
+);
+
+-- Which Enclosure(s) a non-Room-owned Plug belongs to — see the plug table's comment and ADR 0006.
+-- Almost always exactly one row per Plug; more than one means a single physical switch wired to
+-- several tubs at once ("everything on one switch" — common in smaller collections).
+CREATE TABLE IF NOT EXISTS plug_enclosure (
+    plug_id      INTEGER NOT NULL REFERENCES plug(id) ON DELETE CASCADE,
+    enclosure_id INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    PRIMARY KEY (plug_id, enclosure_id)
 );
 
 -- Raw Sensor readings, captured continuously (see CONTEXT.md decision: capture everything, no charts in v1).

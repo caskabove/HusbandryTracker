@@ -69,20 +69,9 @@ def get_dashboard_data() -> dict:
                     enclosure["fallback_sensor"] = dict(fb_row)
                     enclosure["fallback_reading"] = _latest_reading(conn, fb_row["id"])
 
-            plugs = [dict(row) for row in conn.execute("SELECT * FROM plug WHERE enclosure_id = ?", (eid,))]
-            for plug in plugs:
-                latest = conn.execute(
-                    """SELECT is_on, recorded_at FROM plug_state_transition
-                       WHERE plug_id = ? ORDER BY recorded_at DESC LIMIT 1""",
-                    (plug["id"],),
-                ).fetchone()
-                plug["latest_transition"] = dict(latest) if latest else None
-                # Schedule inference (on-time + duration derived from transition history) isn't
-                # built yet — see docs/PHASE1.md "What's NOT built yet". Placeholder for now.
-                # A Manual Plug has no transitions to infer from at all — see CONTEXT.md: Schedule —
-                # it shows its Declared Schedule instead, entered directly in the Admin UI.
-                plug["inferred_schedule"] = None
-            enclosure["plugs"] = plugs
+            # Plugs/Schedules aren't rendered on the dashboard (glance-only — see web/main.py's
+            # module docstring); they live on the Enclosure/Room's own Admin page instead, fetched
+            # there via web/admin_queries.py. Not queried here at all, to avoid the unused work.
 
             care = {}
             for kind in CARE_EVENT_KINDS:

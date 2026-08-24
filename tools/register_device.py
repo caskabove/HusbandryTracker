@@ -102,12 +102,16 @@ def sensor_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
 
 
 def plug_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+    # See CONTEXT.md: Plug, ADR 0006 — a Plug's Enclosure(s) live in plug_enclosure now, not a
+    # column on plug itself. This CLI command only ever links to exactly one (its --enclosure arg);
+    # a Plug shared across several Enclosures ("everything on one switch") needs the Admin UI.
     enclosure_id = _enclosure_id(conn, args.enclosure)
-    conn.execute(
-        """INSERT INTO plug (enclosure_id, label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (enclosure_id, args.label, args.purpose, args.device_id, args.local_key, args.ip, args.dps_key),
+    cur = conn.execute(
+        """INSERT INTO plug (label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (args.label, args.purpose, args.device_id, args.local_key, args.ip, args.dps_key),
     )
+    conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (cur.lastrowid, enclosure_id))
     print(f"Registered plug {args.device_id!r} dps={args.dps_key} ({args.purpose}: {args.label}) in {args.enclosure!r}")
 
 
@@ -121,6 +125,12 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
                 print(f"  sensor: {sensor['label']} (Manual — hand-logged readings)")
             else:
                 print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
+        for plug in conn.execute("SELECT * FROM plug WHERE room_id = ?", (room["id"],)):
+            if plug["tracking_mode"] == "manual":
+                on, off = plug["declared_on_time"] or "?", plug["declared_off_time"] or "?"
+                print(f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — declared {on}-{off})")
+            else:
+                print(f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}")
 
     for enclosure in conn.execute("SELECT * FROM enclosure ORDER BY name"):
         room_note = f" room={rooms_by_id[enclosure['room_id']]}" if enclosure["room_id"] else ""
@@ -134,7 +144,11 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
                 print(f"  sensor: {sensor['label']} (Manual — hand-logged readings)")
             else:
                 print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
-        for plug in conn.execute("SELECT * FROM plug WHERE enclosure_id = ?", (enclosure["id"],)):
+        for plug in conn.execute(
+            """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
+               WHERE pe.enclosure_id = ?""",
+            (enclosure["id"],),
+        ):
             if plug["tracking_mode"] == "manual":
                 on, off = plug["declared_on_time"] or "?", plug["declared_off_time"] or "?"
                 print(f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — declared {on}-{off})")

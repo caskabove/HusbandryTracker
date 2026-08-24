@@ -87,6 +87,47 @@
         </section>
 
         <section class="admin-card">
+            <h2>Plugs</h2>
+            <table class="admin-table">
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th></th></tr></thead>
+                <tbody>
+                {% for p in room.plugs %}
+                    <tr>
+                        <td class="admin-table-primary">{{ p.label }}</td>
+                        <td>{{ p.purpose }}</td>
+                        <td>{{ p.tracking_mode|capitalize }}</td>
+                        <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="admin-card">
+            <h2>Schedules</h2>
+            {% for plug in room.plugs %}
+                <div class="reading-row">
+                    <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
+                    {% if plug.tracking_mode == "manual" %}
+                        {% if plug.declared_on_time and plug.declared_off_time %}
+                        <span class="pill status-unknown">Declared: {{ plug.declared_on_time }}&ndash;{{ plug.declared_off_time }}</span>
+                        {% else %}
+                        <span class="pill status-unknown">manual — no declared schedule set</span>
+                        {% endif %}
+                    {% elif plug.inferred_schedule %}
+                        <span class="pill status-unknown">{{ plug.inferred_schedule }}</span>
+                    {% else %}
+                        <span class="pill status-unknown">no schedule data yet</span>
+                    {% endif %}
+                </div>
+            {% else %}
+                <p class="empty">No plugs registered</p>
+            {% endfor %}
+        </section>
+
+        <section class="admin-card">
             <h2>Enclosures in this Room</h2>
             <table class="admin-table">
                 <thead><tr><th>Name</th><th></th></tr></thead>

@@ -48,7 +48,7 @@ def admin_index(request: Request):
     return templates.TemplateResponse(
         request, "admin_index.html",
         {
-            "enclosures": enclosures, "rooms": rooms,
+            "enclosures": enclosures, "rooms": rooms, "plugs": q.list_plugs(),
             "rooms_by_id": {r["id"]: r["name"] for r in rooms},
             "enclosure_count_by_room": enclosure_count_by_room,
             "settings": q.get_settings(), "error": request.query_params.get("error"),
@@ -235,9 +235,8 @@ def admin_update_sensor(
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
-@router.post("/enclosures/{enclosure_id}/plugs")
+@router.post("/plugs")
 def admin_create_plug(
-    enclosure_id: int,
     label: str = Form(...),
     purpose: str = Form(...),
     tracking_mode: str = Form("smart"),
@@ -247,19 +246,22 @@ def admin_create_plug(
     switch_dps_key: str = Form("1"),
     declared_on_time: str = Form(""),
     declared_off_time: str = Form(""),
+    room_id: str = Form(""),
+    enclosure_ids: list[int] = Form(default=[]),
 ):
     try:
-        q.create_plug(enclosure_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
-                       tuya_ip_address, switch_dps_key, declared_on_time or None, declared_off_time or None)
+        q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
+                       tuya_ip_address, switch_dps_key, declared_on_time or None, declared_off_time or None,
+                       int(room_id) if room_id else None, enclosure_ids)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
 
 
 @router.post("/plugs/{plug_id}/delete")
-def admin_delete_plug(plug_id: int, enclosure_id: int = Form(...)):
+def admin_delete_plug(plug_id: int):
     q.delete_plug(plug_id)
-    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
 
 
 @router.get("/plugs/{plug_id}/edit")
@@ -269,14 +271,16 @@ def admin_edit_plug(request: Request, plug_id: int):
         return RedirectResponse(url="/admin", status_code=303)
     return templates.TemplateResponse(
         request, "admin_plug_edit.html",
-        {"plug": plug, "enclosures": q.list_enclosures(), "error": request.query_params.get("error")}
+        {
+            "plug": plug, "enclosures": q.list_enclosures(), "rooms": q.list_rooms(),
+            "error": request.query_params.get("error"),
+        }
     )
 
 
 @router.post("/plugs/{plug_id}/update")
 def admin_update_plug(
     plug_id: int,
-    enclosure_id: int = Form(...),
     label: str = Form(...),
     purpose: str = Form(...),
     tracking_mode: str = Form("smart"),
@@ -286,14 +290,17 @@ def admin_update_plug(
     tuya_ip_address: str = Form(""),
     declared_on_time: str = Form(""),
     declared_off_time: str = Form(""),
+    room_id: str = Form(""),
+    enclosure_ids: list[int] = Form(default=[]),
 ):
     try:
-        q.update_plug(plug_id, enclosure_id, label, purpose, tracking_mode, switch_dps_key,
+        q.update_plug(plug_id, label, purpose, tracking_mode, switch_dps_key,
                        tuya_device_id or None, tuya_local_key or None, tuya_ip_address,
-                       declared_on_time or None, declared_off_time or None)
+                       declared_on_time or None, declared_off_time or None,
+                       int(room_id) if room_id else None, enclosure_ids)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
 
 
 @router.post("/rooms")
