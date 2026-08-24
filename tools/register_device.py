@@ -112,8 +112,19 @@ def plug_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
 
 
 def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
+    rooms_by_id = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM room")}
+    for room in conn.execute("SELECT * FROM room ORDER BY name"):
+        on, off = room["light_on_time"] or "?", room["light_off_time"] or "?"
+        print(f"\n== Room: {room['name']} == light {on}-{off}" + (f" ({room['light_notes']})" if room["light_notes"] else ""))
+        for sensor in conn.execute("SELECT * FROM sensor WHERE room_id = ?", (room["id"],)):
+            if sensor["tracking_mode"] == "manual":
+                print(f"  sensor: {sensor['label']} (Manual — hand-logged readings)")
+            else:
+                print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
+
     for enclosure in conn.execute("SELECT * FROM enclosure ORDER BY name"):
-        print(f"\n[{enclosure['name']}] bioactive={bool(enclosure['bioactive'])} "
+        room_note = f" room={rooms_by_id[enclosure['room_id']]}" if enclosure["room_id"] else ""
+        print(f"\n[{enclosure['name']}]{room_note} bioactive={bool(enclosure['bioactive'])} "
               f"feed/{enclosure['feeding_interval_days']}d water/{enclosure['watering_interval_days']}d "
               f"spot/{enclosure['spot_clean_interval_days']}d deep/{enclosure['deep_clean_interval_days']}d")
         for animal in conn.execute("SELECT * FROM animal WHERE enclosure_id = ?", (enclosure["id"],)):

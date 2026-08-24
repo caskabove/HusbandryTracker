@@ -46,6 +46,8 @@ def get_enclosure(enclosure_id: int) -> dict | None:
 
 
 def create_enclosure(name: str, bioactive: bool, feeding: int, watering: int, spot: int, deep: int) -> int:
+    # Room assignment happens as a follow-up edit (see update_enclosure), not at creation — keeps
+    # this quick-create form minimal, matching how Sensor/Plug reassignment already works.
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO enclosure (name, bioactive, feeding_interval_days, watering_interval_days,
@@ -56,12 +58,19 @@ def create_enclosure(name: str, bioactive: bool, feeding: int, watering: int, sp
         return cur.lastrowid
 
 
-def update_enclosure(enclosure_id: int, name: str, bioactive: bool, feeding: int, watering: int, spot: int, deep: int) -> None:
+def update_enclosure(enclosure_id: int, name: str, bioactive: bool, feeding: int, watering: int, spot: int, deep: int,
+                      room_id: int | None, fallback_sensor_id: int | None) -> None:
+    """room_id and fallback_sensor_id see CONTEXT.md: Room, Fallback Sensor. The Admin UI only ever
+    offers a Fallback Sensor dropdown scoped to the chosen Room's own Sensors and only when this
+    Enclosure has none of its own, so no extra cross-check is done here — display logic (see
+    web/queries.py) also always prefers an Enclosure's own Sensors over its Fallback Sensor
+    regardless, so a stale fallback_sensor_id left over after adding a real Sensor is harmless."""
     with get_connection() as conn:
         conn.execute(
             """UPDATE enclosure SET name = ?, bioactive = ?, feeding_interval_days = ?, watering_interval_days = ?,
-                                     spot_clean_interval_days = ?, deep_clean_interval_days = ? WHERE id = ?""",
-            (name, int(bioactive), feeding, watering, spot, deep, enclosure_id),
+                                     spot_clean_interval_days = ?, deep_clean_interval_days = ?, room_id = ?,
+                                     fallback_sensor_id = ? WHERE id = ?""",
+            (name, int(bioactive), feeding, watering, spot, deep, room_id, fallback_sensor_id, enclosure_id),
         )
 
 
@@ -157,6 +166,35 @@ def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: 
         )
 
 
+def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address: str | None, temp_min: float | None,
+                        temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
+    """A Room's ambient Sensor — same Sensor concept, Room instead of Enclosure as parent. See
+    CONTEXT.md: Room, Sensor."""
+    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO sensor (room_id, label, tracking_mode, mac_address, target_temp_min_c,
+                                    target_temp_max_c, target_humidity_min, target_humidity_max)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (room_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+             temp_min, temp_max, humidity_min, humidity_max),
+        )
+
+
+def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: str, mac_address: str | None,
+                        temp_min: float | None, temp_max: float | None, humidity_min: float | None,
+                        humidity_max: float | None) -> None:
+    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
+                                  target_temp_min_c = ?, target_temp_max_c = ?, target_humidity_min = ?,
+                                  target_humidity_max = ? WHERE id = ?""",
+            (room_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+             temp_min, temp_max, humidity_min, humidity_max, sensor_id),
+        )
+
+
 def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_key: str | None,
                     declared_on_time: str | None, declared_off_time: str | None) -> None:
     """See CONTEXT.md: Tracking Mode, Schedule (Declared). Raised as ValueError so the Admin route can
@@ -211,3 +249,48 @@ def update_plug(plug_id: int, enclosure_id: int, label: str, purpose: str, track
              tuya_local_key or None, tuya_ip_address or None, declared_on_time or None, declared_off_time or None,
              plug_id),
         )
+
+
+def list_rooms() -> list[dict]:
+    with get_connection() as conn:
+        return [dict(row) for row in conn.execute("SELECT * FROM room ORDER BY name")]
+
+
+def create_room(name: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute("INSERT INTO room (name) VALUES (?)", (name,))
+        return cur.lastrowid
+
+
+def get_room(room_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM room WHERE id = ?", (room_id,)).fetchone()
+        if row is None:
+            return None
+        room = dict(row)
+        room["sensors"] = [dict(r) for r in conn.execute("SELECT * FROM sensor WHERE room_id = ? ORDER BY label", (room_id,))]
+        room["enclosures"] = [dict(r) for r in conn.execute("SELECT * FROM enclosure WHERE room_id = ? ORDER BY name", (room_id,))]
+        return room
+
+
+def _validate_light_schedule(light_on_time: str | None, light_off_time: str | None) -> None:
+    """See CONTEXT.md: Light Schedule."""
+    if bool(light_on_time) != bool(light_off_time):
+        raise ValueError("Enter both a light on-time and off-time, or leave both blank.")
+
+
+def update_room(room_id: int, name: str, light_on_time: str | None, light_off_time: str | None,
+                 light_notes: str | None) -> None:
+    _validate_light_schedule(light_on_time, light_off_time)
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE room SET name = ?, light_on_time = ?, light_off_time = ?, light_notes = ? WHERE id = ?",
+            (name, light_on_time or None, light_off_time or None, light_notes or None, room_id),
+        )
+
+
+def delete_room(room_id: int) -> None:
+    # Cascades to the Room's own Sensors; Enclosures that belonged to it get room_id set NULL
+    # (un-assigned, not deleted) via the FK's ON DELETE SET NULL — see ADR 0004.
+    with get_connection() as conn:
+        conn.execute("DELETE FROM room WHERE id = ?", (room_id,))

@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from db.db import init_db
 from web.admin import router as admin_router
-from web.queries import CARE_EVENT_KINDS, get_dashboard_enclosures, log_reading
+from web.queries import CARE_EVENT_KINDS, get_dashboard_data, log_reading
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -54,10 +54,11 @@ templates.env.filters["c_to_f"] = _c_to_f
 
 @app.get("/")
 def dashboard(request: Request):
-    enclosures = get_dashboard_enclosures()
+    data = get_dashboard_data()
     return templates.TemplateResponse(
         request, "dashboard.html",
-        {"enclosures": enclosures, "care_kinds": CARE_EVENT_KINDS, "error": request.query_params.get("error")}
+        {"rooms": data["rooms"], "ungrouped": data["ungrouped"], "care_kinds": CARE_EVENT_KINDS,
+         "error": request.query_params.get("error")}
     )
 
 

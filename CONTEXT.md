@@ -5,16 +5,22 @@ A local-only monitoring and husbandry-tracking system for a reptile collection: 
 ## Language
 
 **Enclosure**:
-The physical housing unit (tank, tub, rack tray) that an environmental sensor and control devices belong to. The unit of monitoring — temp, humidity, and schedules are properties of the Enclosure, not of any single Animal inside it. May contain one Animal, a pair, or a colony.
+The physical housing unit (tank, tub, rack tray) that an environmental sensor and control devices belong to. The unit of monitoring — temp, humidity, and schedules are properties of the Enclosure, not of any single Animal inside it. May contain one Animal, a pair, or a colony. May optionally belong to a Room (see Room, Fallback Sensor).
 _Avoid_: Tank, cage, habitat (use only when quoting a specific product/UI)
+
+**Room**:
+A named grouping of Enclosures sharing a physical space (e.g. "Living Room", "Reptile Rack"), with its own ambient Sensor(s) and Light Schedule. Optional — an Enclosure need not belong to one. Unlike an Enclosure, a Room has no Animals, no Bioactive flag, and no Care Events; it exists purely to group Enclosures on the dashboard and to monitor/schedule the shared space around them.
 
 **Animal**:
 An individual reptile with a name, species (common + scientific name), and DOB. Belongs to exactly one Enclosure. An Enclosure panel displays all Animals housed in it.
 _Avoid_: Pet, specimen
 
 **Sensor**:
-An environmental monitor assigned to an Enclosure, in one of two Tracking Modes: a `Smart Sensor` is a Govee H5074 BLE temp/humidity device, polled automatically; a `Manual Sensor` has no physical device behind it — its Readings are logged by hand, and it must have a complete Target Range set on at least one metric (there's nothing to judge a hand-entered value against otherwise). An Enclosure may have more than one Sensor (e.g. warm-side/cool-side gradient, or a Smart Sensor for ambient plus a Manual Sensor for basking-spot checks).
+An environmental monitor assigned to either an Enclosure or a Room (never both), in one of two Tracking Modes: a `Smart Sensor` is a Govee H5074 BLE temp/humidity device, polled automatically; a `Manual Sensor` has no physical device behind it — its Readings are logged by hand, and it must have a complete Target Range set on at least one metric (there's nothing to judge a hand-entered value against otherwise). An Enclosure or a Room may have more than one Sensor (e.g. an Enclosure's warm-side/cool-side gradient, or a Room with one Sensor near a window and one near a door).
 _Avoid_: Hygrometer, thermometer (use Sensor as the umbrella term)
+
+**Fallback Sensor**:
+The specific Sensor an Enclosure with no Sensor of its own points to instead, chosen from its Room's Sensors — the choice accounts for where that Enclosure actually sits in the Room (nearer the window vs. the door, say), rather than always using the same one. Only available once the Enclosure belongs to a Room. Its Reading shows on that Enclosure's panel raw and uncolored, clearly labeled with its source — never judged against a Target Range, since a Room's Target Range reflects human comfort, not what's healthy for that specific animal.
 
 **Plug**:
 A device controlling a light/heat/cooling/etc. source for an Enclosure, tagged with a Purpose, in one of two Tracking Modes: a `Smart Plug` is a Tuya-controlled Gosund smart plug, polled automatically; a `Manual Plug` has no device credentials — it's switched by hand (e.g. a mechanical timer) and carries a Declared Schedule instead. An Enclosure may have more than one Plug.
@@ -32,6 +38,10 @@ The manual, admin-screen setup of a Sensor or Plug. For a `Smart` one, this maps
 **Schedule**:
 A Plug's on-time and off-time. For a `Smart Plug` this is **Inferred** — derived statistically from observed relay-state transitions rather than read from Google Home's routine configuration; lags behind changes made in Google Home, not a guaranteed-accurate value. For a `Manual Plug` this is **Declared** — entered directly by whoever set the physical timer, since there's nothing to observe. A Declared Schedule is shown plainly, with no claim about whether the Plug is actually on right now — it assumes the timer is working correctly, which is never verified.
 _Avoid_: Routine (that's Google Home's term for the thing that produces the state changes we observe)
+
+**Light Schedule**:
+A Room's on-time and off-time for its general lighting, entered directly since there's no device to observe, plus an optional free-text note for anything else worth capturing (e.g. "natural light from east window", "dimmed after 6pm"). Distinct from a Plug's Schedule — a Light Schedule isn't tied to any specific Plug/device, it describes the Room as a whole.
+_Avoid_: Schedule alone (that term is reserved for a Plug's on/off tracking, Inferred or Declared)
 
 **Reading**:
 A single Sensor data point (temperature and/or humidity) at a point in time. A `Smart Sensor`'s Readings are collected automatically by the BLE listener. A `Manual Sensor`'s Readings are logged by hand through the Admin UI — one value per metric the Sensor actually tracks — and, like a Care Event, can be backdated to when the measurement was actually taken instead of being forced to "now".

@@ -38,7 +38,20 @@ templates.env.filters["c_to_f"] = _c_to_f
 
 @router.get("/")
 def admin_index(request: Request):
-    return templates.TemplateResponse(request, "admin_index.html", {"enclosures": q.list_enclosures()})
+    enclosures = q.list_enclosures()
+    rooms = q.list_rooms()
+    enclosure_count_by_room: dict[int, int] = {}
+    for e in enclosures:
+        if e["room_id"]:
+            enclosure_count_by_room[e["room_id"]] = enclosure_count_by_room.get(e["room_id"], 0) + 1
+    return templates.TemplateResponse(
+        request, "admin_index.html",
+        {
+            "enclosures": enclosures, "rooms": rooms,
+            "rooms_by_id": {r["id"]: r["name"] for r in rooms},
+            "enclosure_count_by_room": enclosure_count_by_room,
+        }
+    )
 
 
 @router.post("/enclosures")
@@ -59,9 +72,18 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
     enclosure = q.get_enclosure(enclosure_id)
     if enclosure is None:
         return RedirectResponse(url="/admin", status_code=303)
+    # Fallback Sensor dropdown is scoped to the Enclosure's *current* Room's Sensors, and only
+    # matters when it has none of its own — see CONTEXT.md: Fallback Sensor.
+    room_sensors = []
+    if enclosure["room_id"] and not enclosure["sensors"]:
+        room = q.get_room(enclosure["room_id"])
+        room_sensors = room["sensors"] if room else []
     return templates.TemplateResponse(
         request, "admin_enclosure.html",
-        {"enclosure": enclosure, "care_kinds": CARE_EVENT_KINDS, "error": request.query_params.get("error")}
+        {
+            "enclosure": enclosure, "care_kinds": CARE_EVENT_KINDS, "rooms": q.list_rooms(),
+            "room_sensors": room_sensors, "error": request.query_params.get("error"),
+        }
     )
 
 
@@ -87,8 +109,13 @@ def admin_update_enclosure(
     watering_interval: int = Form(3),
     spot_clean_interval: int = Form(7),
     deep_clean_interval: int = Form(30),
+    room_id: str = Form(""),
+    fallback_sensor_id: str = Form(""),
 ):
-    q.update_enclosure(enclosure_id, name, bioactive, feeding_interval, watering_interval, spot_clean_interval, deep_clean_interval)
+    q.update_enclosure(
+        enclosure_id, name, bioactive, feeding_interval, watering_interval, spot_clean_interval, deep_clean_interval,
+        int(room_id) if room_id else None, int(fallback_sensor_id) if fallback_sensor_id else None,
+    )
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -256,3 +283,98 @@ def admin_update_plug(
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/rooms")
+def admin_create_room(name: str = Form(...)):
+    room_id = q.create_room(name)
+    return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+@router.get("/rooms/{room_id}")
+def admin_room_detail(request: Request, room_id: int):
+    room = q.get_room(room_id)
+    if room is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    return templates.TemplateResponse(
+        request, "admin_room.html", {"room": room, "error": request.query_params.get("error")}
+    )
+
+
+@router.post("/rooms/{room_id}/update")
+def admin_update_room(
+    room_id: int,
+    name: str = Form(...),
+    light_on_time: str = Form(""),
+    light_off_time: str = Form(""),
+    light_notes: str = Form(""),
+):
+    try:
+        q.update_room(room_id, name, light_on_time or None, light_off_time or None, light_notes or None)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/rooms/{room_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+@router.post("/rooms/{room_id}/delete")
+def admin_delete_room(room_id: int):
+    q.delete_room(room_id)
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/rooms/{room_id}/sensors")
+def admin_create_room_sensor(
+    room_id: int,
+    label: str = Form(...),
+    tracking_mode: str = Form("smart"),
+    mac_address: str = Form(""),
+    temp_min_f: float | None = Form(None),
+    temp_max_f: float | None = Form(None),
+    humidity_min: float | None = Form(None),
+    humidity_max: float | None = Form(None),
+):
+    try:
+        q.create_room_sensor(room_id, label, tracking_mode, mac_address or None,
+                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/rooms/{room_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+@router.post("/room-sensors/{sensor_id}/delete")
+def admin_delete_room_sensor(sensor_id: int, room_id: int = Form(...)):
+    q.delete_sensor(sensor_id)
+    return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+@router.get("/room-sensors/{sensor_id}/edit")
+def admin_edit_room_sensor(request: Request, sensor_id: int):
+    sensor = q.get_sensor(sensor_id)
+    if sensor is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    sensor["target_temp_min_f"] = _c_to_f(sensor["target_temp_min_c"])
+    sensor["target_temp_max_f"] = _c_to_f(sensor["target_temp_max_c"])
+    return templates.TemplateResponse(
+        request, "admin_room_sensor_edit.html",
+        {"sensor": sensor, "rooms": q.list_rooms(), "error": request.query_params.get("error")}
+    )
+
+
+@router.post("/room-sensors/{sensor_id}/update")
+def admin_update_room_sensor(
+    sensor_id: int,
+    room_id: int = Form(...),
+    label: str = Form(...),
+    tracking_mode: str = Form("smart"),
+    mac_address: str = Form(""),
+    temp_min_f: float | None = Form(None),
+    temp_max_f: float | None = Form(None),
+    humidity_min: float | None = Form(None),
+    humidity_max: float | None = Form(None),
+):
+    try:
+        q.update_room_sensor(sensor_id, room_id, label, tracking_mode, mac_address or None,
+                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/room-sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)

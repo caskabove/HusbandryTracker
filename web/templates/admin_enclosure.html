@@ -23,6 +23,26 @@
                 <label>Watering interval (days) <input type="number" name="watering_interval" value="{{ enclosure.watering_interval_days }}" min="1"></label>
                 <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="{{ enclosure.spot_clean_interval_days }}" min="1"></label>
                 <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="{{ enclosure.deep_clean_interval_days }}" min="1"></label>
+                <label>Room
+                    <select name="room_id">
+                        <option value="">&mdash; None &mdash;</option>
+                        {% for r in rooms %}
+                        <option value="{{ r.id }}" {% if enclosure.room_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                {% if enclosure.room_id and not enclosure.sensors %}
+                <label>Fallback Sensor
+                    <select name="fallback_sensor_id">
+                        <option value="">&mdash; None &mdash;</option>
+                        {% for s in room_sensors %}
+                        <option value="{{ s.id }}" {% if enclosure.fallback_sensor_id == s.id %}selected{% endif %}>{{ s.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                {% elif enclosure.room_id and enclosure.sensors %}
+                <p class="empty">This Enclosure has its own Sensor(s), so it won't use a Room Fallback Sensor.</p>
+                {% endif %}
                 <button type="submit">Save</button>
             </form>
             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete {{ enclosure.name }} and everything in it? This cannot be undone.');">

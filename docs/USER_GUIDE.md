@@ -108,12 +108,18 @@ local-only dashboard, not accessible from other devices or the internet).
 
 ## 4. Using the Dashboard
 
-The dashboard is a glance-only screen — one panel per enclosure, nothing to fill out here except a
-Manual Sensor's readings (see below). Each panel shows:
+The dashboard is a glance-only screen, one panel per enclosure, nothing to fill out here except a
+Manual Sensor's readings (see below). Panels are grouped by **Room** (see Section 5) — each Room
+gets a heading showing its own ambient reading and Light Schedule, with its Enclosures' panels
+underneath; any Enclosure not yet assigned to a Room lands in an "Ungrouped" section at the end.
+Each panel shows:
 
 - **Enclosure name**, and each animal living in it (name, species, date of birth), at the top —
   click it to jump to that enclosure's Admin page.
-- **Temp / Humidity** — the latest reading from that enclosure's sensor(s).
+- **Temp / Humidity** — the latest reading from that enclosure's own sensor(s). If it has none of
+  its own but belongs to a Room, it instead shows that Room's Fallback Sensor reading, labeled
+  "room" and always gray — that reading is real, but it's the room's general condition, not a
+  judgment on whether it's right for that specific animal.
 - **Care** — how long it's been since the enclosure was last fed, watered, spot-cleaned, and
   deep-cleaned. Click any of those (e.g. "3d ago", "never") to jump straight to that specific log
   entry on the enclosure's Admin page.
@@ -158,6 +164,25 @@ happened earlier (fed this morning but only logging it tonight, say).
 Each enclosure's Admin page has a **Schedules** card near the bottom, one row per Plug. A Smart
 Plug shows its inferred on-time once that feature is fully turned on (see note at the end); a
 Manual Plug shows the on/off time you declared for it when adding the plug.
+
+### Adding a Room, and grouping enclosures into it
+
+A **Room** groups Enclosures that share a physical space (e.g. "Living Room"). It's optional — an
+Enclosure with no Room behaves exactly as before. On the main Admin page, fill out the **"Add
+Room"** form: just a name. Click into the new Room's page to add its own ambient Sensor(s) (Smart
+or Manual, same as an Enclosure's) and its **Light Schedule** — an on-time/off-time for the room's
+general lighting, plus a free-text note for anything else worth capturing (e.g. "natural light from
+east window", "dimmed after 6pm").
+
+To put an Enclosure in a Room, go to that Enclosure's own Admin page and pick it from the **Room**
+dropdown in Enclosure Settings.
+
+**Fallback Sensor**: if an Enclosure has no Sensor of its own but belongs to a Room, its Enclosure
+Settings form grows a **Fallback Sensor** dropdown listing that Room's Sensor(s) — pick whichever
+one sits physically closest to that Enclosure. The dashboard will then show that Sensor's reading
+on the Enclosure's own panel (clearly labeled, always gray — see Section 4 for why). If the
+Enclosure later gets a real Sensor of its own, that always takes priority and the Fallback Sensor
+stops being used.
 
 ### Adding a new enclosure
 

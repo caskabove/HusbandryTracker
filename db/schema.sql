@@ -3,9 +3,23 @@
 
 PRAGMA foreign_keys = ON;
 
+-- A named grouping of Enclosures sharing a physical space. See CONTEXT.md: Room, Light Schedule.
+-- No Animals, Bioactive flag, or Care Events here — a Room isn't a housing unit, it's a grouping +
+-- ambient-monitoring layer around one or more Enclosures.
+CREATE TABLE IF NOT EXISTS room (
+    id              INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL UNIQUE,
+    light_on_time   TEXT,    -- "HH:MM", Light Schedule — both-or-neither with light_off_time
+    light_off_time  TEXT,    -- "HH:MM"
+    light_notes     TEXT,    -- free text, independent of whether a time is set
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS enclosure (
     id                        INTEGER PRIMARY KEY,
     name                      TEXT NOT NULL UNIQUE,
+    room_id                   INTEGER REFERENCES room(id) ON DELETE SET NULL,  -- optional (see CONTEXT.md: Room)
+    fallback_sensor_id        INTEGER REFERENCES sensor(id) ON DELETE SET NULL,  -- see CONTEXT.md: Fallback Sensor
     bioactive                 INTEGER NOT NULL DEFAULT 0,   -- 0/1, informational only (see CONTEXT.md: Bioactive)
     feeding_interval_days     INTEGER NOT NULL DEFAULT 7,
     watering_interval_days    INTEGER NOT NULL DEFAULT 3,
@@ -23,7 +37,8 @@ CREATE TABLE IF NOT EXISTS animal (
     dob                 TEXT   -- ISO date, nullable (not always known)
 );
 
--- A Sensor assigned to an Enclosure. See CONTEXT.md: Sensor, Tracking Mode, Target Range.
+-- A Sensor assigned to either an Enclosure or a Room, never both. See CONTEXT.md: Sensor,
+-- Tracking Mode, Target Range, Room.
 --
 -- tracking_mode = 'smart': a real Govee H5074 BLE device, polled automatically — mac_address
 -- required. tracking_mode = 'manual': no physical device — mac_address stays NULL, and Readings
@@ -34,7 +49,8 @@ CREATE TABLE IF NOT EXISTS animal (
 -- instead of a raw SQLite CHECK failure.
 CREATE TABLE IF NOT EXISTS sensor (
     id                  INTEGER PRIMARY KEY,
-    enclosure_id        INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    enclosure_id        INTEGER REFERENCES enclosure(id) ON DELETE CASCADE,
+    room_id             INTEGER REFERENCES room(id) ON DELETE CASCADE,
     label               TEXT NOT NULL,             -- e.g. "warm side", "cool side"
     tracking_mode       TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
     mac_address         TEXT UNIQUE,               -- e.g. "A4:C1:38:XX:XX:XX"; NULL for Manual
@@ -46,6 +62,10 @@ CREATE TABLE IF NOT EXISTS sensor (
     CHECK (
         (tracking_mode = 'smart' AND mac_address IS NOT NULL) OR
         (tracking_mode = 'manual' AND mac_address IS NULL)
+    ),
+    CHECK (
+        (enclosure_id IS NOT NULL AND room_id IS NULL) OR
+        (enclosure_id IS NULL AND room_id IS NOT NULL)
     )
 );
 

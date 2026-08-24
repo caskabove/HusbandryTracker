@@ -32,7 +32,18 @@ def _normalize_datetime_local(value: str | None) -> str | None:
     return value.replace("T", " ") + ":00"
 
 
-def get_dashboard_enclosures() -> list[dict]:
+def _latest_reading(conn, sensor_id: int) -> dict | None:
+    row = conn.execute(
+        """SELECT temperature_c, humidity_pct, battery_pct, recorded_at FROM sensor_reading
+           WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1""",
+        (sensor_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_dashboard_data() -> dict:
+    """Returns {"rooms": [...], "ungrouped": [...]} — the dashboard groups Enclosure panels by
+    Room (see CONTEXT.md: Room), with Room-less Enclosures falling into "ungrouped"."""
     with get_connection() as conn:
         enclosures = [dict(row) for row in conn.execute("SELECT * FROM enclosure ORDER BY name")]
 
@@ -45,13 +56,18 @@ def get_dashboard_enclosures() -> list[dict]:
 
             sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ?", (eid,))]
             for sensor in sensors:
-                latest = conn.execute(
-                    """SELECT temperature_c, humidity_pct, battery_pct, recorded_at FROM sensor_reading
-                       WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1""",
-                    (sensor["id"],),
-                ).fetchone()
-                sensor["latest_reading"] = dict(latest) if latest else None
+                sensor["latest_reading"] = _latest_reading(conn, sensor["id"])
             enclosure["sensors"] = sensors
+
+            # Fallback Sensor (see CONTEXT.md) — only relevant when this Enclosure has none of its
+            # own; its Reading is never colored (no Target Range comparison), see ADR 0004.
+            enclosure["fallback_sensor"] = None
+            enclosure["fallback_reading"] = None
+            if not sensors and enclosure["fallback_sensor_id"]:
+                fb_row = conn.execute("SELECT * FROM sensor WHERE id = ?", (enclosure["fallback_sensor_id"],)).fetchone()
+                if fb_row:
+                    enclosure["fallback_sensor"] = dict(fb_row)
+                    enclosure["fallback_reading"] = _latest_reading(conn, fb_row["id"])
 
             plugs = [dict(row) for row in conn.execute("SELECT * FROM plug WHERE enclosure_id = ?", (eid,))]
             for plug in plugs:
@@ -79,7 +95,17 @@ def get_dashboard_enclosures() -> list[dict]:
                 care[kind] = {"occurred_at": occurred_at, "days_since": days_since(occurred_at)}
             enclosure["care"] = care
 
-    return enclosures
+        rooms = [dict(row) for row in conn.execute("SELECT * FROM room ORDER BY name")]
+        for room in rooms:
+            room_sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE room_id = ?", (room["id"],))]
+            for sensor in room_sensors:
+                sensor["latest_reading"] = _latest_reading(conn, sensor["id"])
+            room["sensors"] = room_sensors
+            room["enclosures"] = [e for e in enclosures if e["room_id"] == room["id"]]
+
+        ungrouped = [e for e in enclosures if e["room_id"] is None]
+
+    return {"rooms": rooms, "ungrouped": ungrouped}
 
 
 def log_care_event(enclosure_id: int, kind: str, note: str | None = None, occurred_at: str | None = None) -> None:
