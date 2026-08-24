@@ -269,6 +269,13 @@ def get_room(room_id: int) -> dict | None:
             return None
         room = dict(row)
         room["sensors"] = [dict(r) for r in conn.execute("SELECT * FROM sensor WHERE room_id = ? ORDER BY label", (room_id,))]
+        for sensor in room["sensors"]:
+            latest = conn.execute(
+                """SELECT temperature_c, humidity_pct, recorded_at FROM sensor_reading
+                   WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1""",
+                (sensor["id"],),
+            ).fetchone()
+            sensor["latest_reading"] = dict(latest) if latest else None
         room["enclosures"] = [dict(r) for r in conn.execute("SELECT * FROM enclosure WHERE room_id = ? ORDER BY name", (room_id,))]
         return room
 
@@ -294,3 +301,19 @@ def delete_room(room_id: int) -> None:
     # (un-assigned, not deleted) via the FK's ON DELETE SET NULL — see ADR 0004.
     with get_connection() as conn:
         conn.execute("DELETE FROM room WHERE id = ?", (room_id,))
+
+
+def get_settings() -> dict:
+    """App-wide settings — a single row (see CONTEXT.md: Refresh, ADR 0005)."""
+    with get_connection() as conn:
+        return dict(conn.execute("SELECT * FROM app_setting WHERE id = 1").fetchone())
+
+
+def update_settings(ble_refresh_timeout_seconds: int) -> None:
+    if ble_refresh_timeout_seconds < 1:
+        raise ValueError("Refresh Timeout needs to be at least 1 second.")
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE app_setting SET ble_refresh_timeout_seconds = ? WHERE id = 1",
+            (ble_refresh_timeout_seconds,),
+        )

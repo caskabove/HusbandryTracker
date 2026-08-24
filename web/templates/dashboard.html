@@ -65,6 +65,11 @@
                     <div class="animal animal-none">No animals registered</div>
                     {% endfor %}
                 </a>
+                {% if enclosure.sensors | selectattr("tracking_mode", "equalto", "smart") | list %}
+                <form method="post" action="/enclosures/{{ enclosure.id }}/refresh" class="entity-refresh-form">
+                    <button type="submit" title="Force a live BLE read from this Enclosure's own Sensor(s) now">&#8635; Refresh</button>
+                </form>
+                {% endif %}
             </header>
 
             <div class="panel-body">
@@ -132,6 +137,11 @@
                         </span>
                     </div>
                 </a>
+                {% if room.sensors | selectattr("tracking_mode", "equalto", "smart") | list %}
+                <form method="post" action="/rooms/{{ room.id }}/refresh" class="entity-refresh-form">
+                    <button type="submit" title="Force a live BLE read from this Room's own Sensor(s) now">&#8635; Refresh</button>
+                </form>
+                {% endif %}
             </header>
             <div class="panel-grid">
                 {% for enclosure in room.enclosures %}

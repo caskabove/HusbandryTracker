@@ -13,6 +13,18 @@
     </header>
 
     <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Settings</h2>
+            <form method="post" action="/admin/settings" class="admin-form">
+                <label>Refresh Timeout (seconds)
+                    <input type="number" name="ble_refresh_timeout_seconds" value="{{ settings.ble_refresh_timeout_seconds }}" min="1">
+                </label>
+                <button type="submit">Save</button>
+            </form>
+            <p class="empty">How long a dashboard "Refresh" button waits for a live BLE reading from a Smart Sensor before giving up.</p>
+        </section>
+
         <section class="admin-card">
             <h2>Enclosures</h2>
             <table class="admin-table">

@@ -20,8 +20,10 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from db.db import init_db
+from collectors.govee_refresh import refresh_sensors
+from db.db import get_connection, init_db
 from web.admin import router as admin_router
+from web.admin_queries import get_settings
 from web.queries import CARE_EVENT_KINDS, get_dashboard_data, log_reading
 from web.status import care_interval_status, target_range_status
 
@@ -69,6 +71,46 @@ def guide(request: Request):
     text = USER_GUIDE_PATH.read_text(encoding="utf-8")
     content_html = markdown.markdown(text, extensions=["tables", "fenced_code", "toc"])
     return templates.TemplateResponse(request, "guide.html", {"content_html": content_html})
+
+
+async def _refresh_smart_sensors(column: str, entity_id: int) -> str | None:
+    """Runs a live BLE Refresh for every Smart Sensor owned by the given Enclosure or Room — never
+    anything it merely borrows (a Fallback Sensor) or a sibling entity's own Sensors (see
+    CONTEXT.md: Refresh). Returns a friendly error message if any Sensor didn't report in time
+    within the configured Refresh Timeout, else None."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT id, label, mac_address FROM sensor WHERE {column} = ? AND tracking_mode = 'smart'",
+            (entity_id,),
+        ).fetchall()
+    if not rows:
+        return None
+
+    sensors_by_mac = {row["mac_address"].upper(): (row["id"], row["label"]) for row in rows}
+    sensor_ids_by_mac = {mac: sensor_id for mac, (sensor_id, _label) in sensors_by_mac.items()}
+    timeout = get_settings()["ble_refresh_timeout_seconds"]
+    results = await refresh_sensors(sensor_ids_by_mac, timeout)
+
+    missing = [label for mac, (_id, label) in sensors_by_mac.items() if mac not in results]
+    if missing:
+        return f"No fresh reading within {timeout}s from: {', '.join(missing)}."
+    return None
+
+
+@app.post("/enclosures/{enclosure_id}/refresh")
+async def refresh_enclosure(enclosure_id: int):
+    error = await _refresh_smart_sensors("enclosure_id", enclosure_id)
+    if error:
+        return RedirectResponse(url=f"/?error={quote(error)}", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/rooms/{room_id}/refresh")
+async def refresh_room(room_id: int):
+    error = await _refresh_smart_sensors("room_id", room_id)
+    if error:
+        return RedirectResponse(url=f"/?error={quote(error)}", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/sensors/{sensor_id}/readings")

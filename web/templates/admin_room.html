@@ -31,13 +31,21 @@
         <section class="admin-card">
             <h2>Sensors</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Target Temp (F)</th><th>Target Humidity</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Reading</th><th>Target Temp (F)</th><th>Target Humidity</th><th></th></tr></thead>
                 <tbody>
                 {% for s in room.sensors %}
+                    {% set reading = s.latest_reading %}
+                    {% set temp_status = target_range_status(reading.temperature_c if reading else None, s.target_temp_min_c, s.target_temp_max_c) %}
+                    {% set humidity_status = target_range_status(reading.humidity_pct if reading else None, s.target_humidity_min, s.target_humidity_max) %}
                     <tr>
                         <td class="admin-table-primary">{{ s.label }}</td>
                         <td>{{ s.tracking_mode|capitalize }}</td>
                         <td>{{ s.mac_address or "—" }}</td>
+                        <td>
+                            {% if reading and reading.temperature_c is not none %}<span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span>{% endif %}
+                            {% if reading and reading.humidity_pct is not none %}<span class="pill status-{{ humidity_status.value }}">{{ "%.0f"|format(reading.humidity_pct) }}%</span>{% endif %}
+                            {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                        </td>
                         <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
                         <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
                         <td>
@@ -49,7 +57,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="empty">No sensors registered</td></tr>
+                    <tr><td colspan="7" class="empty">No sensors registered</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

@@ -18,11 +18,12 @@ from fastapi.templating import Jinja2Templates
 
 from web import admin_queries as q
 from web.queries import CARE_EVENT_KINDS, log_care_event
-from web.status import care_interval_status
+from web.status import care_interval_status, target_range_status
 
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 templates.env.globals["care_interval_status"] = care_interval_status
+templates.env.globals["target_range_status"] = target_range_status
 
 
 def _f_to_c(fahrenheit: float | None) -> float | None:
@@ -50,8 +51,18 @@ def admin_index(request: Request):
             "enclosures": enclosures, "rooms": rooms,
             "rooms_by_id": {r["id"]: r["name"] for r in rooms},
             "enclosure_count_by_room": enclosure_count_by_room,
+            "settings": q.get_settings(), "error": request.query_params.get("error"),
         }
     )
+
+
+@router.post("/settings")
+def admin_update_settings(ble_refresh_timeout_seconds: int = Form(30)):
+    try:
+        q.update_settings(ble_refresh_timeout_seconds)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
 
 
 @router.post("/enclosures")

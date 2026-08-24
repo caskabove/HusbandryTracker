@@ -3,6 +3,15 @@
 
 PRAGMA foreign_keys = ON;
 
+-- App-wide settings — a single row, not a generic key-value store, since there's only one setting
+-- so far (see CONTEXT.md: Refresh, ADR 0005). Add columns here as more settings arise; don't
+-- generalize to a key-value shape ahead of actually needing a second one.
+CREATE TABLE IF NOT EXISTS app_setting (
+    id                          INTEGER PRIMARY KEY CHECK (id = 1),
+    ble_refresh_timeout_seconds INTEGER NOT NULL DEFAULT 30
+);
+INSERT OR IGNORE INTO app_setting (id) VALUES (1);
+
 -- A named grouping of Enclosures sharing a physical space. See CONTEXT.md: Room, Light Schedule.
 -- No Animals, Bioactive flag, or Care Events here — a Room isn't a housing unit, it's a grouping +
 -- ambient-monitoring layer around one or more Enclosures.

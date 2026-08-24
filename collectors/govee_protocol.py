@@ -73,3 +73,12 @@ def decode_h5102(data: bytes) -> GoveeReading | None:
     humidity_pct = (packed % 1000) / 10.0
     battery = data[5]
     return GoveeReading(temperature_c=temperature_c, humidity_pct=humidity_pct, battery_pct=battery)
+
+
+# The one shared source of truth for "which decoder handles which company ID" — collectors,
+# tools/govee_discover.py, and collectors/govee_refresh.py all dispatch off this instead of each
+# keeping their own copy. A device only ever matches one of these.
+DECODERS = [
+    (MANUFACTURER_ID, decode_h5074),
+    (MANUFACTURER_ID_H5102, decode_h5102),
+]

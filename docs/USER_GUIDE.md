@@ -127,6 +127,17 @@ Each panel shows:
 Schedules (light/heat/cooling on-times) and the actual Care logging buttons live on each
 enclosure's Admin page instead — see Section 5.
 
+### Forcing a fresh reading with "↻ Refresh"
+
+A Room or Enclosure with at least one Smart (Govee) Sensor of its own gets a small **"↻ Refresh"**
+button next to its name. Clicking it waits for a real live reading from that Sensor right now,
+instead of whatever the background listener last happened to hear — real sensors only broadcast
+every 10-60+ seconds, so this can take a little while (the browser just waits; that's normal).
+Only ever refreshes what that Room/Enclosure actually owns — a Room's button never reaches into its
+Enclosures, and an Enclosure showing a Room's Fallback Sensor reading has no button of its own (use
+the Room's instead). How long it waits before giving up is the **Refresh Timeout** setting on the
+main Admin page (default 30s).
+
 ### What the colors mean
 
 | Color | Meaning |
