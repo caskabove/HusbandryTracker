@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,8 +25,16 @@ from db.db import get_connection, init_db
 REFRESH_REGISTRY_SECONDS = 60
 UNKNOWN_MAC_LOG_LIMIT = 200  # avoid unbounded growth if something noisy is nearby for days
 
+# Some Govee devices send each advertisement twice a second or so apart for reliability — without
+# this, that shows up as two identical sensor_reading rows per real broadcast. Only suppresses a
+# write that's both identical AND this soon after the last one; a stable room legitimately
+# reporting the same value on its *next real* broadcast (10-30s+ later) still gets recorded, so
+# "as of" staleness on the dashboard keeps meaning what it says.
+DEDUPE_WINDOW_SECONDS = 5
+
 _registered_macs: dict[str, int] = {}  # mac_address -> sensor_id
 _logged_unknown: set[str] = set()
+_last_write: dict[int, tuple[tuple[float, float, int], float]] = {}  # sensor_id -> (reading tuple, monotonic time)
 
 
 def _refresh_registry() -> None:
@@ -57,6 +66,13 @@ def _on_detection(device: BLEDevice, adv: AdvertisementData) -> None:
     if reading is None:
         print(f"[govee] {mac}: couldn't decode advertisement (len={len(raw)})")
         return
+
+    key = (reading.temperature_c, reading.humidity_pct, reading.battery_pct)
+    now = time.monotonic()
+    prev = _last_write.get(sensor_id)
+    if prev is not None and prev[0] == key and (now - prev[1]) < DEDUPE_WINDOW_SECONDS:
+        return  # duplicate send of the same broadcast, not a new reading
+    _last_write[sensor_id] = (key, now)
 
     with get_connection() as conn:
         conn.execute(
