@@ -55,14 +55,14 @@
                 </div>
                 <label>Tracking Mode
                     <select id="edit-plug-tracking-mode" name="tracking_mode"
-                            onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-manual','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
+                            onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-schedule','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
                         <option value="smart" {% if plug.tracking_mode == "smart" %}selected{% endif %}>Smart (Tuya-controlled)</option>
                         <option value="manual" {% if plug.tracking_mode == "manual" %}selected{% endif %}>Manual (hand-switched, e.g. a timer)</option>
                     </select>
                 </label>
                 <label>Controller Kind
                     <select id="edit-plug-controller-kind" name="controller_kind"
-                            onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-manual','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
+                            onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-schedule','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
                         <option value="none" {% if plug.controller_kind == "none" %}selected{% endif %}>None (powers the heat/cooling/moisture source directly)</option>
                         <option value="thermostat" {% if plug.controller_kind == "thermostat" %}selected{% endif %}>Thermostat-Controlled (powers a separate thermostat unit)</option>
                         <option value="hydrostat" {% if plug.controller_kind == "hydrostat" %}selected{% endif %}>Hydrostat-Controlled (powers a separate humidity controller)</option>
@@ -78,10 +78,27 @@
                         Auto-Update (uncheck to pause background polling without losing this Plug's setup)
                     </label>
                 </div>
-                {% set manual_hidden = plug.tracking_mode != "manual" or plug.controller_kind != "none" %}
-                <div id="edit-plug-manual" class="mode-fields" {% if manual_hidden %}style="display:none"{% endif %}>
-                    <label>Declared on-time <input type="time" name="declared_on_time" value="{{ plug.declared_on_time or '' }}" {% if manual_hidden %}disabled{% endif %}></label>
-                    <label>Declared off-time <input type="time" name="declared_off_time" value="{{ plug.declared_off_time or '' }}" {% if manual_hidden %}disabled{% endif %}></label>
+                {# Target Schedule (see CONTEXT.md) is available on ANY Plug without a Controller
+                   Kind, Smart or Manual alike — not Manual-only any more (see ADR 0012). A Smart
+                   Plug additionally shows its Detected Schedule next to it, with a Timer Warning
+                   pill when the two disagree by more than the Schedule Drift Threshold. #}
+                {% set schedule_hidden = plug.controller_kind != "none" %}
+                <div id="edit-plug-schedule" class="mode-fields" {% if schedule_hidden %}style="display:none"{% endif %}>
+                    <label>Target on-time <input type="time" name="target_on_time" value="{{ plug.target_on_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                    <label>Target off-time <input type="time" name="target_off_time" value="{{ plug.target_off_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                    {% if plug.tracking_mode == "smart" %}
+                    {% set on_drift = schedule_drift_status(plug.target_on_time, plug.detected_on_time, schedule_drift_threshold_minutes) %}
+                    {% set off_drift = schedule_drift_status(plug.target_off_time, plug.detected_off_time, schedule_drift_threshold_minutes) %}
+                    <p class="empty">
+                        Detected: on
+                        <span class="{% if on_drift.value == 'red' %}status-red-text{% endif %}">{{ plug.detected_on_time or "no data yet" }}</span>,
+                        off
+                        <span class="{% if off_drift.value == 'red' %}status-red-text{% endif %}">{{ plug.detected_off_time or "no data yet" }}</span>
+                        {% if on_drift.value == "red" or off_drift.value == "red" %}
+                        <span class="pill status-red">Timer Warning</span>
+                        {% endif %}
+                    </p>
+                    {% endif %}
                 </div>
                 {% set thermostat_hidden = plug.controller_kind != "thermostat" %}
                 <div id="edit-plug-thermostat-fields" class="mode-fields" {% if thermostat_hidden %}style="display:none"{% endif %}>

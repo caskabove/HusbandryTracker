@@ -41,6 +41,20 @@ def target_range_status(value: float | None, min_value: float | None, max_value:
     return Status.GREEN
 
 
+def schedule_drift_status(target_time: str | None, detected_time: str | None, threshold_minutes: int) -> Status:
+    """Timer Warning (see CONTEXT.md: Target Schedule, Detected Schedule, Timer Warning) — compares
+    a Plug's Target Schedule against its Detected Schedule for one of its two times (on or off,
+    called separately for each). Both "HH:MM" strings; wraparound-aware (23:50 vs 00:05 is a
+    15-minute gap, not a 23-hour one) since a schedule can straddle midnight."""
+    if target_time is None or detected_time is None:
+        return Status.UNKNOWN  # nothing to compare yet — not a violation
+    target_minutes = int(target_time[:2]) * 60 + int(target_time[3:5])
+    detected_minutes = int(detected_time[:2]) * 60 + int(detected_time[3:5])
+    diff = abs(target_minutes - detected_minutes)
+    diff = min(diff, 1440 - diff)
+    return Status.RED if diff > threshold_minutes else Status.GREEN
+
+
 def care_interval_status(days_since_last: int | None, interval_days: int) -> Status:
     """days_since_last is None when the Care Event has never been logged for this Enclosure."""
     if days_since_last is None:

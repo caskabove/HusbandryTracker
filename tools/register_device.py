@@ -124,10 +124,16 @@ def _format_plug_line(plug: sqlite3.Row) -> str:
     if plug["controller_kind"] == "hydrostat":
         target = f"{plug['target_humidity_pct']:.1f}%" if plug["target_humidity_pct"] is not None else "not set"
         return f"  plug:   {plug['label']} purpose={plug['purpose']} (Hydrostat-Controlled, target={target})"
+    # Target Schedule (see CONTEXT.md, ADR 0012) applies to any Plug without a Controller Kind,
+    # Smart or Manual alike — this tool doesn't compute a Smart Plug's Detected Schedule (that's
+    # derived on demand in web/admin_queries.py; not worth duplicating here for a diagnostic list).
+    target = None
+    if plug["target_on_time"] and plug["target_off_time"]:
+        target = f"target {plug['target_on_time']}-{plug['target_off_time']}"
     if plug["tracking_mode"] == "manual":
-        on, off = plug["declared_on_time"] or "?", plug["declared_off_time"] or "?"
-        return f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — declared {on}-{off})"
-    return f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}"
+        return f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — {target or 'no target schedule set'})"
+    suffix = f" {target}" if target else ""
+    return f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}{suffix}"
 
 
 def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:

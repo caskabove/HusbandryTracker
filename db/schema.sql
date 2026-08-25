@@ -7,11 +7,12 @@ PRAGMA foreign_keys = ON;
 -- settings (see CONTEXT.md: Refresh, Alert Debounce; ADR 0005, ADR 0010). Add columns here as more
 -- settings arise; don't generalize to a key-value shape ahead of actually needing it.
 CREATE TABLE IF NOT EXISTS app_setting (
-    id                          INTEGER PRIMARY KEY CHECK (id = 1),
-    ble_refresh_timeout_seconds INTEGER NOT NULL DEFAULT 30,
-    alert_debounce_minutes      INTEGER NOT NULL DEFAULT 10,  -- see CONTEXT.md: Alert Debounce, ADR 0010
-    ntfy_server_url             TEXT,                         -- e.g. "https://ntfy.sh"; NULL/empty disables Send Alert delivery
-    ntfy_topic                  TEXT
+    id                             INTEGER PRIMARY KEY CHECK (id = 1),
+    ble_refresh_timeout_seconds    INTEGER NOT NULL DEFAULT 30,
+    alert_debounce_minutes         INTEGER NOT NULL DEFAULT 10,  -- see CONTEXT.md: Alert Debounce, ADR 0010
+    ntfy_server_url                TEXT,                         -- e.g. "https://ntfy.sh"; NULL/empty disables Send Alert delivery
+    ntfy_topic                     TEXT,
+    schedule_drift_threshold_minutes INTEGER NOT NULL DEFAULT 15  -- see CONTEXT.md: Timer Warning, ADR 0012
 );
 INSERT OR IGNORE INTO app_setting (id) VALUES (1);
 
@@ -157,8 +158,15 @@ CREATE TABLE IF NOT EXISTS sensor_alert_state (
 --
 -- tracking_mode = 'smart': a real Tuya-controlled Gosund plug, polled automatically — Tuya
 -- credentials required. tracking_mode = 'manual': no device, e.g. a mechanical timer — the Tuya
--- fields stay NULL and declared_on_time/declared_off_time hold the Declared Schedule the user
--- entered instead of one inferred from observed transitions.
+-- fields stay NULL.
+--
+-- target_on_time/target_off_time hold the Target Schedule (see CONTEXT.md: Target Schedule, ADR
+-- 0012) — available on any Plug without a Controller Kind, Smart or Manual alike. For a Manual
+-- Plug it's the only schedule info there is (nothing to observe). For a Smart Plug it's compared
+-- against the Detected Schedule (computed from plug_state_transition, not stored), flagged as a
+-- Timer Warning when they drift apart by more than schedule_drift_threshold_minutes
+-- (app_setting). Superseded "Declared Schedule" from earlier versions of this app, which only ever
+-- existed for a Manual Plug with no comparison possible.
 --
 -- Not every physical Tuya device is a single-outlet plug: multi-outlet power strips expose
 -- several independently-switched DPS keys (e.g. "1"/"2"/"3" for three AC outlets, "7" for a USB
@@ -181,8 +189,8 @@ CREATE TABLE IF NOT EXISTS plug (
     tuya_ip_address     TEXT,                           -- optional pin; tinytuya can also auto-discover on LAN
     switch_dps_key      TEXT NOT NULL DEFAULT '1',      -- which outlet on the device this Plug controls
     auto_update_enabled INTEGER NOT NULL DEFAULT 1,     -- 0/1, Smart Plug only (see CONTEXT.md: Auto-Update)
-    declared_on_time    TEXT,                           -- "HH:MM", Manual Plug only, never with a Controller Kind set (see CONTEXT.md: Schedule)
-    declared_off_time   TEXT,                           -- "HH:MM", Manual Plug only, never with a Controller Kind set
+    target_on_time      TEXT,                           -- "HH:MM", never with a Controller Kind set (see CONTEXT.md: Target Schedule)
+    target_off_time     TEXT,                           -- "HH:MM", never with a Controller Kind set
     controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'thermostat', 'hydrostat')),  -- see CONTEXT.md: Controller Kind, ADR 0008 (supersedes ADR 0007's is_thermostat_controlled)
     target_temp_c       REAL,                           -- required together with controller_kind = 'thermostat'; enforced in web/admin_queries.py, not here
     target_humidity_pct REAL,                           -- required together with controller_kind = 'hydrostat'; enforced in web/admin_queries.py, not here

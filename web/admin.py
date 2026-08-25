@@ -20,12 +20,13 @@ from fastapi.templating import Jinja2Templates
 from schemas import enclosure_types as et
 from web import admin_queries as q
 from web.queries import CARE_EVENT_KINDS, log_care_event
-from web.status import care_interval_status, target_range_status
+from web.status import care_interval_status, schedule_drift_status, target_range_status
 
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 templates.env.globals["care_interval_status"] = care_interval_status
 templates.env.globals["target_range_status"] = target_range_status
+templates.env.globals["schedule_drift_status"] = schedule_drift_status
 templates.env.globals["ENCLOSURE_TYPES"] = et.ENCLOSURE_TYPES
 templates.env.globals["ENCLOSURE_TYPE_LABELS"] = et.ENCLOSURE_TYPE_LABELS
 templates.env.globals["target_range_metrics_for"] = et.target_range_metrics_for
@@ -93,10 +94,11 @@ def admin_update_settings(
     alert_debounce_minutes: int = Form(10),
     ntfy_server_url: str = Form(""),
     ntfy_topic: str = Form(""),
+    schedule_drift_threshold_minutes: int = Form(15),
 ):
     try:
         q.update_settings(ble_refresh_timeout_seconds, alert_debounce_minutes,
-                           ntfy_server_url or None, ntfy_topic or None)
+                           ntfy_server_url or None, ntfy_topic or None, schedule_drift_threshold_minutes)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
@@ -135,7 +137,9 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
         request, "admin_enclosure.html",
         {
             "enclosure": enclosure, "care_kinds": CARE_EVENT_KINDS, "rooms": q.list_rooms(),
-            "room_sensors": room_sensors, "error": request.query_params.get("error"),
+            "room_sensors": room_sensors,
+            "schedule_drift_threshold_minutes": q.get_settings()["schedule_drift_threshold_minutes"],
+            "error": request.query_params.get("error"),
         }
     )
 
@@ -381,8 +385,8 @@ def admin_create_plug(
     tuya_local_key: str = Form(""),
     tuya_ip_address: str = Form(""),
     switch_dps_key: str = Form("1"),
-    declared_on_time: str = Form(""),
-    declared_off_time: str = Form(""),
+    target_on_time: str = Form(""),
+    target_off_time: str = Form(""),
     room_id: str = Form(""),
     enclosure_ids: list[int] = Form(default=[]),
     controller_kind: str = Form("none"),
@@ -391,7 +395,7 @@ def admin_create_plug(
 ):
     try:
         q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
-                       tuya_ip_address, switch_dps_key, declared_on_time or None, declared_off_time or None,
+                       tuya_ip_address, switch_dps_key, target_on_time or None, target_off_time or None,
                        int(room_id) if room_id else None, enclosure_ids,
                        controller_kind, _f_to_c(target_temp_f), target_humidity_pct)
     except ValueError as exc:
@@ -417,6 +421,7 @@ def admin_edit_plug(request: Request, plug_id: int):
         request, "admin_plug_edit.html",
         {
             "plug": plug, "enclosures": q.list_enclosures(), "rooms": q.list_rooms(),
+            "schedule_drift_threshold_minutes": q.get_settings()["schedule_drift_threshold_minutes"],
             "error": request.query_params.get("error"),
         }
     )
@@ -432,8 +437,8 @@ def admin_update_plug(
     tuya_device_id: str = Form(""),
     tuya_local_key: str = Form(""),
     tuya_ip_address: str = Form(""),
-    declared_on_time: str = Form(""),
-    declared_off_time: str = Form(""),
+    target_on_time: str = Form(""),
+    target_off_time: str = Form(""),
     room_id: str = Form(""),
     enclosure_ids: list[int] = Form(default=[]),
     controller_kind: str = Form("none"),
@@ -444,7 +449,7 @@ def admin_update_plug(
     try:
         q.update_plug(plug_id, label, purpose, tracking_mode, switch_dps_key,
                        tuya_device_id or None, tuya_local_key or None, tuya_ip_address,
-                       declared_on_time or None, declared_off_time or None,
+                       target_on_time or None, target_off_time or None,
                        int(room_id) if room_id else None, enclosure_ids,
                        controller_kind, _f_to_c(target_temp_f), target_humidity_pct, auto_update_enabled)
     except ValueError as exc:
@@ -464,7 +469,12 @@ def admin_room_detail(request: Request, room_id: int):
     if room is None:
         return RedirectResponse(url="/admin", status_code=303)
     return templates.TemplateResponse(
-        request, "admin_room.html", {"room": room, "error": request.query_params.get("error")}
+        request, "admin_room.html",
+        {
+            "room": room,
+            "schedule_drift_threshold_minutes": q.get_settings()["schedule_drift_threshold_minutes"],
+            "error": request.query_params.get("error"),
+        }
     )
 
 

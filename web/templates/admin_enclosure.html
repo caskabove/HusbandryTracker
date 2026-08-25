@@ -293,15 +293,21 @@
                     {% elif plug.controller_kind == "hydrostat" %}
                         <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
                     {% elif plug.tracking_mode == "manual" %}
-                        {% if plug.declared_on_time and plug.declared_off_time %}
-                        <span class="pill status-unknown">Declared: {{ plug.declared_on_time }}&ndash;{{ plug.declared_off_time }}</span>
+                        {% if plug.target_on_time and plug.target_off_time %}
+                        <span class="pill status-unknown">{{ plug.target_on_time }}&ndash;{{ plug.target_off_time }}</span>
                         {% else %}
-                        <span class="pill status-unknown">manual — no declared schedule set</span>
+                        <span class="pill status-unknown">no target schedule set</span>
                         {% endif %}
-                    {% elif plug.inferred_schedule %}
-                        <span class="pill status-unknown">{{ plug.inferred_schedule }}</span>
-                    {% else %}
+                    {% elif not plug.target_on_time and not plug.target_off_time and not plug.detected_on_time and not plug.detected_off_time %}
                         <span class="pill status-unknown">no schedule data yet</span>
+                    {% else %}
+                        {% set on_drift = schedule_drift_status(plug.target_on_time, plug.detected_on_time, schedule_drift_threshold_minutes) %}
+                        {% set off_drift = schedule_drift_status(plug.target_off_time, plug.detected_off_time, schedule_drift_threshold_minutes) %}
+                        {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown") %}
+                        <span class="pill status-{{ pill_status }}" title="target/detected">
+                            On <span class="schedule-target">{{ plug.target_on_time or "—" }}</span>/{{ plug.detected_on_time or "—" }}
+                            · Off <span class="schedule-target">{{ plug.target_off_time or "—" }}</span>/{{ plug.detected_off_time or "—" }}
+                        </span>
                     {% endif %}
                 </div>
             {% else %}

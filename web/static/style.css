@@ -391,6 +391,12 @@ a.pill:hover { opacity: 0.85; }
 .status-red { background: var(--status-red); color: #fff; }
 .status-unknown { background: var(--status-unknown); color: var(--text); }
 
+/* Target Schedule vs Detected Schedule (see CONTEXT.md: Target Schedule, Detected Schedule, Timer
+   Warning) — the Target (manual-set) half of a "target/detected" pair renders lighter/muted so the
+   actually-observed half reads as the primary value at a glance. */
+.schedule-target { opacity: 0.7; }
+.status-red-text { color: var(--status-red); font-weight: 600; }
+
 .care-row { justify-content: space-between; }
 .spot-feed-picker { font-size: 0.8rem; }
 .care-actions {

@@ -33,9 +33,13 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             (enclosure_id,),
         )]
         for plug in enclosure["plugs"]:
-            # Schedule inference isn't built yet — see docs/PHASE1.md "What's NOT built yet". A Manual
-            # Plug shows its Declared Schedule instead (declared_on_time/declared_off_time columns).
-            plug["inferred_schedule"] = None
+            # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
+            # non-Controller-Kind Plug.
+            detected = _detect_schedule(conn, plug["id"]) if (
+                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+            ) else {"on_time": None, "off_time": None}
+            plug["detected_on_time"] = detected["on_time"]
+            plug["detected_off_time"] = detected["off_time"]
             # "everything on one switch" — see CONTEXT.md: Plug, ADR 0006. Names the *other*
             # Enclosures sharing this Plug, so it's obvious here it's not exclusive to this one.
             plug["shared_with"] = [r["name"] for r in conn.execute(
@@ -337,14 +341,14 @@ def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: 
 
 
 def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_key: str | None,
-                    declared_on_time: str | None, declared_off_time: str | None,
+                    target_on_time: str | None, target_off_time: str | None,
                     room_id: int | None, enclosure_ids: list[int],
                     controller_kind: str, target_temp_c: float | None,
                     target_humidity_pct: float | None) -> None:
-    """See CONTEXT.md: Tracking Mode, Schedule (Declared), Plug, Controller Kind. Raised as
-    ValueError so the Admin route can show a friendly message instead of a raw SQLite CHECK failure
-    (the Room-XOR-Enclosure-set rule can't be a CHECK at all — it depends on plug_enclosure row
-    counts, a different table)."""
+    """See CONTEXT.md: Tracking Mode, Target Schedule, Plug, Controller Kind. Raised as ValueError
+    so the Admin route can show a friendly message instead of a raw SQLite CHECK failure (the
+    Room-XOR-Enclosure-set rule can't be a CHECK at all — it depends on plug_enclosure row counts, a
+    different table)."""
     if tracking_mode not in ("smart", "manual"):
         raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
     if controller_kind not in ("none", "thermostat", "hydrostat"):
@@ -355,8 +359,11 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
     else:
         if tuya_device_id or tuya_local_key:
             raise ValueError("A Manual Plug has no device credentials — leave the Tuya fields blank.")
-        if controller_kind == "none" and bool(declared_on_time) != bool(declared_off_time):
-            raise ValueError("Enter both a declared on-time and off-time, or leave both blank.")
+    # Target Schedule's both-or-neither rule applies to any Plug without a Controller Kind, Smart
+    # or Manual alike — see ADR 0012 (this used to be Manual-only, back when it was called Declared
+    # Schedule and a Smart Plug had no way to set one at all).
+    if controller_kind == "none" and bool(target_on_time) != bool(target_off_time):
+        raise ValueError("Enter both a target on-time and off-time, or leave both blank.")
     if bool(room_id) == bool(enclosure_ids):
         raise ValueError("A Plug needs exactly one parent — pick a Room, or one or more Enclosures, not both or neither.")
     if controller_kind == "thermostat" and target_temp_c is None:
@@ -367,16 +374,16 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
 
 def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: str | None,
                  tuya_local_key: str | None, tuya_ip_address: str | None, switch_dps_key: str = "1",
-                 declared_on_time: str | None = None, declared_off_time: str | None = None,
+                 target_on_time: str | None = None, target_off_time: str | None = None,
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
                  target_humidity_pct: float | None = None) -> int:
     enclosure_ids = enclosure_ids or []
-    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time,
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
                    room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct)
     if controller_kind != "none":
         # Schedule isn't meaningful for a Thermostat-/Hydrostat-Controlled Plug — see ADR 0008.
-        declared_on_time = declared_off_time = None
+        target_on_time = target_off_time = None
     if controller_kind != "thermostat":
         target_temp_c = None
     if controller_kind != "hydrostat":
@@ -384,11 +391,11 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO plug (room_id, label, purpose, tracking_mode, tuya_device_id, tuya_local_key,
-                                  tuya_ip_address, switch_dps_key, declared_on_time, declared_off_time,
+                                  tuya_ip_address, switch_dps_key, target_on_time, target_off_time,
                                   controller_kind, target_temp_c, target_humidity_pct)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (room_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
-             tuya_ip_address or None, switch_dps_key or "1", declared_on_time or None, declared_off_time or None,
+             tuya_ip_address or None, switch_dps_key or "1", target_on_time or None, target_off_time or None,
              controller_kind, target_temp_c, target_humidity_pct),
         )
         plug_id = cur.lastrowid
@@ -411,7 +418,35 @@ def get_plug(plug_id: int) -> dict | None:
         plug["enclosure_ids"] = [r["enclosure_id"] for r in conn.execute(
             "SELECT enclosure_id FROM plug_enclosure WHERE plug_id = ?", (plug_id,)
         )]
+        # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
+        # non-Controller-Kind Plug.
+        detected = _detect_schedule(conn, plug_id) if (
+            plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+        ) else {"on_time": None, "off_time": None}
+        plug["detected_on_time"] = detected["on_time"]
+        plug["detected_off_time"] = detected["off_time"]
         return plug
+
+
+def _detect_schedule(conn, plug_id: int) -> dict:
+    """Detected Schedule (see CONTEXT.md) — the time-of-day of the most recent transition to on,
+    and separately to off, for a Smart Plug. Not an average across days, just the latest observed
+    instance of each (see ADR 0012). Either/both come back None if that kind of transition has never
+    been seen. Computed on demand from plug_state_transition, not stored."""
+    on_row = conn.execute(
+        """SELECT recorded_at FROM plug_state_transition WHERE plug_id = ? AND is_on = 1
+           ORDER BY recorded_at DESC LIMIT 1""",
+        (plug_id,),
+    ).fetchone()
+    off_row = conn.execute(
+        """SELECT recorded_at FROM plug_state_transition WHERE plug_id = ? AND is_on = 0
+           ORDER BY recorded_at DESC LIMIT 1""",
+        (plug_id,),
+    ).fetchone()
+    return {
+        "on_time": on_row["recorded_at"][11:16] if on_row else None,
+        "off_time": off_row["recorded_at"][11:16] if off_row else None,
+    }
 
 
 def list_plugs() -> list[dict]:
@@ -430,22 +465,29 @@ def list_plugs() -> list[dict]:
                     (plug["id"],),
                 )]
                 plug["parent_label"] = ", ".join(names) if names else "—"
+            # Detected Schedule only means anything for a Smart, non-Controller-Kind Plug — see
+            # CONTEXT.md: Detected Schedule.
+            detected = _detect_schedule(conn, plug["id"]) if (
+                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+            ) else {"on_time": None, "off_time": None}
+            plug["detected_on_time"] = detected["on_time"]
+            plug["detected_off_time"] = detected["off_time"]
         return plugs
 
 
 def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, switch_dps_key: str,
                  tuya_device_id: str | None, tuya_local_key: str | None, tuya_ip_address: str | None,
-                 declared_on_time: str | None = None, declared_off_time: str | None = None,
+                 target_on_time: str | None = None, target_off_time: str | None = None,
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
                  target_humidity_pct: float | None = None, auto_update_enabled: bool = True) -> None:
     """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Plug
     (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     enclosure_ids = enclosure_ids or []
-    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time,
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
                    room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct)
     if controller_kind != "none":
-        declared_on_time = declared_off_time = None
+        target_on_time = target_off_time = None
     if controller_kind != "thermostat":
         target_temp_c = None
     if controller_kind != "hydrostat":
@@ -454,10 +496,10 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?, switch_dps_key = ?,
                                 tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ?,
-                                declared_on_time = ?, declared_off_time = ?, auto_update_enabled = ?,
+                                target_on_time = ?, target_off_time = ?, auto_update_enabled = ?,
                                 controller_kind = ?, target_temp_c = ?, target_humidity_pct = ? WHERE id = ?""",
             (room_id, label, purpose, tracking_mode, switch_dps_key or "1", tuya_device_id or None,
-             tuya_local_key or None, tuya_ip_address or None, declared_on_time or None, declared_off_time or None,
+             tuya_local_key or None, tuya_ip_address or None, target_on_time or None, target_off_time or None,
              int(auto_update_enabled), controller_kind, target_temp_c, target_humidity_pct,
              plug_id),
         )
@@ -493,9 +535,13 @@ def get_room(room_id: int) -> dict | None:
             sensor["latest_reading"] = dict(latest) if latest else None
         room["plugs"] = [dict(r) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
         for plug in room["plugs"]:
-            # Schedule inference isn't built yet — see docs/PHASE1.md "What's NOT built yet". A
-            # Manual Plug shows its Declared Schedule instead (declared_on_time/declared_off_time).
-            plug["inferred_schedule"] = None
+            # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
+            # non-Controller-Kind Plug.
+            detected = _detect_schedule(conn, plug["id"]) if (
+                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+            ) else {"on_time": None, "off_time": None}
+            plug["detected_on_time"] = detected["on_time"]
+            plug["detected_off_time"] = detected["off_time"]
         room["enclosures"] = [dict(r) for r in conn.execute("SELECT * FROM enclosure WHERE room_id = ? ORDER BY name", (room_id,))]
         return room
 
@@ -530,17 +576,22 @@ def get_settings() -> dict:
 
 
 def update_settings(ble_refresh_timeout_seconds: int, alert_debounce_minutes: int,
-                     ntfy_server_url: str | None, ntfy_topic: str | None) -> None:
-    """See CONTEXT.md: Refresh (ADR 0005), Alert Debounce (ADR 0010). ntfy_server_url/ntfy_topic
-    left blank disables Send Alert delivery entirely — see collectors/alerts.py, which just logs to
-    the console instead of sending in that case."""
+                     ntfy_server_url: str | None, ntfy_topic: str | None,
+                     schedule_drift_threshold_minutes: int = 15) -> None:
+    """See CONTEXT.md: Refresh (ADR 0005), Alert Debounce (ADR 0010), Timer Warning (ADR 0012).
+    ntfy_server_url/ntfy_topic left blank disables Send Alert delivery entirely — see
+    collectors/alerts.py, which just logs to the console instead of sending in that case."""
     if ble_refresh_timeout_seconds < 1:
         raise ValueError("Refresh Timeout needs to be at least 1 second.")
     if alert_debounce_minutes < 1:
         raise ValueError("Alert Debounce needs to be at least 1 minute.")
+    if schedule_drift_threshold_minutes < 1:
+        raise ValueError("Schedule Drift Threshold needs to be at least 1 minute.")
     with get_connection() as conn:
         conn.execute(
             """UPDATE app_setting SET ble_refresh_timeout_seconds = ?, alert_debounce_minutes = ?,
-                                       ntfy_server_url = ?, ntfy_topic = ? WHERE id = 1""",
-            (ble_refresh_timeout_seconds, alert_debounce_minutes, ntfy_server_url or None, ntfy_topic or None),
+                                       ntfy_server_url = ?, ntfy_topic = ?,
+                                       schedule_drift_threshold_minutes = ? WHERE id = 1""",
+            (ble_refresh_timeout_seconds, alert_debounce_minutes, ntfy_server_url or None, ntfy_topic or None,
+             schedule_drift_threshold_minutes),
         )

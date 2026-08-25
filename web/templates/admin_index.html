@@ -29,11 +29,15 @@
                 <label>ntfy Topic
                     <input type="text" name="ntfy_topic" value="{{ settings.ntfy_topic or '' }}" placeholder="herpmonitor-yourname">
                 </label>
+                <label>Schedule Drift Threshold (minutes)
+                    <input type="number" name="schedule_drift_threshold_minutes" value="{{ settings.schedule_drift_threshold_minutes }}" min="1">
+                </label>
                 <button type="submit">Save</button>
             </form>
             <p class="empty">How long a dashboard "Refresh" button waits for a live BLE reading from a Smart Sensor before giving up.
                 Alert Debounce is how long a Sensor/Plug problem must persist before a Send Alert notification fires (see CONTEXT.md: Alert).
-                Leave the ntfy fields blank to disable push delivery — Alerts still track state, they just print to the console instead.</p>
+                Leave the ntfy fields blank to disable push delivery — Alerts still track state, they just print to the console instead.
+                Schedule Drift Threshold is how far a Smart Plug's Target and Detected Schedule can disagree before a Timer Warning shows (see CONTEXT.md: Timer Warning).</p>
         </section>
 
         <section class="admin-card">
@@ -112,7 +116,7 @@
         <section class="admin-card">
             <h2>Plugs</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th>Schedule</th><th></th></tr></thead>
                 <tbody>
                 {% for p in plugs %}
                     <tr>
@@ -120,10 +124,33 @@
                         <td>{{ p.purpose }}</td>
                         <td>{{ p.tracking_mode|capitalize }}</td>
                         <td>{{ p.parent_label }}</td>
+                        <td>
+                            {% if p.controller_kind == "thermostat" %}
+                            <span class="pill status-unknown">Target: {% if p.target_temp_c is not none %}{{ "%.0f"|format(p.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
+                            {% elif p.controller_kind == "hydrostat" %}
+                            <span class="pill status-unknown">Target: {% if p.target_humidity_pct is not none %}{{ "%.0f"|format(p.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
+                            {% elif p.tracking_mode == "manual" %}
+                                {% if p.target_on_time and p.target_off_time %}
+                                <span class="pill status-unknown">{{ p.target_on_time }}&ndash;{{ p.target_off_time }}</span>
+                                {% else %}
+                                <span class="pill status-unknown">no target schedule set</span>
+                                {% endif %}
+                            {% elif not p.target_on_time and not p.target_off_time and not p.detected_on_time and not p.detected_off_time %}
+                            <span class="pill status-unknown">no schedule data yet</span>
+                            {% else %}
+                                {% set on_drift = schedule_drift_status(p.target_on_time, p.detected_on_time, settings.schedule_drift_threshold_minutes) %}
+                                {% set off_drift = schedule_drift_status(p.target_off_time, p.detected_off_time, settings.schedule_drift_threshold_minutes) %}
+                                {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown") %}
+                                <span class="pill status-{{ pill_status }}" title="target/detected — see Edit Plug for a Timer Warning breakdown">
+                                    On <span class="schedule-target">{{ p.target_on_time or "—" }}</span>/{{ p.detected_on_time or "—" }}
+                                    · Off <span class="schedule-target">{{ p.target_off_time or "—" }}</span>/{{ p.detected_off_time or "—" }}
+                                </span>
+                            {% endif %}
+                        </td>
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="5" class="empty">No plugs yet — add one below.</td></tr>
+                    <tr><td colspan="6" class="empty">No plugs yet — add one below.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -163,14 +190,14 @@
                     </div>
                     <label>Tracking Mode
                         <select id="add-plug-tracking-mode" name="tracking_mode"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-manual','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
                             <option value="smart">Smart (Tuya-controlled)</option>
                             <option value="manual">Manual (hand-switched, e.g. a timer)</option>
                         </select>
                     </label>
                     <label>Controller Kind
                         <select id="add-plug-controller-kind" name="controller_kind"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-manual','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
                             <option value="none" selected>None (powers the heat/cooling/moisture source directly)</option>
                             <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
                             <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
@@ -182,9 +209,12 @@
                         <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
                         <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
                     </div>
-                    <div id="add-plug-manual" class="mode-fields" style="display:none">
-                        <label>Declared on-time <input type="time" name="declared_on_time"></label>
-                        <label>Declared off-time <input type="time" name="declared_off_time"></label>
+                    {# Target Schedule — available regardless of Tracking Mode, only hidden when a
+                       Controller Kind is set (see CONTEXT.md, ADR 0012); visible by default since
+                       Controller Kind defaults to "none" above. #}
+                    <div id="add-plug-schedule" class="mode-fields">
+                        <label>Target on-time <input type="time" name="target_on_time"></label>
+                        <label>Target off-time <input type="time" name="target_off_time"></label>
                     </div>
                     <div id="add-plug-thermostat-fields" class="mode-fields" style="display:none">
                         <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>
