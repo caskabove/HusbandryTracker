@@ -54,9 +54,18 @@
                     </label>
                 </div>
                 <label>Tracking Mode
-                    <select name="tracking_mode" onchange="onTrackingModeChange(this, 'edit-plug-smart', 'edit-plug-manual')">
+                    <select id="edit-plug-tracking-mode" name="tracking_mode"
+                            onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-manual','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
                         <option value="smart" {% if plug.tracking_mode == "smart" %}selected{% endif %}>Smart (Tuya-controlled)</option>
                         <option value="manual" {% if plug.tracking_mode == "manual" %}selected{% endif %}>Manual (hand-switched, e.g. a timer)</option>
+                    </select>
+                </label>
+                <label>Controller Kind
+                    <select id="edit-plug-controller-kind" name="controller_kind"
+                            onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-manual','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
+                        <option value="none" {% if plug.controller_kind == "none" %}selected{% endif %}>None (powers the heat/cooling/moisture source directly)</option>
+                        <option value="thermostat" {% if plug.controller_kind == "thermostat" %}selected{% endif %}>Thermostat-Controlled (powers a separate thermostat unit)</option>
+                        <option value="hydrostat" {% if plug.controller_kind == "hydrostat" %}selected{% endif %}>Hydrostat-Controlled (powers a separate humidity controller)</option>
                     </select>
                 </label>
                 <div id="edit-plug-smart" class="mode-fields" {% if plug.tracking_mode != "smart" %}style="display:none"{% endif %}>
@@ -65,9 +74,18 @@
                     <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="{{ plug.switch_dps_key }}" style="width:3em" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                     <label>LAN IP (optional) <input type="text" name="tuya_ip_address" value="{{ plug.tuya_ip_address or '' }}" placeholder="leave blank for auto-discovery" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                 </div>
-                <div id="edit-plug-manual" class="mode-fields" {% if plug.tracking_mode != "manual" %}style="display:none"{% endif %}>
-                    <label>Declared on-time <input type="time" name="declared_on_time" value="{{ plug.declared_on_time or '' }}" {% if plug.tracking_mode != "manual" %}disabled{% endif %}></label>
-                    <label>Declared off-time <input type="time" name="declared_off_time" value="{{ plug.declared_off_time or '' }}" {% if plug.tracking_mode != "manual" %}disabled{% endif %}></label>
+                {% set manual_hidden = plug.tracking_mode != "manual" or plug.controller_kind != "none" %}
+                <div id="edit-plug-manual" class="mode-fields" {% if manual_hidden %}style="display:none"{% endif %}>
+                    <label>Declared on-time <input type="time" name="declared_on_time" value="{{ plug.declared_on_time or '' }}" {% if manual_hidden %}disabled{% endif %}></label>
+                    <label>Declared off-time <input type="time" name="declared_off_time" value="{{ plug.declared_off_time or '' }}" {% if manual_hidden %}disabled{% endif %}></label>
+                </div>
+                {% set thermostat_hidden = plug.controller_kind != "thermostat" %}
+                <div id="edit-plug-thermostat-fields" class="mode-fields" {% if thermostat_hidden %}style="display:none"{% endif %}>
+                    <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f" value="{{ plug.target_temp_f if plug.target_temp_f is not none else '' }}" {% if thermostat_hidden %}disabled{% endif %}></label>
+                </div>
+                {% set hydrostat_hidden = plug.controller_kind != "hydrostat" %}
+                <div id="edit-plug-hydrostat-fields" class="mode-fields" {% if hydrostat_hidden %}style="display:none"{% endif %}>
+                    <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct" value="{{ plug.target_humidity_pct if plug.target_humidity_pct is not none else '' }}" {% if hydrostat_hidden %}disabled{% endif %}></label>
                 </div>
                 <button type="submit">Save</button>
             </form>

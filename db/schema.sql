@@ -3,12 +3,15 @@
 
 PRAGMA foreign_keys = ON;
 
--- App-wide settings — a single row, not a generic key-value store, since there's only one setting
--- so far (see CONTEXT.md: Refresh, ADR 0005). Add columns here as more settings arise; don't
--- generalize to a key-value shape ahead of actually needing a second one.
+-- App-wide settings — a single row, not a generic key-value store, since there's only a handful of
+-- settings (see CONTEXT.md: Refresh, Alert Debounce; ADR 0005, ADR 0010). Add columns here as more
+-- settings arise; don't generalize to a key-value shape ahead of actually needing it.
 CREATE TABLE IF NOT EXISTS app_setting (
     id                          INTEGER PRIMARY KEY CHECK (id = 1),
-    ble_refresh_timeout_seconds INTEGER NOT NULL DEFAULT 30
+    ble_refresh_timeout_seconds INTEGER NOT NULL DEFAULT 30,
+    alert_debounce_minutes      INTEGER NOT NULL DEFAULT 10,  -- see CONTEXT.md: Alert Debounce, ADR 0010
+    ntfy_server_url             TEXT,                         -- e.g. "https://ntfy.sh"; NULL/empty disables Send Alert delivery
+    ntfy_topic                  TEXT
 );
 INSERT OR IGNORE INTO app_setting (id) VALUES (1);
 
@@ -24,18 +27,47 @@ CREATE TABLE IF NOT EXISTS room (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- enclosure_type gates which Target Range columns on `sensor` are relevant/shown for this
+-- Enclosure's Sensors — see CONTEXT.md: Enclosure Type, ADR 0011. Which columns apply to which
+-- type lives in code (schemas/enclosure_types.py), not here.
 CREATE TABLE IF NOT EXISTS enclosure (
     id                        INTEGER PRIMARY KEY,
     name                      TEXT NOT NULL UNIQUE,
     room_id                   INTEGER REFERENCES room(id) ON DELETE SET NULL,  -- optional (see CONTEXT.md: Room)
     fallback_sensor_id        INTEGER REFERENCES sensor(id) ON DELETE SET NULL,  -- see CONTEXT.md: Fallback Sensor
-    bioactive                 INTEGER NOT NULL DEFAULT 0,   -- 0/1, informational only (see CONTEXT.md: Bioactive)
+    enclosure_type            TEXT NOT NULL DEFAULT 'basic'
+                                   CHECK (enclosure_type IN ('basic', 'freshwater', 'saltwater', 'amphibian')),
+    bioactive                 INTEGER NOT NULL DEFAULT 0,   -- 0/1, independent of enclosure_type (see CONTEXT.md: Bioactive)
     feeding_interval_days     INTEGER NOT NULL DEFAULT 7,
     watering_interval_days    INTEGER NOT NULL DEFAULT 3,
     spot_clean_interval_days  INTEGER NOT NULL DEFAULT 7,
     deep_clean_interval_days  INTEGER NOT NULL DEFAULT 30,
     created_at                TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- An individual live plant tracked within a Bioactive Enclosure (see CONTEXT.md: Plant). Creation
+-- is only meaningful when the parent Enclosure is Bioactive — enforced in web/admin_queries.py,
+-- not here, same pattern as the other cross-row invariants in this file.
+CREATE TABLE IF NOT EXISTS plant (
+    id           INTEGER PRIMARY KEY,
+    enclosure_id INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    species      TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A manually-logged, backdatable Plant Health observation (see CONTEXT.md: Plant Health) — scoped
+-- to the Enclosure as a whole (plant_id NULL) or one specific Plant. Deliberately not a care_event
+-- kind: it's a status observation, not an action performed, and keeping it separate avoids stacking
+-- a second conditionally-valid entity reference onto care_event alongside Spot-feed's animal_id.
+CREATE TABLE IF NOT EXISTS plant_health_log (
+    id           INTEGER PRIMARY KEY,
+    enclosure_id INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    plant_id     INTEGER REFERENCES plant(id) ON DELETE CASCADE,  -- nullable: enclosure-wide vs one Plant
+    note         TEXT NOT NULL,
+    occurred_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_plant_health_log_enclosure_time ON plant_health_log (enclosure_id, occurred_at);
 
 CREATE TABLE IF NOT EXISTS animal (
     id                  INTEGER PRIMARY KEY,
@@ -56,18 +88,43 @@ CREATE TABLE IF NOT EXISTS animal (
 -- IR thermometer spot-check has no humidity number to give) — that "at least one" rule is enforced
 -- in web/admin_queries.py with a friendly error, not here, so a bad value gets a clear message
 -- instead of a raw SQLite CHECK failure.
+-- target_ph/ammonia/nitrite/nitrate are Freshwater+ (see CONTEXT.md: Enclosure Type);
+-- target_salinity/alkalinity/calcium/magnesium/phosphate are Saltwater-only. Which columns are
+-- shown/editable for a given Sensor depends on its Enclosure's enclosure_type, decided in code
+-- (schemas/enclosure_types.py) — see ADR 0011. Ammonia/nitrite/phosphate "min" will usually just be
+-- 0 (the target is "as low as possible"), stored as a real min/max pair anyway for the same shape
+-- as every other Target Range metric.
 CREATE TABLE IF NOT EXISTS sensor (
-    id                  INTEGER PRIMARY KEY,
-    enclosure_id        INTEGER REFERENCES enclosure(id) ON DELETE CASCADE,
-    room_id             INTEGER REFERENCES room(id) ON DELETE CASCADE,
-    label               TEXT NOT NULL,             -- e.g. "warm side", "cool side"
-    tracking_mode       TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
-    mac_address         TEXT UNIQUE,               -- e.g. "A4:C1:38:XX:XX:XX"; NULL for Manual
-    target_temp_min_c   REAL,
-    target_temp_max_c   REAL,
-    target_humidity_min REAL,
-    target_humidity_max REAL,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    id                    INTEGER PRIMARY KEY,
+    enclosure_id          INTEGER REFERENCES enclosure(id) ON DELETE CASCADE,
+    room_id               INTEGER REFERENCES room(id) ON DELETE CASCADE,
+    label                 TEXT NOT NULL,             -- e.g. "warm side", "cool side"
+    tracking_mode         TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
+    mac_address           TEXT UNIQUE,               -- e.g. "A4:C1:38:XX:XX:XX"; NULL for Manual
+    auto_update_enabled   INTEGER NOT NULL DEFAULT 1, -- 0/1, Smart Sensor only (see CONTEXT.md: Auto-Update)
+    target_temp_min_c     REAL,
+    target_temp_max_c     REAL,
+    target_humidity_min   REAL,
+    target_humidity_max   REAL,
+    target_ph_min         REAL,
+    target_ph_max         REAL,
+    target_ammonia_ppm_min      REAL,
+    target_ammonia_ppm_max      REAL,
+    target_nitrite_ppm_min      REAL,
+    target_nitrite_ppm_max      REAL,
+    target_nitrate_ppm_min      REAL,
+    target_nitrate_ppm_max      REAL,
+    target_salinity_ppt_min     REAL,
+    target_salinity_ppt_max     REAL,
+    target_alkalinity_dkh_min   REAL,
+    target_alkalinity_dkh_max   REAL,
+    target_calcium_ppm_min      REAL,
+    target_calcium_ppm_max      REAL,
+    target_magnesium_ppm_min    REAL,
+    target_magnesium_ppm_max    REAL,
+    target_phosphate_ppm_min    REAL,
+    target_phosphate_ppm_max    REAL,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (
         (tracking_mode = 'smart' AND mac_address IS NOT NULL) OR
         (tracking_mode = 'manual' AND mac_address IS NULL)
@@ -76,6 +133,20 @@ CREATE TABLE IF NOT EXISTS sensor (
         (enclosure_id IS NOT NULL AND room_id IS NULL) OR
         (enclosure_id IS NULL AND room_id IS NOT NULL)
     )
+);
+
+-- Per-Sensor Alert state machine (see CONTEXT.md: Alert, Alert Condition, ADR 0010) — normal /
+-- pending / alerting / resolved, tracked per (sensor, condition) so debounce timing and "fire once"
+-- behavior survive across polls. A real FK table per entity kind (this one, and plug_alert_state
+-- below) rather than one polymorphic entity_type+entity_id table, matching how this schema always
+-- prefers explicit typed references over a generic shape.
+CREATE TABLE IF NOT EXISTS sensor_alert_state (
+    id               INTEGER PRIMARY KEY,
+    sensor_id        INTEGER NOT NULL REFERENCES sensor(id) ON DELETE CASCADE,
+    condition_kind   TEXT NOT NULL CHECK (condition_kind IN ('out_of_range', 'unreachable')),
+    state            TEXT NOT NULL DEFAULT 'normal' CHECK (state IN ('normal', 'pending', 'alerting', 'resolved')),
+    state_entered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (sensor_id, condition_kind)
 );
 
 -- A Plug, belonging to either one Room or one-or-more Enclosures (via plug_enclosure below), never
@@ -109,8 +180,12 @@ CREATE TABLE IF NOT EXISTS plug (
     tuya_local_key      TEXT,
     tuya_ip_address     TEXT,                           -- optional pin; tinytuya can also auto-discover on LAN
     switch_dps_key      TEXT NOT NULL DEFAULT '1',      -- which outlet on the device this Plug controls
-    declared_on_time    TEXT,                           -- "HH:MM", Manual Plug only (see CONTEXT.md: Schedule)
-    declared_off_time   TEXT,                           -- "HH:MM", Manual Plug only
+    auto_update_enabled INTEGER NOT NULL DEFAULT 1,     -- 0/1, Smart Plug only (see CONTEXT.md: Auto-Update)
+    declared_on_time    TEXT,                           -- "HH:MM", Manual Plug only, never with a Controller Kind set (see CONTEXT.md: Schedule)
+    declared_off_time   TEXT,                           -- "HH:MM", Manual Plug only, never with a Controller Kind set
+    controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'thermostat', 'hydrostat')),  -- see CONTEXT.md: Controller Kind, ADR 0008 (supersedes ADR 0007's is_thermostat_controlled)
+    target_temp_c       REAL,                           -- required together with controller_kind = 'thermostat'; enforced in web/admin_queries.py, not here
+    target_humidity_pct REAL,                           -- required together with controller_kind = 'hydrostat'; enforced in web/admin_queries.py, not here
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (tuya_device_id, switch_dps_key),
     CHECK (
@@ -148,10 +223,42 @@ CREATE TABLE IF NOT EXISTS plug_state_transition (
 );
 CREATE INDEX IF NOT EXISTS idx_plug_transition_plug_time ON plug_state_transition (plug_id, recorded_at);
 
+-- Data Capture: a Plug's telemetry snapshot (watts/volts/amps), the Plug-side equivalent of a
+-- Sensor's Reading (see CONTEXT.md: Data Capture, ADR 0009). Written on a slower, independent
+-- cadence (every 1-5 min, a plain code constant like the poll interval — see ADR 0005's precedent)
+-- from the 5-second on/off watch above, since wattage drifts continuously while a transition is
+-- edge-triggered. Pulled from the same local tinytuya status() call already being made — no new
+-- external dependency.
+CREATE TABLE IF NOT EXISTS plug_reading (
+    id                INTEGER PRIMARY KEY,
+    plug_id           INTEGER NOT NULL REFERENCES plug(id) ON DELETE CASCADE,
+    recorded_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    watts             REAL,
+    volts             REAL,
+    amps              REAL,
+    countdown_seconds INTEGER  -- active countdown timer DPS, if any (0/NULL = none active)
+);
+CREATE INDEX IF NOT EXISTS idx_plug_reading_plug_time ON plug_reading (plug_id, recorded_at);
+
+-- Per-Plug Alert state machine — see the sensor_alert_state comment above for why this is a
+-- separate typed table rather than one polymorphic table shared with Sensors.
+CREATE TABLE IF NOT EXISTS plug_alert_state (
+    id               INTEGER PRIMARY KEY,
+    plug_id          INTEGER NOT NULL REFERENCES plug(id) ON DELETE CASCADE,
+    condition_kind   TEXT NOT NULL CHECK (condition_kind IN ('zero_power_while_on', 'unreachable')),
+    state            TEXT NOT NULL DEFAULT 'normal' CHECK (state IN ('normal', 'pending', 'alerting', 'resolved')),
+    state_entered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (plug_id, condition_kind)
+);
+
 -- Manually-logged Care Events (see CONTEXT.md: Care Event, Feeding/Watering/Cleaning). Written by the web app (Phase 2).
+-- animal_id is a Spot-feed only (see CONTEXT.md: Spot-feed) — NULL means the ordinary whole-Enclosure
+-- case (every kind, and most Feedings); set only ever alongside kind = 'feeding', enforced in
+-- web/admin_queries.py rather than a CHECK, same pattern as this file's other cross-column rules.
 CREATE TABLE IF NOT EXISTS care_event (
     id            INTEGER PRIMARY KEY,
     enclosure_id  INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    animal_id     INTEGER REFERENCES animal(id) ON DELETE SET NULL,
     kind          TEXT NOT NULL CHECK (kind IN ('feeding', 'watering', 'spot_clean', 'deep_clean')),
     occurred_at   TEXT NOT NULL DEFAULT (datetime('now')),
     note          TEXT

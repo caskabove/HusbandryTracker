@@ -20,19 +20,31 @@
                 <label>Refresh Timeout (seconds)
                     <input type="number" name="ble_refresh_timeout_seconds" value="{{ settings.ble_refresh_timeout_seconds }}" min="1">
                 </label>
+                <label>Alert Debounce (minutes)
+                    <input type="number" name="alert_debounce_minutes" value="{{ settings.alert_debounce_minutes }}" min="1">
+                </label>
+                <label>ntfy Server URL
+                    <input type="text" name="ntfy_server_url" value="{{ settings.ntfy_server_url or '' }}" placeholder="https://ntfy.sh">
+                </label>
+                <label>ntfy Topic
+                    <input type="text" name="ntfy_topic" value="{{ settings.ntfy_topic or '' }}" placeholder="herpmonitor-yourname">
+                </label>
                 <button type="submit">Save</button>
             </form>
-            <p class="empty">How long a dashboard "Refresh" button waits for a live BLE reading from a Smart Sensor before giving up.</p>
+            <p class="empty">How long a dashboard "Refresh" button waits for a live BLE reading from a Smart Sensor before giving up.
+                Alert Debounce is how long a Sensor/Plug problem must persist before a Send Alert notification fires (see CONTEXT.md: Alert).
+                Leave the ntfy fields blank to disable push delivery — Alerts still track state, they just print to the console instead.</p>
         </section>
 
         <section class="admin-card">
             <h2>Enclosures</h2>
             <table class="admin-table">
-                <thead><tr><th>Name</th><th>Room</th><th>Bioactive</th><th>Feed</th><th>Water</th><th>Spot</th><th>Deep</th><th></th></tr></thead>
+                <thead><tr><th>Name</th><th>Type</th><th>Room</th><th>Bioactive</th><th>Feed</th><th>Water</th><th>Spot</th><th>Deep</th><th></th></tr></thead>
                 <tbody>
                 {% for e in enclosures %}
                     <tr>
                         <td class="admin-table-primary"><a href="/admin/enclosures/{{ e.id }}">{{ e.name }}</a></td>
+                        <td>{{ ENCLOSURE_TYPE_LABELS[e.enclosure_type] }}</td>
                         <td>{% if e.room_id %}<a href="/admin/rooms/{{ e.room_id }}">{{ rooms_by_id[e.room_id] }}</a>{% else %}—{% endif %}</td>
                         <td>{{ "yes" if e.bioactive else "no" }}</td>
                         <td>{{ e.feeding_interval_days }}d</td>
@@ -42,7 +54,7 @@
                         <td><a href="/admin/enclosures/{{ e.id }}">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="8" class="empty">No enclosures yet — add one below.</td></tr>
+                    <tr><td colspan="9" class="empty">No enclosures yet — add one below.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -53,6 +65,13 @@
                 <summary>+ Add Enclosure</summary>
                 <form method="post" action="/admin/enclosures" class="admin-form">
                     <label>Name <input type="text" name="name" required></label>
+                    <label>Enclosure Type
+                        <select name="enclosure_type">
+                            {% for t in ENCLOSURE_TYPES %}
+                            <option value="{{ t }}" {% if t == "basic" %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
                     <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
                     <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
                     <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
@@ -143,9 +162,18 @@
                         </label>
                     </div>
                     <label>Tracking Mode
-                        <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-plug-smart', 'add-plug-manual')">
+                        <select id="add-plug-tracking-mode" name="tracking_mode"
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-manual','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
                             <option value="smart">Smart (Tuya-controlled)</option>
                             <option value="manual">Manual (hand-switched, e.g. a timer)</option>
+                        </select>
+                    </label>
+                    <label>Controller Kind
+                        <select id="add-plug-controller-kind" name="controller_kind"
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-manual','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
+                            <option value="none" selected>None (powers the heat/cooling/moisture source directly)</option>
+                            <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
+                            <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
                         </select>
                     </label>
                     <div id="add-plug-smart" class="mode-fields">
@@ -157,6 +185,12 @@
                     <div id="add-plug-manual" class="mode-fields" style="display:none">
                         <label>Declared on-time <input type="time" name="declared_on_time"></label>
                         <label>Declared off-time <input type="time" name="declared_off_time"></label>
+                    </div>
+                    <div id="add-plug-thermostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>
+                    </div>
+                    <div id="add-plug-hydrostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct"></label>
                     </div>
                     <button type="submit">Add Plug</button>
                 </form>

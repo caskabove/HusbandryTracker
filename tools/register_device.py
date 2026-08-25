@@ -115,6 +115,21 @@ def plug_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     print(f"Registered plug {args.device_id!r} dps={args.dps_key} ({args.purpose}: {args.label}) in {args.enclosure!r}")
 
 
+def _format_plug_line(plug: sqlite3.Row) -> str:
+    # A Controller Kind takes precedence over Schedule display — see CONTEXT.md: Controller Kind,
+    # ADR 0008. A thermostat's/hydrostat's actual cycling is invisible to Tuya either way.
+    if plug["controller_kind"] == "thermostat":
+        target = f"{plug['target_temp_c']:.1f}C" if plug["target_temp_c"] is not None else "not set"
+        return f"  plug:   {plug['label']} purpose={plug['purpose']} (Thermostat-Controlled, target={target})"
+    if plug["controller_kind"] == "hydrostat":
+        target = f"{plug['target_humidity_pct']:.1f}%" if plug["target_humidity_pct"] is not None else "not set"
+        return f"  plug:   {plug['label']} purpose={plug['purpose']} (Hydrostat-Controlled, target={target})"
+    if plug["tracking_mode"] == "manual":
+        on, off = plug["declared_on_time"] or "?", plug["declared_off_time"] or "?"
+        return f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — declared {on}-{off})"
+    return f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}"
+
+
 def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
     rooms_by_id = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM room")}
     for room in conn.execute("SELECT * FROM room ORDER BY name"):
@@ -126,11 +141,7 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
             else:
                 print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
         for plug in conn.execute("SELECT * FROM plug WHERE room_id = ?", (room["id"],)):
-            if plug["tracking_mode"] == "manual":
-                on, off = plug["declared_on_time"] or "?", plug["declared_off_time"] or "?"
-                print(f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — declared {on}-{off})")
-            else:
-                print(f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}")
+            print(_format_plug_line(plug))
 
     for enclosure in conn.execute("SELECT * FROM enclosure ORDER BY name"):
         room_note = f" room={rooms_by_id[enclosure['room_id']]}" if enclosure["room_id"] else ""
@@ -149,11 +160,7 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
                WHERE pe.enclosure_id = ?""",
             (enclosure["id"],),
         ):
-            if plug["tracking_mode"] == "manual":
-                on, off = plug["declared_on_time"] or "?", plug["declared_off_time"] or "?"
-                print(f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — declared {on}-{off})")
-            else:
-                print(f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}")
+            print(_format_plug_line(plug))
 
 
 def build_parser() -> argparse.ArgumentParser:

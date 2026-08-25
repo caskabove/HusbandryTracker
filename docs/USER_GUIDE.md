@@ -165,16 +165,31 @@ Care entry there brings you straight here).
 
 ### Logging that you fed, watered, or cleaned an enclosure
 
-Each enclosure's Admin page has a **Care** card at the top. Click the **"Log"** button next to
-Feeding, Watering, Spot-clean, or Deep-clean. It logs it as done right now, unless you fill in the
-small date/time box next to the button first — use that if you're logging something that already
-happened earlier (fed this morning but only logging it tonight, say).
+Each enclosure's Admin page has a **Care** card at the top. Click **Today**, **Yesterday**, or **2
+days ago** next to Feeding, Watering, Spot-clean, or Deep-clean — whichever it actually was. For
+anything further back, click **Advanced** to get the full date/time picker.
 
 ### Checking a plug's schedule
 
 Each enclosure's Admin page has a **Schedules** card near the bottom, one row per Plug. A Smart
 Plug shows its inferred on-time once that feature is fully turned on (see note at the end); a
-Manual Plug shows the on/off time you declared for it when adding the plug.
+Manual Plug shows the on/off time you declared for it when adding the plug; a Plug with a
+**Controller Kind** set (see below) shows its Target Temperature or Target Humidity instead — a
+Schedule wouldn't mean anything for one of those.
+
+### Marking a plug as Thermostat- or Hydrostat-Controlled
+
+If a heat/cooling Plug actually powers a separate thermostat unit (a Herpstat, Vivarium
+Electronics, Jump Start, etc.) rather than the heat source directly — or a humidity Plug powers a
+separate humidity controller (a MistKing misting system's control unit, a humidistat-driven fogger)
+rather than the moisture source directly — set its **Controller Kind** to **Thermostat-Controlled**
+or **Hydrostat-Controlled** when adding or editing it, and enter the matching **Target Temperature**
+or **Target Humidity** you've set that controller to. A Plug is at most one of the two — one
+physical relay powers one downstream device. This works whether the Plug itself is Smart or Manual
+— either way, the controller's actual on/off cycling happens downstream, invisible to HerpMonitor,
+so showing a Schedule for it would be misleading; the Target value is the one thing that's actually
+meaningful to record. This doesn't judge whether the enclosure is actually at that temperature/
+humidity — that's still a real Sensor's Target Range, if you have one in there.
 
 ### Adding a Room, and grouping enclosures into it
 

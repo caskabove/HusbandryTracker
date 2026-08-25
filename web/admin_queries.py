@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
+from schemas import enclosure_types as et
 from web.queries import CARE_EVENT_KINDS, days_since
 
 
@@ -56,32 +57,47 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         return enclosure
 
 
-def create_enclosure(name: str, bioactive: bool, feeding: int, watering: int, spot: int, deep: int) -> int:
+def _validate_enclosure_type(enclosure_type: str) -> None:
+    if enclosure_type not in et.ENCLOSURE_TYPES:
+        raise ValueError(f"Unknown Enclosure Type: {enclosure_type!r}")
+
+
+def create_enclosure(name: str, enclosure_type: str, bioactive: bool, feeding: int, watering: int,
+                      spot: int, deep: int) -> int:
     # Room assignment happens as a follow-up edit (see update_enclosure), not at creation — keeps
     # this quick-create form minimal, matching how Sensor/Plug reassignment already works.
+    _validate_enclosure_type(enclosure_type)
     with get_connection() as conn:
         cur = conn.execute(
-            """INSERT INTO enclosure (name, bioactive, feeding_interval_days, watering_interval_days,
+            """INSERT INTO enclosure (name, enclosure_type, bioactive, feeding_interval_days, watering_interval_days,
                                        spot_clean_interval_days, deep_clean_interval_days)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (name, int(bioactive), feeding, watering, spot, deep),
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (name, enclosure_type, int(bioactive), feeding, watering, spot, deep),
         )
         return cur.lastrowid
 
 
-def update_enclosure(enclosure_id: int, name: str, bioactive: bool, feeding: int, watering: int, spot: int, deep: int,
+def update_enclosure(enclosure_id: int, name: str, enclosure_type: str, bioactive: bool, feeding: int,
+                      watering: int, spot: int, deep: int,
                       room_id: int | None, fallback_sensor_id: int | None) -> None:
     """room_id and fallback_sensor_id see CONTEXT.md: Room, Fallback Sensor. The Admin UI only ever
     offers a Fallback Sensor dropdown scoped to the chosen Room's own Sensors and only when this
     Enclosure has none of its own, so no extra cross-check is done here — display logic (see
     web/queries.py) also always prefers an Enclosure's own Sensors over its Fallback Sensor
-    regardless, so a stale fallback_sensor_id left over after adding a real Sensor is harmless."""
+    regardless, so a stale fallback_sensor_id left over after adding a real Sensor is harmless.
+
+    Changing enclosure_type doesn't retroactively clear any of this Enclosure's Sensors' now-
+    inapplicable Target Range values (e.g. Saltwater -> Basic leaves salinity values sitting
+    unused) — see CONTEXT.md: Enclosure Type. They're just hidden/unvalidated going forward, not
+    wiped; a deliberate scope cut, not an oversight."""
+    _validate_enclosure_type(enclosure_type)
     with get_connection() as conn:
         conn.execute(
-            """UPDATE enclosure SET name = ?, bioactive = ?, feeding_interval_days = ?, watering_interval_days = ?,
-                                     spot_clean_interval_days = ?, deep_clean_interval_days = ?, room_id = ?,
+            """UPDATE enclosure SET name = ?, enclosure_type = ?, bioactive = ?, feeding_interval_days = ?,
+                                     watering_interval_days = ?, spot_clean_interval_days = ?,
+                                     deep_clean_interval_days = ?, room_id = ?,
                                      fallback_sensor_id = ? WHERE id = ?""",
-            (name, int(bioactive), feeding, watering, spot, deep, room_id, fallback_sensor_id, enclosure_id),
+            (name, enclosure_type, int(bioactive), feeding, watering, spot, deep, room_id, fallback_sensor_id, enclosure_id),
         )
 
 
@@ -143,10 +159,20 @@ def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | No
         )
 
 
-def _validate_sensor(tracking_mode: str, mac_address: str | None, temp_min: float | None, temp_max: float | None,
-                      humidity_min: float | None, humidity_max: float | None) -> None:
-    """See CONTEXT.md: Tracking Mode, Target Range. Raised as ValueError so the Admin route can show
-    a friendly message instead of a raw SQLite CHECK failure."""
+TargetRanges = dict[str, tuple[float | None, float | None]]
+
+
+def _validate_sensor(tracking_mode: str, mac_address: str | None, target_ranges: TargetRanges,
+                      enclosure_type: str | None) -> None:
+    """See CONTEXT.md: Tracking Mode, Target Range, Enclosure Type. Raised as ValueError so the
+    Admin route can show a friendly message instead of a raw SQLite CHECK failure.
+
+    target_ranges maps a schemas.enclosure_types metric key (e.g. "temperature", "ph") to its
+    submitted (min, max) pair — see schemas/enclosure_types.py. enclosure_type is None for a
+    Room-owned Sensor: a Room has no Enclosure Type (see CONTEXT.md: Room), so only
+    temperature/humidity are ever offered there and the et.validate_target_ranges() check below is
+    skipped entirely rather than gated against a type that doesn't apply.
+    """
     if tracking_mode not in ("smart", "manual"):
         raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
     if tracking_mode == "smart":
@@ -155,25 +181,45 @@ def _validate_sensor(tracking_mode: str, mac_address: str | None, temp_min: floa
     else:
         if mac_address:
             raise ValueError("A Manual Sensor has no physical device — leave the MAC address blank.")
-        temp_ranged = temp_min is not None and temp_max is not None
-        humidity_ranged = humidity_min is not None and humidity_max is not None
-        if not (temp_ranged or humidity_ranged):
+        if not any(mn is not None and mx is not None for mn, mx in target_ranges.values()):
             raise ValueError(
-                "A Manual Sensor needs a complete Target Range (both min and max) on temperature or "
-                "humidity before it can be saved — there's nothing to judge a hand-logged Reading against otherwise."
+                "A Manual Sensor needs a complete Target Range (both min and max) on at least one "
+                "metric before it can be saved — there's nothing to judge a hand-logged Reading against otherwise."
             )
+    if enclosure_type is not None:
+        provided = [key for key, (mn, mx) in target_ranges.items() if mn is not None or mx is not None]
+        et.validate_target_ranges(enclosure_type, provided)
 
 
-def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None, temp_min: float | None,
-                   temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
-    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
+def _target_range_sql(target_ranges: TargetRanges) -> tuple[list[str], list[float | None]]:
+    """Column names + values for every Target Range metric, in schemas.enclosure_types' fixed
+    order — the single source of truth for the column list, so it can't drift from db/schema.sql or
+    from the Enclosure Type gating logic. A metric missing from target_ranges (Room Sensor calls
+    only ever supply temperature/humidity) is written as NULL, same as if it were left blank."""
+    columns: list[str] = []
+    values: list[float | None] = []
+    for metric in et.TARGET_RANGE_METRICS:
+        mn, mx = target_ranges.get(metric.key, (None, None))
+        columns += [metric.min_column, metric.max_column]
+        values += [mn, mx]
+    return columns, values
+
+
+def _get_enclosure_type(enclosure_id: int) -> str:
+    with get_connection() as conn:
+        row = conn.execute("SELECT enclosure_type FROM enclosure WHERE id = ?", (enclosure_id,)).fetchone()
+    return row["enclosure_type"] if row else "basic"
+
+
+def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
+                   target_ranges: TargetRanges) -> None:
+    _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
+    columns, values = _target_range_sql(target_ranges)
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO sensor (enclosure_id, label, tracking_mode, mac_address, target_temp_min_c,
-                                    target_temp_max_c, target_humidity_min, target_humidity_max)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None,
-             temp_min, temp_max, humidity_min, humidity_max),
+            f"""INSERT INTO sensor (enclosure_id, label, tracking_mode, mac_address, {", ".join(columns)})
+                VALUES (?, ?, ?, ?, {", ".join("?" for _ in columns)})""",
+            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None, *values),
         )
 
 
@@ -189,24 +235,25 @@ def get_sensor(sensor_id: int) -> dict | None:
 
 
 def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
-                   temp_min: float | None, temp_max: float | None, humidity_min: float | None,
-                   humidity_max: float | None) -> None:
-    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
+                   target_ranges: TargetRanges) -> None:
+    _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
+    columns, values = _target_range_sql(target_ranges)
+    set_clause = ", ".join(f"{c} = ?" for c in columns)
     with get_connection() as conn:
         conn.execute(
-            """UPDATE sensor SET enclosure_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
-                                  target_temp_min_c = ?, target_temp_max_c = ?, target_humidity_min = ?,
-                                  target_humidity_max = ? WHERE id = ?""",
-            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None,
-             temp_min, temp_max, humidity_min, humidity_max, sensor_id),
+            f"""UPDATE sensor SET enclosure_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
+                                   {set_clause} WHERE id = ?""",
+            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None, *values, sensor_id),
         )
 
 
 def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address: str | None, temp_min: float | None,
                         temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
     """A Room's ambient Sensor — same Sensor concept, Room instead of Enclosure as parent. See
-    CONTEXT.md: Room, Sensor."""
-    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
+    CONTEXT.md: Room, Sensor. Room Sensors aren't gated by Enclosure Type (a Room has none) — only
+    temperature/humidity are ever offered here, matching what ambient room comfort needs."""
+    target_ranges: TargetRanges = {"temperature": (temp_min, temp_max), "humidity": (humidity_min, humidity_max)}
+    _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO sensor (room_id, label, tracking_mode, mac_address, target_temp_min_c,
@@ -220,7 +267,8 @@ def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address
 def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: str, mac_address: str | None,
                         temp_min: float | None, temp_max: float | None, humidity_min: float | None,
                         humidity_max: float | None) -> None:
-    _validate_sensor(tracking_mode, mac_address, temp_min, temp_max, humidity_min, humidity_max)
+    target_ranges: TargetRanges = {"temperature": (temp_min, temp_max), "humidity": (humidity_min, humidity_max)}
+    _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     with get_connection() as conn:
         conn.execute(
             """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
@@ -233,38 +281,58 @@ def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: 
 
 def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_key: str | None,
                     declared_on_time: str | None, declared_off_time: str | None,
-                    room_id: int | None, enclosure_ids: list[int]) -> None:
-    """See CONTEXT.md: Tracking Mode, Schedule (Declared), Plug. Raised as ValueError so the Admin
-    route can show a friendly message instead of a raw SQLite CHECK failure (the Room-XOR-Enclosure-
-    set rule can't be a CHECK at all — it depends on plug_enclosure row counts, a different table)."""
+                    room_id: int | None, enclosure_ids: list[int],
+                    controller_kind: str, target_temp_c: float | None,
+                    target_humidity_pct: float | None) -> None:
+    """See CONTEXT.md: Tracking Mode, Schedule (Declared), Plug, Controller Kind. Raised as
+    ValueError so the Admin route can show a friendly message instead of a raw SQLite CHECK failure
+    (the Room-XOR-Enclosure-set rule can't be a CHECK at all — it depends on plug_enclosure row
+    counts, a different table)."""
     if tracking_mode not in ("smart", "manual"):
         raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
+    if controller_kind not in ("none", "thermostat", "hydrostat"):
+        raise ValueError(f"Unknown Controller Kind: {controller_kind!r}")
     if tracking_mode == "smart":
         if not tuya_device_id or not tuya_local_key:
             raise ValueError("A Smart Plug needs both a Tuya device_id and local_key.")
     else:
         if tuya_device_id or tuya_local_key:
             raise ValueError("A Manual Plug has no device credentials — leave the Tuya fields blank.")
-        if bool(declared_on_time) != bool(declared_off_time):
+        if controller_kind == "none" and bool(declared_on_time) != bool(declared_off_time):
             raise ValueError("Enter both a declared on-time and off-time, or leave both blank.")
     if bool(room_id) == bool(enclosure_ids):
         raise ValueError("A Plug needs exactly one parent — pick a Room, or one or more Enclosures, not both or neither.")
+    if controller_kind == "thermostat" and target_temp_c is None:
+        raise ValueError("A Thermostat-Controlled Plug needs a Target Temperature.")
+    if controller_kind == "hydrostat" and target_humidity_pct is None:
+        raise ValueError("A Hydrostat-Controlled Plug needs a Target Humidity.")
 
 
 def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: str | None,
                  tuya_local_key: str | None, tuya_ip_address: str | None, switch_dps_key: str = "1",
                  declared_on_time: str | None = None, declared_off_time: str | None = None,
-                 room_id: int | None = None, enclosure_ids: list[int] | None = None) -> int:
+                 room_id: int | None = None, enclosure_ids: list[int] | None = None,
+                 controller_kind: str = "none", target_temp_c: float | None = None,
+                 target_humidity_pct: float | None = None) -> int:
     enclosure_ids = enclosure_ids or []
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time,
-                   room_id, enclosure_ids)
+                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct)
+    if controller_kind != "none":
+        # Schedule isn't meaningful for a Thermostat-/Hydrostat-Controlled Plug — see ADR 0008.
+        declared_on_time = declared_off_time = None
+    if controller_kind != "thermostat":
+        target_temp_c = None
+    if controller_kind != "hydrostat":
+        target_humidity_pct = None
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO plug (room_id, label, purpose, tracking_mode, tuya_device_id, tuya_local_key,
-                                  tuya_ip_address, switch_dps_key, declared_on_time, declared_off_time)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  tuya_ip_address, switch_dps_key, declared_on_time, declared_off_time,
+                                  controller_kind, target_temp_c, target_humidity_pct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (room_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
-             tuya_ip_address or None, switch_dps_key or "1", declared_on_time or None, declared_off_time or None),
+             tuya_ip_address or None, switch_dps_key or "1", declared_on_time or None, declared_off_time or None,
+             controller_kind, target_temp_c, target_humidity_pct),
         )
         plug_id = cur.lastrowid
         for eid in enclosure_ids:
@@ -311,17 +379,27 @@ def list_plugs() -> list[dict]:
 def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, switch_dps_key: str,
                  tuya_device_id: str | None, tuya_local_key: str | None, tuya_ip_address: str | None,
                  declared_on_time: str | None = None, declared_off_time: str | None = None,
-                 room_id: int | None = None, enclosure_ids: list[int] | None = None) -> None:
+                 room_id: int | None = None, enclosure_ids: list[int] | None = None,
+                 controller_kind: str = "none", target_temp_c: float | None = None,
+                 target_humidity_pct: float | None = None) -> None:
     enclosure_ids = enclosure_ids or []
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time,
-                   room_id, enclosure_ids)
+                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct)
+    if controller_kind != "none":
+        declared_on_time = declared_off_time = None
+    if controller_kind != "thermostat":
+        target_temp_c = None
+    if controller_kind != "hydrostat":
+        target_humidity_pct = None
     with get_connection() as conn:
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?, switch_dps_key = ?,
                                 tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ?,
-                                declared_on_time = ?, declared_off_time = ? WHERE id = ?""",
+                                declared_on_time = ?, declared_off_time = ?,
+                                controller_kind = ?, target_temp_c = ?, target_humidity_pct = ? WHERE id = ?""",
             (room_id, label, purpose, tracking_mode, switch_dps_key or "1", tuya_device_id or None,
              tuya_local_key or None, tuya_ip_address or None, declared_on_time or None, declared_off_time or None,
+             controller_kind, target_temp_c, target_humidity_pct,
              plug_id),
         )
         conn.execute("DELETE FROM plug_enclosure WHERE plug_id = ?", (plug_id,))
@@ -392,11 +470,18 @@ def get_settings() -> dict:
         return dict(conn.execute("SELECT * FROM app_setting WHERE id = 1").fetchone())
 
 
-def update_settings(ble_refresh_timeout_seconds: int) -> None:
+def update_settings(ble_refresh_timeout_seconds: int, alert_debounce_minutes: int,
+                     ntfy_server_url: str | None, ntfy_topic: str | None) -> None:
+    """See CONTEXT.md: Refresh (ADR 0005), Alert Debounce (ADR 0010). ntfy_server_url/ntfy_topic
+    left blank disables Send Alert delivery entirely — see collectors/alerts.py, which just logs to
+    the console instead of sending in that case."""
     if ble_refresh_timeout_seconds < 1:
         raise ValueError("Refresh Timeout needs to be at least 1 second.")
+    if alert_debounce_minutes < 1:
+        raise ValueError("Alert Debounce needs to be at least 1 minute.")
     with get_connection() as conn:
         conn.execute(
-            "UPDATE app_setting SET ble_refresh_timeout_seconds = ? WHERE id = 1",
-            (ble_refresh_timeout_seconds,),
+            """UPDATE app_setting SET ble_refresh_timeout_seconds = ?, alert_debounce_minutes = ?,
+                                       ntfy_server_url = ?, ntfy_topic = ? WHERE id = 1""",
+            (ble_refresh_timeout_seconds, alert_debounce_minutes, ntfy_server_url or None, ntfy_topic or None),
         )

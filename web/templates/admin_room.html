@@ -110,7 +110,11 @@
             {% for plug in room.plugs %}
                 <div class="reading-row">
                     <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
-                    {% if plug.tracking_mode == "manual" %}
+                    {% if plug.controller_kind == "thermostat" %}
+                        <span class="pill status-unknown">Target: {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
+                    {% elif plug.controller_kind == "hydrostat" %}
+                        <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
+                    {% elif plug.tracking_mode == "manual" %}
                         {% if plug.declared_on_time and plug.declared_off_time %}
                         <span class="pill status-unknown">Declared: {{ plug.declared_on_time }}&ndash;{{ plug.declared_off_time }}</span>
                         {% else %}

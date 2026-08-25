@@ -7,6 +7,7 @@ Celsius (the Govee sensors' native unit — see collectors/govee_protocol.py).
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -16,6 +17,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from schemas import enclosure_types as et
 from web import admin_queries as q
 from web.queries import CARE_EVENT_KINDS, log_care_event
 from web.status import care_interval_status, target_range_status
@@ -24,6 +26,9 @@ router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 templates.env.globals["care_interval_status"] = care_interval_status
 templates.env.globals["target_range_status"] = target_range_status
+templates.env.globals["ENCLOSURE_TYPES"] = et.ENCLOSURE_TYPES
+templates.env.globals["ENCLOSURE_TYPE_LABELS"] = et.ENCLOSURE_TYPE_LABELS
+templates.env.globals["target_range_metrics_for"] = et.target_range_metrics_for
 
 
 def _f_to_c(fahrenheit: float | None) -> float | None:
@@ -35,6 +40,32 @@ def _c_to_f(celsius: float | None) -> float | None:
 
 
 templates.env.filters["c_to_f"] = _c_to_f
+
+
+def _sensor_target_ranges(
+    temp_min_f: float | None, temp_max_f: float | None, humidity_min: float | None, humidity_max: float | None,
+    ph_min: float | None, ph_max: float | None, ammonia_min: float | None, ammonia_max: float | None,
+    nitrite_min: float | None, nitrite_max: float | None, nitrate_min: float | None, nitrate_max: float | None,
+    salinity_min: float | None, salinity_max: float | None, alkalinity_min: float | None, alkalinity_max: float | None,
+    calcium_min: float | None, calcium_max: float | None, magnesium_min: float | None, magnesium_max: float | None,
+    phosphate_min: float | None, phosphate_max: float | None,
+) -> q.TargetRanges:
+    """Assembles the schemas.enclosure_types-shaped target_ranges dict (see schemas/enclosure_types.py)
+    from the Sensor form's many individual Form() fields. Only temperature gets a unit conversion
+    (stored as Celsius, entered/shown as Fahrenheit) — every other metric is already the stored unit."""
+    return {
+        "temperature": (_f_to_c(temp_min_f), _f_to_c(temp_max_f)),
+        "humidity": (humidity_min, humidity_max),
+        "ph": (ph_min, ph_max),
+        "ammonia": (ammonia_min, ammonia_max),
+        "nitrite": (nitrite_min, nitrite_max),
+        "nitrate": (nitrate_min, nitrate_max),
+        "salinity": (salinity_min, salinity_max),
+        "alkalinity": (alkalinity_min, alkalinity_max),
+        "calcium": (calcium_min, calcium_max),
+        "magnesium": (magnesium_min, magnesium_max),
+        "phosphate": (phosphate_min, phosphate_max),
+    }
 
 
 @router.get("/")
@@ -57,9 +88,15 @@ def admin_index(request: Request):
 
 
 @router.post("/settings")
-def admin_update_settings(ble_refresh_timeout_seconds: int = Form(30)):
+def admin_update_settings(
+    ble_refresh_timeout_seconds: int = Form(30),
+    alert_debounce_minutes: int = Form(10),
+    ntfy_server_url: str = Form(""),
+    ntfy_topic: str = Form(""),
+):
     try:
-        q.update_settings(ble_refresh_timeout_seconds)
+        q.update_settings(ble_refresh_timeout_seconds, alert_debounce_minutes,
+                           ntfy_server_url or None, ntfy_topic or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
@@ -68,13 +105,18 @@ def admin_update_settings(ble_refresh_timeout_seconds: int = Form(30)):
 @router.post("/enclosures")
 def admin_create_enclosure(
     name: str = Form(...),
+    enclosure_type: str = Form("basic"),
     bioactive: bool = Form(False),
     feeding_interval: int = Form(7),
     watering_interval: int = Form(3),
     spot_clean_interval: int = Form(7),
     deep_clean_interval: int = Form(30),
 ):
-    enclosure_id = q.create_enclosure(name, bioactive, feeding_interval, watering_interval, spot_clean_interval, deep_clean_interval)
+    try:
+        enclosure_id = q.create_enclosure(name, enclosure_type, bioactive, feeding_interval,
+                                           watering_interval, spot_clean_interval, deep_clean_interval)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -100,8 +142,13 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
 
 @router.post("/enclosures/{enclosure_id}/care-events/{kind}")
 def admin_create_care_event(
-    enclosure_id: int, kind: str, note: str = Form(default=None), occurred_at: str = Form(default="")
+    enclosure_id: int, kind: str, note: str = Form(default=None), occurred_at: str = Form(default=""),
+    days_ago: str = Form(default=""),
 ):
+    # A quick-log button (Today/Yesterday/2 days ago) wins over the Advanced datetime picker if
+    # both are somehow present — the three buttons are the common case this exists to simplify.
+    if days_ago:
+        occurred_at = (datetime.now() - timedelta(days=int(days_ago))).strftime("%Y-%m-%dT%H:%M")
     try:
         log_care_event(enclosure_id, kind, note, occurred_at)
     except ValueError as exc:
@@ -115,6 +162,7 @@ def admin_create_care_event(
 def admin_update_enclosure(
     enclosure_id: int,
     name: str = Form(...),
+    enclosure_type: str = Form("basic"),
     bioactive: bool = Form(False),
     feeding_interval: int = Form(7),
     watering_interval: int = Form(3),
@@ -123,10 +171,14 @@ def admin_update_enclosure(
     room_id: str = Form(""),
     fallback_sensor_id: str = Form(""),
 ):
-    q.update_enclosure(
-        enclosure_id, name, bioactive, feeding_interval, watering_interval, spot_clean_interval, deep_clean_interval,
-        int(room_id) if room_id else None, int(fallback_sensor_id) if fallback_sensor_id else None,
-    )
+    try:
+        q.update_enclosure(
+            enclosure_id, name, enclosure_type, bioactive, feeding_interval, watering_interval,
+            spot_clean_interval, deep_clean_interval,
+            int(room_id) if room_id else None, int(fallback_sensor_id) if fallback_sensor_id else None,
+        )
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -187,10 +239,33 @@ def admin_create_sensor(
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
+    ph_min: float | None = Form(None),
+    ph_max: float | None = Form(None),
+    ammonia_min: float | None = Form(None),
+    ammonia_max: float | None = Form(None),
+    nitrite_min: float | None = Form(None),
+    nitrite_max: float | None = Form(None),
+    nitrate_min: float | None = Form(None),
+    nitrate_max: float | None = Form(None),
+    salinity_min: float | None = Form(None),
+    salinity_max: float | None = Form(None),
+    alkalinity_min: float | None = Form(None),
+    alkalinity_max: float | None = Form(None),
+    calcium_min: float | None = Form(None),
+    calcium_max: float | None = Form(None),
+    magnesium_min: float | None = Form(None),
+    magnesium_max: float | None = Form(None),
+    phosphate_min: float | None = Form(None),
+    phosphate_max: float | None = Form(None),
 ):
+    target_ranges = _sensor_target_ranges(
+        temp_min_f, temp_max_f, humidity_min, humidity_max, ph_min, ph_max, ammonia_min, ammonia_max,
+        nitrite_min, nitrite_max, nitrate_min, nitrate_max, salinity_min, salinity_max,
+        alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
+        phosphate_min, phosphate_max,
+    )
     try:
-        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None,
-                         _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None, target_ranges)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
@@ -209,9 +284,18 @@ def admin_edit_sensor(request: Request, sensor_id: int):
         return RedirectResponse(url="/admin", status_code=303)
     sensor["target_temp_min_f"] = _c_to_f(sensor["target_temp_min_c"])
     sensor["target_temp_max_f"] = _c_to_f(sensor["target_temp_max_c"])
+    # Which metric fields render depends on the Sensor's *current* Enclosure's Type — see
+    # CONTEXT.md: Enclosure Type. If reassigned to a different-type Enclosure in the same submit,
+    # a now-inapplicable value is still caught server-side (ValueError) rather than silently saved;
+    # this page just doesn't live-update field visibility as the Enclosure dropdown changes.
+    enclosure = q.get_enclosure(sensor["enclosure_id"]) if sensor["enclosure_id"] else None
     return templates.TemplateResponse(
         request, "admin_sensor_edit.html",
-        {"sensor": sensor, "enclosures": q.list_enclosures(), "error": request.query_params.get("error")}
+        {
+            "sensor": sensor, "enclosures": q.list_enclosures(),
+            "sensor_enclosure_type": enclosure["enclosure_type"] if enclosure else "basic",
+            "error": request.query_params.get("error"),
+        }
     )
 
 
@@ -226,10 +310,33 @@ def admin_update_sensor(
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
+    ph_min: float | None = Form(None),
+    ph_max: float | None = Form(None),
+    ammonia_min: float | None = Form(None),
+    ammonia_max: float | None = Form(None),
+    nitrite_min: float | None = Form(None),
+    nitrite_max: float | None = Form(None),
+    nitrate_min: float | None = Form(None),
+    nitrate_max: float | None = Form(None),
+    salinity_min: float | None = Form(None),
+    salinity_max: float | None = Form(None),
+    alkalinity_min: float | None = Form(None),
+    alkalinity_max: float | None = Form(None),
+    calcium_min: float | None = Form(None),
+    calcium_max: float | None = Form(None),
+    magnesium_min: float | None = Form(None),
+    magnesium_max: float | None = Form(None),
+    phosphate_min: float | None = Form(None),
+    phosphate_max: float | None = Form(None),
 ):
+    target_ranges = _sensor_target_ranges(
+        temp_min_f, temp_max_f, humidity_min, humidity_max, ph_min, ph_max, ammonia_min, ammonia_max,
+        nitrite_min, nitrite_max, nitrate_min, nitrate_max, salinity_min, salinity_max,
+        alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
+        phosphate_min, phosphate_max,
+    )
     try:
-        q.update_sensor(sensor_id, enclosure_id, label, tracking_mode, mac_address or None,
-                         _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+        q.update_sensor(sensor_id, enclosure_id, label, tracking_mode, mac_address or None, target_ranges)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
@@ -248,11 +355,15 @@ def admin_create_plug(
     declared_off_time: str = Form(""),
     room_id: str = Form(""),
     enclosure_ids: list[int] = Form(default=[]),
+    controller_kind: str = Form("none"),
+    target_temp_f: float | None = Form(None),
+    target_humidity_pct: float | None = Form(None),
 ):
     try:
         q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
                        tuya_ip_address, switch_dps_key, declared_on_time or None, declared_off_time or None,
-                       int(room_id) if room_id else None, enclosure_ids)
+                       int(room_id) if room_id else None, enclosure_ids,
+                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
@@ -269,6 +380,9 @@ def admin_edit_plug(request: Request, plug_id: int):
     plug = q.get_plug(plug_id)
     if plug is None:
         return RedirectResponse(url="/admin", status_code=303)
+    plug["target_temp_f"] = _c_to_f(plug["target_temp_c"])
+    # target_humidity_pct needs no unit conversion (already %, see CONTEXT.md: Hydrostat-Controlled)
+    # — q.get_plug's row already carries it through as-is.
     return templates.TemplateResponse(
         request, "admin_plug_edit.html",
         {
@@ -292,12 +406,16 @@ def admin_update_plug(
     declared_off_time: str = Form(""),
     room_id: str = Form(""),
     enclosure_ids: list[int] = Form(default=[]),
+    controller_kind: str = Form("none"),
+    target_temp_f: float | None = Form(None),
+    target_humidity_pct: float | None = Form(None),
 ):
     try:
         q.update_plug(plug_id, label, purpose, tracking_mode, switch_dps_key,
                        tuya_device_id or None, tuya_local_key or None, tuya_ip_address,
                        declared_on_time or None, declared_off_time or None,
-                       int(room_id) if room_id else None, enclosure_ids)
+                       int(room_id) if room_id else None, enclosure_ids,
+                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)

@@ -19,6 +19,7 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
+from collectors import alerts
 from collectors.govee_protocol import DECODERS
 from db.db import get_connection, init_db
 
@@ -41,7 +42,9 @@ def _refresh_registry() -> None:
     # Manual Sensors have no mac_address to listen for — see CONTEXT.md: Tracking Mode. Their
     # Readings are hand-logged through the Admin UI instead of collected here.
     with get_connection() as conn:
-        rows = conn.execute("SELECT id, mac_address FROM sensor WHERE tracking_mode = 'smart'").fetchall()
+        rows = conn.execute(
+            "SELECT id, mac_address FROM sensor WHERE tracking_mode = 'smart' AND auto_update_enabled = 1"
+        ).fetchall()
     _registered_macs.clear()
     _registered_macs.update({row["mac_address"].upper(): row["id"] for row in rows})
 
@@ -80,11 +83,16 @@ def _on_detection(device: BLEDevice, adv: AdvertisementData) -> None:
             (sensor_id, reading.temperature_c, reading.humidity_pct, reading.battery_pct),
         )
     print(f"[govee] {mac}: {reading.temperature_c:.2f}C {reading.humidity_pct:.1f}% batt={reading.battery_pct}%")
+    alerts.evaluate_sensor_out_of_range(sensor_id)  # see CONTEXT.md: Alert, Alert Condition
 
 
 async def _registry_refresh_loop() -> None:
     while True:
         _refresh_registry()
+        # Unreachable (see CONTEXT.md: Alert Condition) needs a check even when nothing broadcasts
+        # at all — evaluate_sensor_out_of_range above only ever fires *from* a Reading arriving.
+        for sensor_id in _registered_macs.values():
+            alerts.evaluate_sensor_unreachable(sensor_id)
         await asyncio.sleep(REFRESH_REGISTRY_SECONDS)
 
 

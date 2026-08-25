@@ -392,6 +392,22 @@ a.pill:hover { opacity: 0.85; }
 .status-unknown { background: var(--status-unknown); color: var(--text); }
 
 .care-row { justify-content: space-between; }
+.care-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.care-actions .log-form { margin-left: 0; }
+.care-advanced summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding: 0.25rem 0.4rem;
+}
+.care-advanced summary:hover { color: var(--text); }
+.care-advanced[open] .log-form { margin-top: 0.3rem; }
 .log-form {
     margin-left: auto;
     display: flex;

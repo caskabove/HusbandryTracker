@@ -18,6 +18,13 @@
             <h2>Enclosure Settings</h2>
             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/update" class="admin-form">
                 <label>Name <input type="text" name="name" value="{{ enclosure.name }}" required></label>
+                <label>Enclosure Type
+                    <select name="enclosure_type">
+                        {% for t in ENCLOSURE_TYPES %}
+                        <option value="{{ t }}" {% if enclosure.enclosure_type == t %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
                 <label class="checkbox"><input type="checkbox" name="bioactive" value="true" {% if enclosure.bioactive %}checked{% endif %}> Bioactive</label>
                 <label>Feeding interval (days) <input type="number" name="feeding_interval" value="{{ enclosure.feeding_interval_days }}" min="1"></label>
                 <label>Watering interval (days) <input type="number" name="watering_interval" value="{{ enclosure.watering_interval_days }}" min="1"></label>
@@ -61,10 +68,27 @@
                     <span class="pill status-{{ status.value }}">
                         {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
                     </span>
-                    <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
-                        <input type="datetime-local" name="occurred_at" title="When it happened — leave blank to log as now">
-                        <button type="submit">Log</button>
-                    </form>
+                    <div class="care-actions">
+                        <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                            <input type="hidden" name="days_ago" value="0">
+                            <button type="submit">Today</button>
+                        </form>
+                        <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                            <input type="hidden" name="days_ago" value="1">
+                            <button type="submit">Yesterday</button>
+                        </form>
+                        <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                            <input type="hidden" name="days_ago" value="2">
+                            <button type="submit">2 days ago</button>
+                        </form>
+                        <details class="care-advanced">
+                            <summary>Advanced</summary>
+                            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                                <input type="datetime-local" name="occurred_at" title="When it happened — leave blank to log as now">
+                                <button type="submit">Log</button>
+                            </form>
+                        </details>
+                    </div>
                 </div>
             {% endfor %}
         </section>
@@ -143,12 +167,19 @@
                         <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF"></label>
                     </div>
                     <div id="add-sensor-manual" class="mode-fields" style="display:none">
-                        <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on temperature or humidity — whichever this Sensor tracks.</p>
+                        <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric — whichever this Sensor tracks.</p>
                     </div>
-                    <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
-                    <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
-                    <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
-                    <label>Target humidity max (%) <input type="number" step="1" name="humidity_max"></label>
+                    {# Which metrics show here depends on this Enclosure's Type — see CONTEXT.md:
+                       Enclosure Type, schemas/enclosure_types.py, ADR 0011. #}
+                    {% for metric in target_range_metrics_for(enclosure.enclosure_type) %}
+                    {% if metric.key == "temperature" %}
+                    <label>Target Temperature min (F) <input type="number" step="0.1" name="temp_min_f"></label>
+                    <label>Target Temperature max (F) <input type="number" step="0.1" name="temp_max_f"></label>
+                    {% else %}
+                    <label>Target {{ metric.label }} min {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="0.1" name="{{ metric.key }}_min"></label>
+                    <label>Target {{ metric.label }} max {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="0.1" name="{{ metric.key }}_max"></label>
+                    {% endif %}
+                    {% endfor %}
                     <button type="submit">Add Sensor</button>
                 </form>
             </details>
@@ -178,7 +209,11 @@
             {% for plug in enclosure.plugs %}
                 <div class="reading-row">
                     <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
-                    {% if plug.tracking_mode == "manual" %}
+                    {% if plug.controller_kind == "thermostat" %}
+                        <span class="pill status-unknown">Target: {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
+                    {% elif plug.controller_kind == "hydrostat" %}
+                        <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
+                    {% elif plug.tracking_mode == "manual" %}
                         {% if plug.declared_on_time and plug.declared_off_time %}
                         <span class="pill status-unknown">Declared: {{ plug.declared_on_time }}&ndash;{{ plug.declared_off_time }}</span>
                         {% else %}
