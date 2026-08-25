@@ -143,3 +143,20 @@ def log_reading(sensor_id: int, temperature_c: float | None, humidity_pct: float
                 "INSERT INTO sensor_reading (sensor_id, temperature_c, humidity_pct) VALUES (?, ?, ?)",
                 (sensor_id, temperature_c, humidity_pct),
             )
+
+
+def assign_enclosure_room(enclosure_id: int, room_id: int | None) -> None:
+    """Drag-and-drop Room reassignment from the dashboard (see CONTEXT.md: Room) — room_id None
+    moves the Enclosure to Ungrouped. Clears fallback_sensor_id (see CONTEXT.md: Fallback Sensor)
+    whenever room_id actually changes: a Fallback Sensor is scoped to a specific Room's own
+    Sensors, so whatever was picked (if anything) is stale the instant the Room changes, or goes
+    away entirely. A no-op drop back onto the Enclosure's current Room leaves it untouched instead
+    of pointlessly clearing a Fallback Sensor selection that's still perfectly valid."""
+    with get_connection() as conn:
+        current = conn.execute("SELECT room_id FROM enclosure WHERE id = ?", (enclosure_id,)).fetchone()
+        if current is None or current["room_id"] == room_id:
+            return
+        conn.execute(
+            "UPDATE enclosure SET room_id = ?, fallback_sensor_id = NULL WHERE id = ?",
+            (room_id, enclosure_id),
+        )

@@ -8,8 +8,12 @@
 </head>
 <body>
     <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>HerpMonitor</h1>
-        <nav><a href="/admin">Admin</a> · <a href="/guide">Guide</a></nav>
+        <nav>
+            <a href="/admin">Admin</a>
+            <a href="/guide">Guide</a>
+        </nav>
     </header>
 
     {# A Reading row shared by an Enclosure's own Sensors, a Room's ambient Sensors, and an
@@ -51,8 +55,15 @@
     {% endmacro %}
 
     {% macro enclosure_panel(enclosure, care_kinds) %}
-        <section class="panel">
+        {# Draggable onto a Room section below to reassign it (see CONTEXT.md: Room) — see
+           app.js's onEnclosureDragStart/onEnclosureDragEnd and dashboard.html's room-section
+           drop handlers. Starts collapsed when there's no Reading to show at all (no Sensor of
+           its own and no Fallback Sensor) — see app.js's toggleCollapse. #}
+        <section class="panel{% if not enclosure.sensors and not enclosure.fallback_sensor %} collapsed{% endif %}"
+                 draggable="true" data-enclosure-id="{{ enclosure.id }}"
+                 ondragstart="onEnclosureDragStart(event)" ondragend="onEnclosureDragEnd(event)">
             <header class="panel-header">
+                <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
                 <a href="/admin/enclosures/{{ enclosure.id }}" class="panel-header-link" title="Edit {{ enclosure.name }}">
                     <h2>{{ enclosure.name }}{% if enclosure.bioactive %}<span class="badge">bioactive</span>{% endif %}</h2>
                     {% for animal in enclosure.animals %}
@@ -110,8 +121,14 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
 
         {% for room in rooms %}
-        <section class="room-section">
+        {# Starts collapsed when the Room has no ambient Sensor of its own — see CONTEXT.md: Room;
+           app.js's toggleCollapse. Doesn't cascade to its Enclosures, which each decide their own
+           collapsed state independently (see enclosure_panel above) — matches how Refresh already
+           never cascades between a Room and its Enclosures (ADR 0005). #}
+        <section class="room-section{% if not room.sensors %} collapsed{% endif %}" data-room-id="{{ room.id }}"
+                 ondragover="onRoomDragOver(event)" ondragleave="onRoomDragLeave(event)" ondrop="onRoomDrop(event)">
             <header class="room-header">
+                <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
                 <a href="/admin/rooms/{{ room.id }}" class="room-header-link" title="Edit {{ room.name }}">
                     <h2>{{ room.name }}</h2>
                     <div class="room-summary">
@@ -153,20 +170,27 @@
         </section>
         {% endfor %}
 
-        {% if ungrouped %}
-        <section class="room-section">
-            <header class="room-header"><h2>Ungrouped</h2></header>
+        {# Always rendered, even with zero Enclosures — otherwise there'd be nowhere to drag one
+           out of a Room to (see CONTEXT.md: Room; app.js's onRoomDrop). #}
+        {% if rooms or ungrouped %}
+        <section class="room-section" data-room-id=""
+                 ondragover="onRoomDragOver(event)" ondragleave="onRoomDragLeave(event)" ondrop="onRoomDrop(event)">
+            <header class="room-header">
+                <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
+                <h2>Ungrouped</h2>
+            </header>
             <div class="panel-grid">
                 {% for enclosure in ungrouped %}
                     {{ enclosure_panel(enclosure, care_kinds) }}
+                {% else %}
+                    <p class="empty">Drag an enclosure here to remove it from its Room</p>
                 {% endfor %}
             </div>
         </section>
-        {% endif %}
-
-        {% if not rooms and not ungrouped %}
+        {% else %}
         <p class="empty">No enclosures registered yet — use tools/register_device.py.</p>
         {% endif %}
     </main>
+    <script src="/static/app.js"></script>
 </body>
 </html>

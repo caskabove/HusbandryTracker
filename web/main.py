@@ -1,10 +1,12 @@
 """HerpMonitor dashboard — FastAPI app, served by uvicorn on localhost:22255 (see docker-compose.yml).
 
 Phase 2, v1 scope only (see CONTEXT.md decisions): dashboard + logbook, no charts, no auth,
-no alerting. The dashboard is deliberately a glance-only view — Schedules and Care logging live on
-the Enclosure's Admin page instead (see web/admin.py), with the dashboard's Care pill linking
-straight there. Schedule (Plug on-time/duration inference from transition history) isn't built
-yet — the Admin page's Schedules section shows "no schedule data yet" for a Smart Plug until it is.
+no alerting. The dashboard is mostly a glance-only view — Schedules and Care logging live on the
+Enclosure's Admin page instead (see web/admin.py), with the dashboard's Care pill linking straight
+there. Three actions do live here directly rather than redirecting to Admin, because they're
+tightly bound to what's already on screen: Refresh (a live BLE read), a Manual Sensor's Log Reading
+form, and dragging an Enclosure panel onto a Room to reassign it (see CONTEXT.md: Room) — the drop
+handlers are in web/static/app.js, persisted via assign_enclosure_room below.
 """
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ from collectors.govee_refresh import refresh_sensors
 from db.db import get_connection, init_db
 from web.admin import router as admin_router
 from web.admin_queries import get_settings
-from web.queries import CARE_EVENT_KINDS, get_dashboard_data, log_reading
+from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -102,6 +104,14 @@ async def refresh_enclosure(enclosure_id: int):
     error = await _refresh_smart_sensors("enclosure_id", enclosure_id)
     if error:
         return RedirectResponse(url=f"/?error={quote(error)}", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/enclosures/{enclosure_id}/assign-room")
+def assign_room(enclosure_id: int, room_id: str = Form(default="")):
+    """Dashboard drag-and-drop target (see CONTEXT.md: Room; web/static/app.js's onRoomDrop) —
+    room_id "" (dropped on Ungrouped) means None."""
+    assign_enclosure_room(enclosure_id, int(room_id) if room_id else None)
     return RedirectResponse(url="/", status_code=303)
 
 

@@ -23,22 +23,34 @@ body {
     font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Logo (left) / title (center) / nav (right, stacked one-per-line rather than a single row) — a
+   fixed three-column layout rather than the title+nav flowing inline together. */
 .page-header {
     background: var(--primary);
-    padding: 1rem 1.5rem;
-    display: flex;
+    padding: 0.6rem 1.5rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 1rem;
+}
+.header-logo {
+    height: 44px;
+    width: auto;
+    display: block;
 }
 .page-header h1 {
     margin: 0;
     font-size: 1.4rem;
     letter-spacing: 0.02em;
+    text-align: center;
 }
 .page-header nav {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.2rem;
     font-size: 0.9rem;
+    white-space: nowrap;
 }
 .page-header nav a {
     color: var(--text);
@@ -231,7 +243,32 @@ button.danger {
     padding: 1.5rem 1.5rem 0.5rem;
 }
 
-.room-section { margin-bottom: 0.5rem; }
+.room-section { margin-bottom: 0.5rem; border-radius: 10px; transition: background-color 0.1s; }
+
+/* Drag-and-drop Enclosure -> Room reassignment (see CONTEXT.md: Room). .dragging is the panel
+   being dragged; .drop-target is the Room section (or Ungrouped) currently under the cursor. */
+.room-section.drop-target { background: rgba(79, 157, 118, 0.15); outline: 2px dashed var(--primary-bright); outline-offset: 4px; }
+.panel { cursor: grab; }
+.panel.dragging { opacity: 0.4; cursor: grabbing; }
+
+/* Collapsible Rooms and Enclosure panels — a Room/Enclosure with no sensor data of its own starts
+   collapsed (server-decided, fresh each page load) so the dashboard leads with what actually has
+   something to show; either can still be toggled open by hand. */
+.collapse-toggle {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: transform 0.15s;
+}
+.room-section.collapsed .collapse-toggle,
+.panel.collapsed .collapse-toggle { transform: rotate(-90deg); }
+.room-section.collapsed .panel-grid { display: none; }
+.panel.collapsed .panel-body { display: none; }
 
 .room-header {
     background: var(--panel-header-bg);

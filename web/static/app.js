@@ -45,3 +45,56 @@ function syncSpotFeedAnimal(select) {
     const row = select.closest(".care-row");
     row.querySelectorAll(".spot-feed-target").forEach(function (el) { el.value = select.value; });
 }
+
+// Dashboard: collapse/expand a Room section or Enclosure panel. Server picks the initial state
+// (collapsed when there's no sensor data to show — see dashboard.html), this just toggles it by
+// hand afterward; not persisted, so it resets to the server's default on the next page load.
+function toggleCollapse(button) {
+    const container = button.closest(".room-section, .panel");
+    if (container) container.classList.toggle("collapsed");
+}
+
+// Dashboard drag-and-drop: drag an Enclosure panel onto a Room (or Ungrouped) to reassign it (see
+// CONTEXT.md: Room). Native HTML5 Drag and Drop, no library. There's no single <form> spanning the
+// drag source and drop target, so the actual reassignment is a plain fetch() POST — matching every
+// other action in this app, the result is a full page reload rather than a partial DOM update.
+function onEnclosureDragStart(event) {
+    event.dataTransfer.setData("text/plain", event.currentTarget.dataset.enclosureId);
+    event.dataTransfer.effectAllowed = "move";
+    event.currentTarget.classList.add("dragging");
+}
+
+function onEnclosureDragEnd(event) {
+    event.currentTarget.classList.remove("dragging");
+}
+
+function onRoomDragOver(event) {
+    event.preventDefault();  // a dragover handler must call this, or drop never fires
+    event.currentTarget.classList.add("drop-target");
+}
+
+function onRoomDragLeave(event) {
+    event.currentTarget.classList.remove("drop-target");
+}
+
+async function onRoomDrop(event) {
+    event.preventDefault();
+    event.currentTarget.classList.remove("drop-target");
+    const enclosureId = event.dataTransfer.getData("text/plain");
+    if (!enclosureId) return;
+    const roomId = event.currentTarget.dataset.roomId;  // "" means Ungrouped (room_id -> NULL)
+    try {
+        const response = await fetch(`/enclosures/${enclosureId}/assign-room`, {
+            method: "POST",
+            headers: {"Content-Type": "application/x-www-form-urlencoded"},
+            body: new URLSearchParams({room_id: roomId}),
+        });
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert("Couldn't move that enclosure — try again.");
+        }
+    } catch (err) {
+        alert("Couldn't move that enclosure — try again.");
+    }
+}
