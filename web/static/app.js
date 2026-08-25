@@ -37,3 +37,11 @@ function updatePlugFieldVisibility(trackingSelectId, controllerSelectId, smartBl
     setToggleBlock(document.getElementById(thermostatBlockId), controllerKind === "thermostat");
     setToggleBlock(document.getElementById(hydrostatBlockId), controllerKind === "hydrostat");
 }
+
+// Spot-feed (see CONTEXT.md): one visible Animal picker per Feeding row, copied into the hidden
+// animal_id field of whichever of the four small forms (Today/Yesterday/2 days ago/Advanced)
+// actually gets submitted — avoids showing four duplicate pickers for one Feeding row.
+function syncSpotFeedAnimal(select) {
+    const row = select.closest(".care-row");
+    row.querySelectorAll(".spot-feed-target").forEach(function (el) { el.value = select.value; });
+}

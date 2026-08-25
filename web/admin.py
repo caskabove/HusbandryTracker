@@ -143,14 +143,14 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
 @router.post("/enclosures/{enclosure_id}/care-events/{kind}")
 def admin_create_care_event(
     enclosure_id: int, kind: str, note: str = Form(default=None), occurred_at: str = Form(default=""),
-    days_ago: str = Form(default=""),
+    days_ago: str = Form(default=""), animal_id: str = Form(default=""),
 ):
     # A quick-log button (Today/Yesterday/2 days ago) wins over the Advanced datetime picker if
     # both are somehow present — the three buttons are the common case this exists to simplify.
     if days_ago:
         occurred_at = (datetime.now() - timedelta(days=int(days_ago))).strftime("%Y-%m-%dT%H:%M")
     try:
-        log_care_event(enclosure_id, kind, note, occurred_at)
+        log_care_event(enclosure_id, kind, note, occurred_at, int(animal_id) if animal_id else None)
     except ValueError as exc:
         return RedirectResponse(
             url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}#care-{kind}", status_code=303
@@ -204,6 +204,34 @@ def admin_create_animal(
 def admin_delete_animal(animal_id: int, enclosure_id: int = Form(...)):
     q.delete_animal(animal_id)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/enclosures/{enclosure_id}/plants")
+def admin_create_plant(enclosure_id: int, name: str = Form(...), species: str = Form("")):
+    try:
+        q.create_plant(enclosure_id, name, species or None)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/plants/{plant_id}/delete")
+def admin_delete_plant(plant_id: int, enclosure_id: int = Form(...)):
+    q.delete_plant(plant_id)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/enclosures/{enclosure_id}/plant-health")
+def admin_log_plant_health(
+    enclosure_id: int, note: str = Form(...), plant_id: str = Form(""), occurred_at: str = Form(""),
+):
+    try:
+        q.log_plant_health(enclosure_id, note, int(plant_id) if plant_id else None, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}#plant-health", status_code=303
+        )
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#plant-health", status_code=303)
 
 
 @router.get("/animals/{animal_id}/edit")
@@ -328,6 +356,7 @@ def admin_update_sensor(
     magnesium_max: float | None = Form(None),
     phosphate_min: float | None = Form(None),
     phosphate_max: float | None = Form(None),
+    auto_update_enabled: bool = Form(False),
 ):
     target_ranges = _sensor_target_ranges(
         temp_min_f, temp_max_f, humidity_min, humidity_max, ph_min, ph_max, ammonia_min, ammonia_max,
@@ -336,7 +365,8 @@ def admin_update_sensor(
         phosphate_min, phosphate_max,
     )
     try:
-        q.update_sensor(sensor_id, enclosure_id, label, tracking_mode, mac_address or None, target_ranges)
+        q.update_sensor(sensor_id, enclosure_id, label, tracking_mode, mac_address or None, target_ranges,
+                         auto_update_enabled)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
@@ -409,13 +439,14 @@ def admin_update_plug(
     controller_kind: str = Form("none"),
     target_temp_f: float | None = Form(None),
     target_humidity_pct: float | None = Form(None),
+    auto_update_enabled: bool = Form(False),
 ):
     try:
         q.update_plug(plug_id, label, purpose, tracking_mode, switch_dps_key,
                        tuya_device_id or None, tuya_local_key or None, tuya_ip_address,
                        declared_on_time or None, declared_off_time or None,
                        int(room_id) if room_id else None, enclosure_ids,
-                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct)
+                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct, auto_update_enabled)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
@@ -507,10 +538,12 @@ def admin_update_room_sensor(
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
+    auto_update_enabled: bool = Form(False),
 ):
     try:
         q.update_room_sensor(sensor_id, room_id, label, tracking_mode, mac_address or None,
-                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max,
+                              auto_update_enabled)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/room-sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)

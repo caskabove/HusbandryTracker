@@ -33,6 +33,10 @@
                 </label>
                 <div id="edit-sensor-smart" class="mode-fields" {% if sensor.tracking_mode != "smart" %}style="display:none"{% endif %}>
                     <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <label class="checkbox">
+                        <input type="checkbox" name="auto_update_enabled" value="true" {% if sensor.auto_update_enabled %}checked{% endif %}>
+                        Auto-Update (uncheck to pause background collection without losing this Sensor's setup)
+                    </label>
                 </div>
                 <div id="edit-sensor-manual" class="mode-fields" {% if sensor.tracking_mode != "manual" %}style="display:none"{% endif %}>
                     <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric — whichever this Sensor tracks.</p>

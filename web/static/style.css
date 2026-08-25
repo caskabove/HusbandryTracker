@@ -392,6 +392,7 @@ a.pill:hover { opacity: 0.85; }
 .status-unknown { background: var(--status-unknown); color: var(--text); }
 
 .care-row { justify-content: space-between; }
+.spot-feed-picker { font-size: 0.8rem; }
 .care-actions {
     margin-left: auto;
     display: flex;

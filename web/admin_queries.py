@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
 from schemas import enclosure_types as et
-from web.queries import CARE_EVENT_KINDS, days_since
+from web.queries import CARE_EVENT_KINDS, _normalize_datetime_local, days_since
 
 
 def list_enclosures() -> list[dict]:
@@ -54,7 +54,60 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             occurred_at = latest["occurred_at"] if latest else None
             enclosure["care"][kind] = {"occurred_at": occurred_at, "days_since": days_since(occurred_at)}
 
+        # Plant / Plant Health (see CONTEXT.md: Plant, Plant Health) — only ever populated for a
+        # Bioactive Enclosure in practice (create_plant enforces it), but harmless to fetch
+        # regardless so a page just shows empty lists rather than needing a special case here.
+        enclosure["plants"] = [dict(r) for r in conn.execute(
+            "SELECT * FROM plant WHERE enclosure_id = ? ORDER BY name", (enclosure_id,)
+        )]
+        enclosure["plant_health_log"] = [dict(r) for r in conn.execute(
+            """SELECT phl.*, p.name AS plant_name FROM plant_health_log phl
+               LEFT JOIN plant p ON p.id = phl.plant_id
+               WHERE phl.enclosure_id = ? ORDER BY phl.occurred_at DESC LIMIT 10""",
+            (enclosure_id,),
+        )]
+
         return enclosure
+
+
+def create_plant(enclosure_id: int, name: str, species: str | None) -> None:
+    """See CONTEXT.md: Plant. Only meaningful on a Bioactive Enclosure — enforced here, not in the
+    schema, same pattern as this file's other cross-row invariants (e.g. Manual Sensor's Target
+    Range requirement)."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT bioactive FROM enclosure WHERE id = ?", (enclosure_id,)).fetchone()
+        if row is None or not row["bioactive"]:
+            raise ValueError("Only a Bioactive Enclosure can have Plants — check Bioactive in Enclosure Settings first.")
+        conn.execute(
+            "INSERT INTO plant (enclosure_id, name, species) VALUES (?, ?, ?)",
+            (enclosure_id, name, species or None),
+        )
+
+
+def delete_plant(plant_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM plant WHERE id = ?", (plant_id,))
+
+
+def log_plant_health(enclosure_id: int, note: str, plant_id: int | None = None,
+                      occurred_at: str | None = None) -> None:
+    """See CONTEXT.md: Plant Health. plant_id None means an Enclosure-wide observation rather than
+    one specific Plant — backdatable like a Care Event, but kept in its own table (see
+    db/schema.sql's comment on plant_health_log for why)."""
+    if not note or not note.strip():
+        raise ValueError("Enter a note describing what you observed.")
+    occurred_at = _normalize_datetime_local(occurred_at)
+    with get_connection() as conn:
+        if occurred_at:
+            conn.execute(
+                "INSERT INTO plant_health_log (enclosure_id, plant_id, note, occurred_at) VALUES (?, ?, ?, ?)",
+                (enclosure_id, plant_id, note, occurred_at),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO plant_health_log (enclosure_id, plant_id, note) VALUES (?, ?, ?)",
+                (enclosure_id, plant_id, note),
+            )
 
 
 def _validate_enclosure_type(enclosure_type: str) -> None:
@@ -235,15 +288,18 @@ def get_sensor(sensor_id: int) -> dict | None:
 
 
 def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
-                   target_ranges: TargetRanges) -> None:
+                   target_ranges: TargetRanges, auto_update_enabled: bool = True) -> None:
+    """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Sensor
+    (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
     columns, values = _target_range_sql(target_ranges)
     set_clause = ", ".join(f"{c} = ?" for c in columns)
     with get_connection() as conn:
         conn.execute(
             f"""UPDATE sensor SET enclosure_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
-                                   {set_clause} WHERE id = ?""",
-            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None, *values, sensor_id),
+                                   auto_update_enabled = ?, {set_clause} WHERE id = ?""",
+            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+             int(auto_update_enabled), *values, sensor_id),
         )
 
 
@@ -266,16 +322,17 @@ def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address
 
 def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: str, mac_address: str | None,
                         temp_min: float | None, temp_max: float | None, humidity_min: float | None,
-                        humidity_max: float | None) -> None:
+                        humidity_max: float | None, auto_update_enabled: bool = True) -> None:
     target_ranges: TargetRanges = {"temperature": (temp_min, temp_max), "humidity": (humidity_min, humidity_max)}
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     with get_connection() as conn:
         conn.execute(
             """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
+                                  auto_update_enabled = ?,
                                   target_temp_min_c = ?, target_temp_max_c = ?, target_humidity_min = ?,
                                   target_humidity_max = ? WHERE id = ?""",
             (room_id, label, tracking_mode, mac_address.upper() if mac_address else None,
-             temp_min, temp_max, humidity_min, humidity_max, sensor_id),
+             int(auto_update_enabled), temp_min, temp_max, humidity_min, humidity_max, sensor_id),
         )
 
 
@@ -381,7 +438,9 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
                  declared_on_time: str | None = None, declared_off_time: str | None = None,
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
-                 target_humidity_pct: float | None = None) -> None:
+                 target_humidity_pct: float | None = None, auto_update_enabled: bool = True) -> None:
+    """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Plug
+    (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     enclosure_ids = enclosure_ids or []
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, declared_on_time, declared_off_time,
                    room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct)
@@ -395,11 +454,11 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?, switch_dps_key = ?,
                                 tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ?,
-                                declared_on_time = ?, declared_off_time = ?,
+                                declared_on_time = ?, declared_off_time = ?, auto_update_enabled = ?,
                                 controller_kind = ?, target_temp_c = ?, target_humidity_pct = ? WHERE id = ?""",
             (room_id, label, purpose, tracking_mode, switch_dps_key or "1", tuya_device_id or None,
              tuya_local_key or None, tuya_ip_address or None, declared_on_time or None, declared_off_time or None,
-             controller_kind, target_temp_c, target_humidity_pct,
+             int(auto_update_enabled), controller_kind, target_temp_c, target_humidity_pct,
              plug_id),
         )
         conn.execute("DELETE FROM plug_enclosure WHERE plug_id = ?", (plug_id,))

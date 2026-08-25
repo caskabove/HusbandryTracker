@@ -68,22 +68,37 @@
                     <span class="pill status-{{ status.value }}">
                         {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
                     </span>
+                    {% if kind == "feeding" and enclosure.animals %}
+                    {# Spot-feed (see CONTEXT.md: Spot-feed) — one shared picker synced into whichever
+                       of the four forms below actually gets submitted, via syncSpotFeedAnimal() in
+                       app.js, rather than duplicating a select in each tiny form. #}
+                    <select class="spot-feed-picker" onchange="syncSpotFeedAnimal(this)" title="Log this Feeding for one Animal instead of the whole Enclosure">
+                        <option value="">Whole enclosure</option>
+                        {% for a in enclosure.animals %}
+                        <option value="{{ a.id }}">Spot-feed: {{ a.name }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
                     <div class="care-actions">
                         <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                            {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                             <input type="hidden" name="days_ago" value="0">
                             <button type="submit">Today</button>
                         </form>
                         <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                            {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                             <input type="hidden" name="days_ago" value="1">
                             <button type="submit">Yesterday</button>
                         </form>
                         <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                            {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                             <input type="hidden" name="days_ago" value="2">
                             <button type="submit">2 days ago</button>
                         </form>
                         <details class="care-advanced">
                             <summary>Advanced</summary>
                             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
+                                {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                                 <input type="datetime-local" name="occurred_at" title="When it happened — leave blank to log as now">
                                 <button type="submit">Log</button>
                             </form>
@@ -127,6 +142,70 @@
                 </form>
             </details>
         </section>
+
+        {% if enclosure.bioactive %}
+        <section class="admin-card" id="plant-health">
+            <h2>Plants</h2>
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Species</th><th></th></tr></thead>
+                <tbody>
+                {% for p in enclosure.plants %}
+                    <tr>
+                        <td class="admin-table-primary">{{ p.name }}</td>
+                        <td>{{ p.species or "—" }}</td>
+                        <td>
+                            <form method="post" action="/admin/plants/{{ p.id }}/delete" class="inline-form">
+                                <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                <button type="submit" class="danger-small">remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="empty">No Plants tracked individually — Plant Health can still be logged for the Enclosure as a whole below.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <details>
+                <summary>+ Add Plant</summary>
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plants" class="admin-form">
+                    <label>Name <input type="text" name="name" placeholder="e.g. pothos" required></label>
+                    <label>Species <input type="text" name="species" placeholder="optional"></label>
+                    <button type="submit">Add Plant</button>
+                </form>
+            </details>
+
+            <h3>Plant Health log</h3>
+            <table class="admin-table">
+                <thead><tr><th>When</th><th>Plant</th><th>Note</th></tr></thead>
+                <tbody>
+                {% for entry in enclosure.plant_health_log %}
+                    <tr>
+                        <td>{{ entry.occurred_at }}</td>
+                        <td>{{ entry.plant_name or "(whole enclosure)" }}</td>
+                        <td>{{ entry.note }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="empty">No Plant Health observations logged yet</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plant-health" class="admin-form">
+                {% if enclosure.plants %}
+                <label>Plant
+                    <select name="plant_id">
+                        <option value="">(whole enclosure)</option>
+                        {% for p in enclosure.plants %}
+                        <option value="{{ p.id }}">{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                {% endif %}
+                <label>Note <input type="text" name="note" placeholder="e.g. pothos yellowing, moved out of direct light" required></label>
+                <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+                <button type="submit">Log</button>
+            </form>
+        </section>
+        {% endif %}
 
         <section class="admin-card">
             <h2>Sensors</h2>

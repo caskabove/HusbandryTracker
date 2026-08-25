@@ -97,22 +97,29 @@ def get_dashboard_data() -> dict:
     return {"rooms": rooms, "ungrouped": ungrouped}
 
 
-def log_care_event(enclosure_id: int, kind: str, note: str | None = None, occurred_at: str | None = None) -> None:
+def log_care_event(enclosure_id: int, kind: str, note: str | None = None, occurred_at: str | None = None,
+                    animal_id: int | None = None) -> None:
     """occurred_at lets a Care Event be backdated to when it actually happened instead of always
-    being "now" — see CONTEXT.md: Care Event. Pass None (the default) to log it as now."""
+    being "now" — see CONTEXT.md: Care Event. Pass None (the default) to log it as now.
+
+    animal_id is Spot-feed only (see CONTEXT.md: Spot-feed) — scopes a Feeding to one Animal in the
+    Enclosure instead of the whole Enclosure. Only valid alongside kind == "feeding"; a non-None
+    value for any other kind is a friendly ValueError rather than a silently-ignored form field."""
     if kind not in CARE_EVENT_KINDS:
         raise ValueError(f"Unknown care event kind: {kind!r}")
+    if animal_id is not None and kind != "feeding":
+        raise ValueError("Spot-feed (picking one Animal) only applies to Feeding.")
     occurred_at = _normalize_datetime_local(occurred_at)
     with get_connection() as conn:
         if occurred_at:
             conn.execute(
-                "INSERT INTO care_event (enclosure_id, kind, occurred_at, note) VALUES (?, ?, ?, ?)",
-                (enclosure_id, kind, occurred_at, note),
+                "INSERT INTO care_event (enclosure_id, animal_id, kind, occurred_at, note) VALUES (?, ?, ?, ?, ?)",
+                (enclosure_id, animal_id, kind, occurred_at, note),
             )
         else:
             conn.execute(
-                "INSERT INTO care_event (enclosure_id, kind, note) VALUES (?, ?, ?)",
-                (enclosure_id, kind, note),
+                "INSERT INTO care_event (enclosure_id, animal_id, kind, note) VALUES (?, ?, ?, ?)",
+                (enclosure_id, animal_id, kind, note),
             )
 
 

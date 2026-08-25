@@ -73,6 +73,10 @@
                     <label>Tuya local_key <input type="text" name="tuya_local_key" value="{{ plug.tuya_local_key or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                     <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="{{ plug.switch_dps_key }}" style="width:3em" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                     <label>LAN IP (optional) <input type="text" name="tuya_ip_address" value="{{ plug.tuya_ip_address or '' }}" placeholder="leave blank for auto-discovery" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <label class="checkbox">
+                        <input type="checkbox" name="auto_update_enabled" value="true" {% if plug.auto_update_enabled %}checked{% endif %} {% if plug.tracking_mode != "smart" %}disabled{% endif %}>
+                        Auto-Update (uncheck to pause background polling without losing this Plug's setup)
+                    </label>
                 </div>
                 {% set manual_hidden = plug.tracking_mode != "manual" or plug.controller_kind != "none" %}
                 <div id="edit-plug-manual" class="mode-fields" {% if manual_hidden %}style="display:none"{% endif %}>
