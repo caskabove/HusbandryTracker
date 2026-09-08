@@ -5,6 +5,7 @@ for scripting/bulk setup.
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -13,6 +14,7 @@ from db.db import get_connection
 from plugins.govee_ble import identity as govee_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
+from web.outbox import write_command
 from web.queries import CARE_EVENT_KINDS, _normalize_datetime_local, days_since
 
 
@@ -90,6 +92,7 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             ) else {"on_time": None, "off_time": None}
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
+            plug["last_command"] = _command_status(conn, plug)
             # "everything on one switch" — see CONTEXT.md: Plug, ADR 0006. Names the *other*
             # Enclosures sharing this Plug, so it's obvious here it's not exclusive to this one.
             plug["shared_with"] = [r["name"] for r in conn.execute(
@@ -481,6 +484,7 @@ def get_plug(plug_id: int) -> dict | None:
         ) else {"on_time": None, "off_time": None}
         plug["detected_on_time"] = detected["on_time"]
         plug["detected_off_time"] = detected["off_time"]
+        plug["last_command"] = _command_status(conn, plug)
         return plug
 
 
@@ -503,6 +507,61 @@ def _detect_schedule(conn, plug_id: int) -> dict:
         "on_time": on_row["recorded_at"][11:16] if on_row else None,
         "off_time": off_row["recorded_at"][11:16] if off_row else None,
     }
+
+
+_TUYA_POLL_INTERVAL_SECONDS = 5  # matches plugins/tuya_lan/plugin.py's own POLL_INTERVAL_SECONDS —
+                                  # duplicated rather than imported, same isolation reasoning as
+                                  # web/outbox.py's module docstring; see ADR 0014
+
+
+def _command_timed_out(requested_at: str, ingest_scan_interval_seconds: int) -> bool:
+    """True once roughly 2x the Ingest scan interval plus the Plugin's own poll cadence has passed
+    since a Command was requested with nothing confirming it — see ADR 0014 (~15-20s with current
+    defaults). Comfortably longer than a normal round trip, short enough not to leave the UI saying
+    "confirming..." forever when the device was actually unreachable."""
+    requested = datetime.strptime(requested_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    timeout = 2 * ingest_scan_interval_seconds + _TUYA_POLL_INTERVAL_SECONDS
+    return (datetime.now(timezone.utc) - requested).total_seconds() > timeout
+
+
+def _command_status(conn, plug: dict) -> dict | None:
+    """What to show next to a Plug's on/off control — see CONTEXT.md: Command, Interruption;
+    ADR 0014. None if no Command has ever been sent for this Plug.
+
+    A Manual Plug's Command IS the fact — no relay, no round trip — so it's always "confirmed".
+    A Smart Plug's Command is "confirmed" once a poll has happened since it was requested
+    (plug_last_seen advanced past requested_at) and the most recently observed relay state matches
+    what was commanded; "failed" once _command_timed_out with no such poll; otherwise "confirming"."""
+    last = conn.execute(
+        "SELECT * FROM plug_command_log WHERE plug_id = ? ORDER BY requested_at DESC, id DESC LIMIT 1",
+        (plug["id"],),
+    ).fetchone()
+    if last is None:
+        return None
+    last = dict(last)
+
+    if plug["tracking_mode"] != "smart":
+        return {**last, "status": "confirmed"}
+
+    seen = conn.execute(
+        "SELECT last_seen_at FROM plug_last_seen WHERE plug_id = ?", (plug["id"],)
+    ).fetchone()
+    current = conn.execute(
+        "SELECT is_on FROM plug_state_transition WHERE plug_id = ? ORDER BY recorded_at DESC LIMIT 1",
+        (plug["id"],),
+    ).fetchone()
+    confirmed = (
+        seen is not None and seen["last_seen_at"] >= last["requested_at"]
+        and current is not None and bool(current["is_on"]) == bool(last["is_on"])
+    )
+    if confirmed:
+        status = "confirmed"
+    else:
+        scan_interval = conn.execute(
+            "SELECT ingest_scan_interval_seconds FROM app_setting WHERE id = 1"
+        ).fetchone()["ingest_scan_interval_seconds"]
+        status = "failed" if _command_timed_out(last["requested_at"], scan_interval) else "confirming"
+    return {**last, "status": status}
 
 
 def list_plugs() -> list[dict]:
@@ -528,6 +587,7 @@ def list_plugs() -> list[dict]:
             ) else {"on_time": None, "off_time": None}
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
+            plug["last_command"] = _command_status(conn, plug)
         return plugs
 
 
@@ -567,6 +627,42 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
             conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (plug_id, eid))
 
 
+def send_plug_command(plug_id: int, is_on: bool, note: str | None = None) -> dict:
+    """Sends a Command to one Plug, Smart or Manual alike — see CONTEXT.md: Command, Interruption;
+    ADR 0014. Always logs one plug_command_log row; a Smart Plug additionally gets an Outbox file
+    dropped for its own Plugin to execute on its next poll (a Manual Plug's row IS the whole
+    action — there's no hardware behind it to actually command).
+
+    A Command counts as an Interruption iff the Plug has a determined setting at the moment it's
+    sent — a Controller Kind other than 'none', or a Target Schedule set (checking target_on_time
+    alone is enough: both-or-neither is already enforced by _validate_plug). Only an Interruption's
+    `note` is meaningful; a plain toggle's is ignored even if one was passed.
+
+    Sending a Command to a Smart Plug whose Auto-Update is currently paused resumes Auto-Update as
+    a side effect (see CONTEXT.md: Auto-Update) — otherwise the confirming plug_state event would
+    be silently dropped by Ingest's own auto_update_enabled = 1 gate."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM plug WHERE id = ?", (plug_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"No such Plug: {plug_id}")
+        plug = dict(row)
+        is_interruption = plug["controller_kind"] != "none" or bool(plug["target_on_time"])
+        cur = conn.execute(
+            "INSERT INTO plug_command_log (plug_id, is_on, is_interruption, note) VALUES (?, ?, ?, ?)",
+            (plug_id, int(is_on), int(is_interruption), note if is_interruption else None),
+        )
+        log_id = cur.lastrowid
+        if plug["tracking_mode"] == "smart" and not plug["auto_update_enabled"]:
+            conn.execute("UPDATE plug SET auto_update_enabled = 1 WHERE id = ?", (plug_id,))
+    # Outbox write happens after the connection above closes — same reasoning as
+    # ingest/ingest.py::_apply_event calling alerts.* only once its own connection is closed
+    # (this app's non-WAL journal mode means a same-process connection can't stay open while
+    # another one writes without risking "database is locked").
+    if plug["tracking_mode"] == "smart":
+        write_command(plug["plugin"], plug["external_id"], is_on, request_id=log_id)
+    return {"id": log_id, "is_interruption": is_interruption}
+
+
 def list_rooms() -> list[dict]:
     with get_connection() as conn:
         return [dict(row) for row in conn.execute("SELECT * FROM room ORDER BY name")]
@@ -601,6 +697,7 @@ def get_room(room_id: int) -> dict | None:
             ) else {"on_time": None, "off_time": None}
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
+            plug["last_command"] = _command_status(conn, plug)
         room["enclosures"] = [dict(r) for r in conn.execute("SELECT * FROM enclosure WHERE room_id = ? ORDER BY name", (room_id,))]
         return room
 

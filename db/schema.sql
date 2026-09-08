@@ -248,6 +248,23 @@ CREATE TABLE IF NOT EXISTS plug_state_transition (
 );
 CREATE INDEX IF NOT EXISTS idx_plug_transition_plug_time ON plug_state_transition (plug_id, recorded_at);
 
+-- One row per Command sent to a Plug — Smart or Manual, plain toggle or Interruption alike — see
+-- CONTEXT.md: Command, Interruption; ADR 0014. What was REQUESTED, as opposed to
+-- plug_state_transition (what was actually observed) — a Smart Plug's Command may never be
+-- confirmed at all if the device was unreachable when the owning Plugin tried to execute it.
+-- Plug-scoped rather than folded into care_event: a Plug can be Room-owned instead of belonging to
+-- any Enclosure, so care_event's NOT NULL enclosure_id wouldn't fit every row here. Append-only,
+-- like sensor_reading/care_event — never updated in place.
+CREATE TABLE IF NOT EXISTS plug_command_log (
+    id              INTEGER PRIMARY KEY,
+    plug_id         INTEGER NOT NULL REFERENCES plug(id) ON DELETE CASCADE,
+    requested_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    is_on           INTEGER NOT NULL,  -- 0/1, the commanded state
+    is_interruption INTEGER NOT NULL,  -- 0/1 — true iff the Plug had a determined setting at request time (see CONTEXT.md: Interruption)
+    note            TEXT               -- optional; only ever prompted-for on an Interruption
+);
+CREATE INDEX IF NOT EXISTS idx_plug_command_log_plug_time ON plug_command_log (plug_id, requested_at);
+
 -- Data Capture: a Plug's telemetry snapshot (watts/volts/amps), the Plug-side equivalent of a
 -- Sensor's Reading (see CONTEXT.md: Data Capture, ADR 0009). Written on a slower, independent
 -- cadence (every 1-5 min, a plain code constant like the poll interval — see ADR 0005's precedent)

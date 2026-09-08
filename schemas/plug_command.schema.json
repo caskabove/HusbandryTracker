@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://herpmonitor.local/schemas/plug_command.schema.json",
+  "title": "Plug Command",
+  "description": "A one-shot instruction Core drops into a Plugin's Outbox to actuate a Smart Plug's relay right now. See CONTEXT.md: Command, Outbox; ADR 0014.",
+  "type": "object",
+  "required": ["schema_version", "plugin", "external_id", "command", "requested_at", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "plugin": {
+      "description": "The Plugin that should execute this Command, e.g. \"tuya_lan\" — matches plug.plugin. Only a Plugin that implements command execution ever reads its Outbox directory at all; govee_ble never does.",
+      "type": "string",
+      "minLength": 1
+    },
+    "external_id": {
+      "description": "The opaque per-Plugin device id this Command targets — matches plug.external_id for the same plugin. See CONTEXT.md: External ID.",
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "description": "The instruction kind. Only one exists today — see CONTEXT.md: Command. Room to add more later (e.g. a future automation phase) without changing this envelope's shape.",
+      "enum": ["set_power"]
+    },
+    "requested_at": {
+      "description": "UTC timestamp the Command was issued, formatted exactly like SQLite's datetime('now') — \"YYYY-MM-DD HH:MM:SS\", no 'T', no timezone suffix — so it compares directly against plug_last_seen/plug_state_transition when deciding whether a Command has been confirmed yet (see ADR 0014).",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+    },
+    "request_id": {
+      "description": "The originating plug_command_log row's id, carried along for tracing/log correlation only — a Plugin never needs to interpret it, just echo it in its own log lines if useful.",
+      "type": ["integer", "null"]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "command": { "const": "set_power" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/set_power_payload" } } }
+    }
+  ],
+  "$defs": {
+    "set_power_payload": {
+      "type": "object",
+      "required": ["is_on"],
+      "additionalProperties": false,
+      "properties": {
+        "is_on": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -409,6 +409,22 @@ def admin_delete_plug(plug_id: int):
     return RedirectResponse(url="/admin/", status_code=303)
 
 
+@router.post("/plugs/{plug_id}/command")
+def admin_send_plug_command(
+    plug_id: int,
+    is_on: bool = Form(...),
+    note: str = Form(""),
+):
+    """The on/off control on a Plug's pill — see CONTEXT.md: Command, Interruption; ADR 0014. No
+    confirmation dialog by design (see ADR 0014's Considered Options) — the driving use case is
+    reacting quickly to an Alert, which a confirm dialog would work directly against."""
+    try:
+        q.send_plug_command(plug_id, is_on, note or None)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
 @router.get("/plugs/{plug_id}/edit")
 def admin_edit_plug(request: Request, plug_id: int):
     plug = q.get_plug(plug_id)

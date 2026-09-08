@@ -434,6 +434,20 @@ a.pill:hover { opacity: 0.85; }
 .schedule-target { opacity: 0.7; }
 .status-red-text { color: var(--status-red); font-weight: 600; }
 
+/* Plug on/off control — see CONTEXT.md: Command; ADR 0014. Reuses .admin-form's input/button
+   styling (added alongside it on the same <form>) but lays out compactly/inline instead of
+   .admin-form's own wrap-and-space-out-fields layout, since this is just two buttons and an
+   optional note, not a multi-field form. */
+.plug-command-form {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
+    margin-top: 0.15rem;
+}
+.plug-command-form input[type="text"] {
+    width: 11rem;
+}
+
 .care-row { justify-content: space-between; }
 .spot-feed-picker { font-size: 0.8rem; }
 .care-actions {

@@ -314,6 +314,29 @@
                             · Off <span class="schedule-target">{{ plug.target_off_time or "—" }}</span>/{{ plug.detected_off_time or "—" }}
                         </span>
                     {% endif %}
+                    {# On/off Command control — see CONTEXT.md: Command, Interruption; ADR 0014.
+                       No confirmation dialog by design (see ADR 0014's Considered Options); the
+                       note field only appears when the Plug has a determined setting, since only
+                       that case is an Interruption — the server recomputes this independently
+                       either way, this is just a UI hint. #}
+                    {% if plug.last_command %}
+                        {% if plug.last_command.status == "confirming" %}
+                        <span class="pill status-unknown">Commanded {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }} — confirming…{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
+                        {% elif plug.last_command.status == "failed" %}
+                        <span class="pill status-red">Command failed — no response{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
+                        {% elif plug.tracking_mode == "manual" %}
+                        <span class="pill status-unknown">Logged {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }}{% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
+                        {% else %}
+                        <span class="pill status-green">{{ "ON" if plug.last_command.is_on else "OFF" }} (commanded {{ plug.last_command.requested_at[11:16] }}){% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
+                        {% endif %}
+                    {% endif %}
+                    <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">
+                        <button type="submit" name="is_on" value="true">Turn On</button>
+                        <button type="submit" name="is_on" value="false">Turn Off</button>
+                        {% if plug.controller_kind != "none" or (plug.target_on_time and plug.target_off_time) %}
+                        <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
+                        {% endif %}
+                    </form>
                 </div>
             {% else %}
                 <p class="empty">No plugs registered</p>

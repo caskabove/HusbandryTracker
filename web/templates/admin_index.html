@@ -120,7 +120,7 @@
         <section class="admin-card">
             <h2>Plugs</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th>Schedule</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th>Schedule</th><th>Control</th><th></th></tr></thead>
                 <tbody>
                 {% for p in plugs %}
                     <tr>
@@ -151,10 +151,34 @@
                                 </span>
                             {% endif %}
                         </td>
+                        <td>
+                            {# On/off Command control — see CONTEXT.md: Command, Interruption;
+                               ADR 0014. No confirmation dialog by design (see ADR 0014's
+                               Considered Options); note field only appears when the Plug has a
+                               determined setting — that's the only case that's an Interruption. #}
+                            {% if p.last_command %}
+                                {% if p.last_command.status == "confirming" %}
+                                <span class="pill status-unknown">Commanded {{ "ON" if p.last_command.is_on else "OFF" }} {{ p.last_command.requested_at[11:16] }} — confirming…{% if p.last_command.note %} ({{ p.last_command.note }}){% endif %}</span>
+                                {% elif p.last_command.status == "failed" %}
+                                <span class="pill status-red">Command failed — no response{% if p.last_command.note %} ({{ p.last_command.note }}){% endif %}</span>
+                                {% elif p.tracking_mode == "manual" %}
+                                <span class="pill status-unknown">Logged {{ "ON" if p.last_command.is_on else "OFF" }} {{ p.last_command.requested_at[11:16] }}{% if p.last_command.note %} — {{ p.last_command.note }}{% endif %}</span>
+                                {% else %}
+                                <span class="pill status-green">{{ "ON" if p.last_command.is_on else "OFF" }} (commanded {{ p.last_command.requested_at[11:16] }}){% if p.last_command.note %} — {{ p.last_command.note }}{% endif %}</span>
+                                {% endif %}
+                            {% endif %}
+                            <form method="post" action="/admin/plugs/{{ p.id }}/command" class="admin-form plug-command-form">
+                                <button type="submit" name="is_on" value="true">Turn On</button>
+                                <button type="submit" name="is_on" value="false">Turn Off</button>
+                                {% if p.controller_kind != "none" or (p.target_on_time and p.target_off_time) %}
+                                <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
+                                {% endif %}
+                            </form>
+                        </td>
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="empty">No plugs yet — add one below.</td></tr>
+                    <tr><td colspan="7" class="empty">No plugs yet — add one below.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

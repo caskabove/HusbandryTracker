@@ -1,7 +1,8 @@
 """Shared helpers for this repo's built-in Plugins (see CONTEXT.md: Plugin; ADR 0013) — writing
-Plugin Events to the Inbox, and reading a Plugin's own Registry export. A third-party Plugin in
-another language re-implements this itself; it's convenience shared between the two Plugins that
-happen to live in this repo, not part of the Plugin/Ingest contract.
+Plugin Events to the Inbox, reading a Plugin's own Registry export, and reading its own Outbox of
+pending Commands (see CONTEXT.md: Command, Outbox; ADR 0014). A third-party Plugin in another
+language re-implements this itself; it's convenience shared between the two Plugins that happen to
+live in this repo, not part of the Plugin/Ingest contract.
 """
 from __future__ import annotations
 
@@ -10,11 +11,16 @@ import os
 import re
 import time
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
+
+import jsonschema
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INBOX_DIR = REPO_ROOT / "data" / "inbox"
 REGISTRY_DIR = REPO_ROOT / "data" / "registry"
+OUTBOX_DIR = REPO_ROOT / "data" / "outbox"
+_COMMAND_SCHEMA_PATH = REPO_ROOT / "schemas" / "plug_command.schema.json"
 
 _UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
 
@@ -60,3 +66,35 @@ def read_registry(plugin: str) -> list[dict]:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return []  # a mid-write read; Ingest writes atomically, so this should be rare/transient
+
+
+@lru_cache(maxsize=1)
+def _command_validator() -> jsonschema.Draft202012Validator:
+    schema = json.loads(_COMMAND_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return jsonschema.Draft202012Validator(schema)
+
+
+def take_command(plugin: str, external_id: str) -> dict | None:
+    """Reads and removes this Plugin's pending Command for one device from the Outbox (see
+    CONTEXT.md: Command, Outbox; ADR 0014), if one exists — at most one file ever sits there per
+    (plugin, external_id), since Core overwrites rather than queues (see web/outbox.py's
+    write_command). Returns None if there's nothing pending.
+
+    A missing, mid-write, corrupt, or schema-invalid file is all treated the same as nothing
+    pending, same tolerance read_registry already gives a missing Registry file — Core's next
+    write simply tries again, and a malformed file (never expected from Core's own writer, but
+    cheap to guard regardless — same instinct as Ingest quarantining a bad Inbox event) is removed
+    rather than retried forever."""
+    safe_id = _UNSAFE_FILENAME_CHARS.sub("_", external_id)
+    path = OUTBOX_DIR / plugin / f"{safe_id}.json"
+    if not path.exists():
+        return None
+    try:
+        command = json.loads(path.read_text(encoding="utf-8"))
+        _command_validator().validate(command)
+    except (json.JSONDecodeError, jsonschema.ValidationError) as exc:
+        print(f"[{plugin}] dropping unreadable Command for {external_id}: {exc}")
+        path.unlink(missing_ok=True)
+        return None
+    path.unlink(missing_ok=True)
+    return command

@@ -9,6 +9,11 @@ side effect: unlike the pre-ADR-0013 version of this file, a live Auto-Update pa
 now takes effect on the very next poll instead of only at process restart, since every poll re-checks
 the current Registry rather than baking the flag in once at thread start.
 
+Also checks its own Outbox for a pending Command on every poll (see CONTEXT.md: Command, Outbox;
+ADR 0014) — this is the one Plugin in this repo that implements command execution at all, since
+govee_ble has nothing to actuate. A Command is executed at most once (take_command removes the file
+on read) and never retried if the device is unreachable at that moment — see _execute_command.
+
 Also drops plug_telemetry Plugin Events (watts/volts/amps/countdown, see CONTEXT.md: Data Capture)
 on a slower, independent cadence from the 5s state watch above. As of this file, that's built but
 empty for every registered device in this collection: a real discovery dump (devices.json, 13
@@ -34,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import tinytuya
 
-from plugins.common import read_registry, write_event
+from plugins.common import read_registry, take_command, write_event
 from plugins.tuya_lan.identity import PLUGIN_NAME, decode_external_id, unpack_config
 
 POLL_INTERVAL_SECONDS = 5
@@ -78,6 +83,27 @@ def _capture_telemetry(external_id: str, dps: dict) -> None:
     print(f"[tuya_lan] {external_id}: Data Capture -> {telemetry}")
 
 
+def _execute_command(device: tinytuya.OutletDevice, external_id: str, current: dict, command: dict) -> None:
+    """Executes one Command taken from the Outbox — see CONTEXT.md: Command; ADR 0014. Only
+    set_power exists today. A failure (device unreachable right this moment) is dropped, not
+    retried: take_command already removed the file on read, so nothing re-attempts it later — see
+    ADR 0014's Considered Options for why a silently-late command would be worse than a dropped
+    one for something controlling heat/humidity."""
+    is_on = command["payload"]["is_on"]
+    try:
+        device.set_status(is_on, switch=current["switch_dps_key"])
+    except Exception as exc:  # tinytuya raises plain exceptions on timeout/network errors
+        print(f"[tuya_lan] {external_id}: Command failed ({exc}) — dropped, not retried")
+        return
+    print(f"[tuya_lan] {external_id}: Command executed -> is_on={is_on}")
+    # A Command sent while Auto-Update was paused resumes it server-side
+    # (web/admin_queries.py::send_plug_command) before the Outbox file is even written — correct
+    # the locally-cached flag right away rather than waiting up to REFRESH_REGISTRY_SECONDS for the
+    # next Registry re-read, so this same iteration's regular poll below actually reports the
+    # confirming plug_state event instead of silently swallowing it under the stale flag.
+    current["auto_update_enabled"] = True
+
+
 def _poll_device(external_id: str, stop_event: threading.Event) -> None:
     info = _watched[external_id]
     device = tinytuya.OutletDevice(info["device_id"], info["ip_address"] or "Auto", info["local_key"], version="3.3")
@@ -89,6 +115,11 @@ def _poll_device(external_id: str, stop_event: threading.Event) -> None:
         if current is None:
             print(f"[tuya_lan] {external_id}: no longer in Registry — stopping")
             return
+
+        command = take_command(PLUGIN_NAME, external_id)
+        if command is not None:
+            _execute_command(device, external_id, current, command)
+
         try:
             status = device.status()
             dps = status.get("dps", {})

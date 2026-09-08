@@ -18,6 +18,7 @@ from schemas.care_event import CareEventRead
 from schemas.enclosure import EnclosureRead
 from schemas.plant import PlantRead
 from schemas.plug import PlugRead
+from schemas.plug_command_log import PlugCommandLogRead
 from schemas.room import RoomRead
 from schemas.sensor import SensorRead
 
@@ -46,6 +47,7 @@ def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
 @pytest.mark.parametrize("model, table", [
     (SensorRead, "sensor"),
     (PlugRead, "plug"),
+    (PlugCommandLogRead, "plug_command_log"),
     (CareEventRead, "care_event"),
     (EnclosureRead, "enclosure"),
     (RoomRead, "room"),
