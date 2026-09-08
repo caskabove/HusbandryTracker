@@ -1,7 +1,7 @@
 """Scan for nearby Govee BLE advertisements and dump raw bytes.
 
 Use this to (a) find the MAC address of each H5074 so you can register it against an Enclosure,
-and (b) verify collectors/govee_protocol.py's decode against real hardware before trusting it
+and (b) verify plugins/govee_ble/protocol.py's decode against real hardware before trusting it
 (see that module's docstring).
 
 Usage:
@@ -19,7 +19,7 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from collectors.govee_protocol import DECODERS
+from plugins.govee_ble.protocol import DECODERS
 
 seen: set[str] = set()
 

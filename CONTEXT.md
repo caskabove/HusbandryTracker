@@ -42,7 +42,13 @@ A real Enclosure, always present, used as a holding pen for a Plug that doesn't 
 Whether a Sensor or Plug is watched by real hardware or tracked by hand — `Smart` (a real device exists and is polled automatically) or `Manual` (no device credentials; a person enters what's happening instead). Set independently per Sensor and per Plug, and changeable later without losing the row's history if the underlying hardware is swapped out (a smart plug replaced by a mechanical timer, or vice versa).
 
 **Device Registration**:
-The manual, admin-screen setup of a Sensor or Plug. For a `Smart` one, this maps its hardware identifier (Govee MAC address, Tuya `device_id`) to the Enclosure (and, for Plugs, Purpose) it belongs to. For a `Manual` one, there's no hardware identifier to map — just the Enclosure, Purpose/label, and (Target Range or Target Schedule). A one-time setup step per Sensor/Plug, not an auto-discovery/pairing flow — edited only when hardware is added, swapped, or Tracking Mode changes.
+The manual, admin-screen setup of a Sensor or Plug. For a `Smart` one, this maps its Plugin, External ID, and Plugin Config to the Enclosure (and, for Plugs, Purpose) it belongs to. For a `Manual` one, there's no hardware identifier to map — just the Enclosure, Purpose/label, and (Target Range or Target Schedule). A one-time setup step per Sensor/Plug, not an auto-discovery/pairing flow — edited only when hardware is added, swapped, or Tracking Mode changes.
+
+**External ID**:
+The opaque identifier a Plugin uses to address one physical device within its own protocol — a Govee MAC address, or a Tuya `device_id`+`switch_dps_key` pair joined into one string. Unique together with Plugin (two different Plugins may coincidentally reuse the same raw value, e.g. a MAC address, without colliding). Core never interprets its contents — only the owning Plugin knows how to parse or use it.
+
+**Plugin Config**:
+The connection/credential data a Smart Sensor's or Plug's Plugin needs beyond its External ID to actually reach the device — a Tuya `local_key` and optional pinned IP; empty for Govee, which needs nothing beyond the MAC address itself. Vendor-specific shape, stored opaque to core (JSON), never validated or interpreted outside the owning Plugin.
 
 **Schedule**:
 A Plug's on-time and off-time, made of two parts that exist independently and get compared: a **Target Schedule** (what you expect/intend) and, for a Smart Plug, a **Detected Schedule** (what's actually been observed) — see those terms, and Timer Warning. Not shown at all for a Plug with a Controller Kind set — see Controller Kind.
@@ -76,6 +82,22 @@ A Plug's captured telemetry snapshot — current wattage/voltage/current draw, a
 **Auto-Update**:
 A per-Sensor or per-Plug toggle, meaningful only for a `Smart` Sensor/Plug, that pauses automatic background collection (Readings for a Sensor; Plug State Transitions and Data Captures for a Plug) without changing Tracking Mode or losing device credentials/history. Distinct from Refresh, which is a one-off manual pull on demand — Auto-Update is an ongoing on/off state, for silencing a flaky or temporarily-irrelevant device (e.g. unplugged for the season) without deregistering it. Default on.
 
+**Plugin**:
+An independent process that owns one vendor/protocol integration end-to-end (credentials, polling or listening cadence, protocol quirks) and talks to the rest of HerpMonitor only by reading and writing JSON files — never touching the database directly. Replaces "collector" as the term going forward; a Govee or Tuya Plugin today, but the shape admits any future vendor, in any language, without changing core code. See Ingest, Inbox, Registry, Plugin Event, and ADR 0013.
+_Avoid_: Collector, integration, driver
+
+**Ingest**:
+The core process that scans the Inbox every **Ingest Interval** (an app-wide, Admin-editable setting, default 5s), validates each Plugin Event against schema, resolves it to the Sensor/Plug row it belongs to, and writes the resulting Reading/Plug State Transition/Data Capture — then evaluates Alert Conditions, the same role `collectors/alerts.py` played inline before ADR 0013. Deliberately not named "Monitor" to avoid colliding with the app's own name. Contains no vendor-specific code; adding a Plugin never touches it. Since a Plug's Plugin reports its state on every poll rather than only on change, a slow Ingest Interval only delays when a change is *seen* — it never loses one, unlike a slow BLE registry-refresh interval, which can genuinely miss an irregular broadcast.
+
+**Plugin Event**:
+The JSON file a Plugin writes to the Inbox for one observation, validated against `schemas/plugin_event.schema.json` — envelope shape `{schema_version, plugin, kind, external_id, observed_at, payload}`, where `kind` (`sensor_reading`, `plug_state`, `plug_telemetry`) determines the payload's shape. A Plugin never expects to read one back; Ingest consumes and removes each one it processes.
+
+**Inbox**:
+The shared directory (`data/inbox/<kind>/`) every Plugin writes Plugin Events into and Ingest alone drains — the Plugin-to-Core half of the filesystem contract described in ADR 0013. See Registry for the Core-to-Plugin half.
+
+**Registry** (as in *the Registry*, not Device Registration):
+The JSON file Core exports per Plugin (`data/registry/<plugin>.json`), re-written whenever Device Registration changes, listing exactly which devices that Plugin should watch — each one's External ID and Plugin Config. The Core-to-Plugin half of the filesystem contract; see Inbox for the other direction. A Plugin never queries the database directly to discover what it should watch.
+
 **Reading**:
 A single Sensor data point (temperature and/or humidity) at a point in time. A `Smart Sensor`'s Readings are collected automatically by the BLE listener. A `Manual Sensor`'s Readings are logged by hand through the Admin UI — one value per metric the Sensor actually tracks — and, like a Care Event, can be backdated to when the measurement was actually taken instead of being forced to "now".
 
@@ -101,7 +123,7 @@ A flag on an Enclosure, independent of Enclosure Type, for one whose substrate h
 A per-Enclosure configurable number of days (`feeding_interval_days`, default 7; `watering_interval_days`, default 3; `spot_clean_interval_days`; `deep_clean_interval_days`) used to derive the panel's color-coded status for the days elapsed since the last Care Event of that kind. Not a global constant — different Enclosures may have very different intervals by species/life-stage/Bioactive status.
 
 **Refresh**:
-A per-Room or per-Enclosure dashboard action that forces a live BLE read from that entity's own Smart Sensor(s) right now, instead of waiting for the next passive broadcast the collector happens to hear. Scoped strictly to what that entity owns — a Room's Refresh never reaches into its Enclosures' own Sensors, and an Enclosure showing a Fallback Sensor's Reading has no Refresh of its own (use the Room's instead, since that's what actually owns the Sensor). Only shown where at least one Smart Sensor is actually owned — never for Manual Sensors, since there's nothing to broadcast. Waits up to the **Refresh Timeout** (an app-wide, Admin-editable setting, default 30s) before giving up on any Sensor that didn't report in time; whatever did report in that window is still written and shown.
+A per-Room or per-Enclosure dashboard action that forces a live BLE read from that entity's own Smart Sensor(s) right now, instead of waiting for the next passive broadcast the Govee Plugin happens to hear. Deliberately outside the Plugin/Registry/Inbox/Ingest pipeline (see ADR 0005, reaffirmed by ADR 0013) — `web` runs its own short-lived `BleakScanner` and writes straight to `sensor_reading`, the same as before this pivot; a Refresh-triggered Reading is never a Plugin Event. Scoped strictly to what that entity owns — a Room's Refresh never reaches into its Enclosures' own Sensors, and an Enclosure showing a Fallback Sensor's Reading has no Refresh of its own (use the Room's instead, since that's what actually owns the Sensor). Only shown where at least one Smart Sensor is actually owned — never for Manual Sensors, since there's nothing to broadcast. Waits up to the **Refresh Timeout** (an app-wide, Admin-editable setting, default 30s) before giving up on any Sensor that didn't report in time; whatever did report in that window is still written and shown.
 
 **Alert**:
 A record that one of a Sensor's or Plug's monitored conditions (see Alert Condition) crossed into an abnormal state, tracked as a state machine per entity+condition — `normal` → `pending` → `alerting` → `resolved` — not a stateless one-shot check. A condition must stay abnormal continuously for the **Alert Debounce** duration before it actually fires (avoids a false alarm from one noisy poll or a momentary blip); once `alerting`, it fires exactly one push notification and stays silent (no repeat spam) until the condition clears, at which point a distinct "resolved" notification fires too. Delivered via **ntfy** (see ADR 0010). Distinct from a Target Range's passive dashboard coloring, which still happens independently and immediately, with no debounce or notification.
@@ -110,7 +132,7 @@ A record that one of a Sensor's or Plug's monitored conditions (see Alert Condit
 The three kinds of Alert, each scoped to specific entities:
 - **Out of Target Range** (Sensor only): a Reading falls outside the Sensor's configured Target Range.
 - **Zero Power While On** (Plug only): a Smart Plug's relay reads on but its Data Capture reads ~0W — a burnt-out bulb or failed heating/pump element downstream, regardless of Controller Kind. Never fires while the relay reads off (0W while off is expected, not an anomaly).
-- **Unreachable** (Sensor or Plug): no successful Reading/Data Capture has been collected for the entity in at least the Alert Debounce duration — a Smart Plug's local poll is failing, or a Smart Sensor hasn't broadcast in that window.
+- **Unreachable** (Sensor or Plug): the entity's Plugin has reported no observation at all — of any kind, changed or not — in at least the Alert Debounce duration. For a Sensor that's a Reading; for a Plug it's a raw on/off state report, whether or not it changed (see Ingest — Plug state is reported every poll, not just on change, precisely so this stays a plain absence check). A Smart Plug's local poll failing, or a Smart Sensor not broadcasting, both show up the same way: nothing arrives.
 
 **Alert Debounce**:
 An app-wide setting (single row on `app_setting`, same pattern as Refresh Timeout), default 10 minutes — the minimum duration an Alert Condition must remain continuously abnormal before it fires. One shared value across all three Alert Conditions, not configured per-kind.

@@ -24,7 +24,7 @@ out exactly.
 - **A Windows computer that stays on, in the same room (or close to) your animals.** It needs to
   stay running and stay near your Govee sensors, because it listens for their signal over
   Bluetooth — the further away, the less reliable the readings.
-- **Python** — free software that runs both the website and the sensor listener. [Download it here](https://www.python.org/downloads/)
+- **Python** — free software that runs the website and the background listeners. [Download it here](https://www.python.org/downloads/)
   (get the latest version) and install it. During installation, make sure to check the box that
   says **"Add python.exe to PATH"** — that's the one setting that matters.
 - **Your Govee H5074 sensors**, one per enclosure, already set up and working in the Govee phone
@@ -65,18 +65,18 @@ different computer.
 
 ### The easy way
 
-Double-click **`start.bat`** in the HerpMonitor folder. It opens three windows (the website, the
-sensor listener, and the plug listener) and automatically opens the dashboard in your browser
+Double-click **`start.bat`** in the HerpMonitor folder. It opens four windows (the website, Ingest,
+the sensor plugin, and the plug plugin) and automatically opens the dashboard in your browser
 after a few seconds.
 
-Leave all three windows open (minimized is fine) — closing one stops that part. You can close the
+Leave all four windows open (minimized is fine) — closing one stops that part. You can close the
 first little window that says "HerpMonitor is running" once it says so; the other three keep
 going.
 
 ### The manual way
 
 Useful if `start.bat` doesn't work for some reason, or you want to see what it's actually doing.
-Every time you want to use HerpMonitor, you start **three things**, each in its own Command Prompt
+Every time you want to use HerpMonitor, you start **four things**, each in its own Command Prompt
 window:
 
 **Website:**
@@ -85,16 +85,22 @@ window:
 python -u -m uvicorn web.main:app --host 127.0.0.1 --port 22255
 ```
 
-**Sensor listener** (open a second Command Prompt window for this one):
+**Ingest** (open a second Command Prompt window for this one):
 ```
 .venv\Scripts\activate
-python -u collectors\govee_collector.py
+python -u ingest\ingest.py
 ```
 
-**Plug listener** (open a third Command Prompt window for this one):
+**Sensor plugin** (open a third Command Prompt window for this one):
 ```
 .venv\Scripts\activate
-python -u collectors\tuya_collector.py
+python -u plugins\govee_ble\plugin.py
+```
+
+**Plug plugin** (open a fourth Command Prompt window for this one):
+```
+.venv\Scripts\activate
+python -u plugins\tuya_lan\plugin.py
 ```
 
 Then open a web browser to:
@@ -406,11 +412,8 @@ notifications you don't need right now. It's not the same as switching Tracking 
 that's for permanently swapping the physical hardware; Auto-Update is for a temporary pause on the
 same device.
 
-One thing to know: pausing a Sensor takes effect within about a minute. Pausing a Plug that's
-already being watched needs the Plug Listener window restarted to fully stop — see [Stopping
-HerpMonitor](#6-stopping-herpmonitor) and [Starting HerpMonitor](#3-starting-herpmonitor). Unchecking it still stops that Plug from
-being picked up freshly, but if it was already running, the existing connection keeps going until
-restart.
+One thing to know: pausing a Sensor or a Plug both take effect within a few seconds — the next time
+its plugin polls or hears from it, it checks whether you've paused it first.
 
 ### Removing something
 
@@ -425,21 +428,21 @@ if it loses its last one.
 
 ## 6. Stopping HerpMonitor
 
-Close the **"HerpMonitor - Website"**, **"HerpMonitor - Sensor Listener"**, and **"HerpMonitor -
-Plug Listener"** windows (or click into each and press `Ctrl+C`).
+Close the **"HerpMonitor - Website"**, **"HerpMonitor - Ingest"**, **"HerpMonitor - Sensor Plugin
+(Govee)"**, and **"HerpMonitor - Plug Plugin (Tuya)"** windows (or click into each and press `Ctrl+C`).
 
-You don't strictly need to stop either one — it's fine to leave both running all the time (that's
-actually the normal way to use it, so history keeps accumulating). Stopping is only needed if
-you're restarting the computer, updating the software, or troubleshooting.
+You don't strictly need to stop any of them — it's fine to leave them all running all the time
+(that's actually the normal way to use it, so history keeps accumulating). Stopping is only needed
+if you're restarting the computer, updating the software, or troubleshooting.
 
 ---
 
 ## 7. If Something's Not Working
 
 - **The website won't load at `localhost:22255`, or Temp/Humidity is stuck on "no data yet"** —
-  One of the two windows isn't running anymore. Easiest fix: close whatever HerpMonitor windows
-  are still open and double-click `start.bat` again. Also double check Bluetooth is turned on (the
-  sensor listener needs it).
+  One of the windows isn't running anymore. Easiest fix: close whatever HerpMonitor windows are
+  still open and double-click `start.bat` again. Also double check Bluetooth is turned on (the
+  sensor plugin needs it).
 - **A reading looks obviously wrong** (like a huge negative number) — Let me know rather than
   trusting it; that's a sign the sensor decoding needs another look for that specific device.
 

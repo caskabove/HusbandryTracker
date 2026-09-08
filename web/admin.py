@@ -2,7 +2,7 @@
 
 Target temps are entered/shown in Fahrenheit here (matching how you actually think about
 enclosure temps) and converted to Celsius for storage, since the schema's canonical unit is
-Celsius (the Govee sensors' native unit — see collectors/govee_protocol.py).
+Celsius (the Govee sensors' native unit — see plugins/govee_ble/protocol.py).
 """
 from __future__ import annotations
 

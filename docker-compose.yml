@@ -1,5 +1,7 @@
-# See ADR 0001 (docs/adr/) for why govee-collector is NOT here: BLE doesn't pass through Docker
-# Desktop on Windows cleanly. Run it on the host instead: python -u collectors/govee_collector.py
+# See ADR 0001 (docs/adr/) for why the Govee Plugin is NOT here: BLE doesn't pass through Docker
+# Desktop on Windows cleanly. Run it on the host instead: python -u plugins/govee_ble/plugin.py
+# (ADR 0013's Plugin/Ingest pivot doesn't change this — a Plugin still needs whatever raw hardware
+# access its protocol requires; only tuya_lan and ingest containerize.)
 
 services:
   web:
@@ -11,13 +13,20 @@ services:
       - ./data:/app/data
     restart: unless-stopped
 
-  tuya-collector:
+  ingest:
     build: .
-    command: python -u collectors/tuya_collector.py
+    command: python -u ingest/ingest.py
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  tuya-lan-plugin:
+    build: .
+    command: python -u plugins/tuya_lan/plugin.py
     volumes:
       - ./data:/app/data
     restart: unless-stopped
     network_mode: host   # local-Tuya devices are found via LAN broadcast; host networking is simplest on Linux.
                           # On Docker Desktop (Windows/Mac), host networking isn't supported the same way —
-                          # if plug discovery fails, pin each plug's IP via tuya_ip_address (register_device.py
-                          # plug-add --ip) instead of relying on broadcast discovery.
+                          # if plug discovery fails, pin each plug's IP (register_device.py plug-add
+                          # --ip, stored in its Plugin Config) instead of relying on broadcast discovery.

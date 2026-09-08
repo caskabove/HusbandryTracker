@@ -1,7 +1,8 @@
 """Send Alert evaluator — the debounced state machine described in CONTEXT.md: Alert, Alert
-Condition, Alert Debounce (see docs/adr/0010-send-alert-via-ntfy.md). Called from
-govee_collector.py (Sensor conditions) and tuya_collector.py (Plug conditions) on each relevant
-tick — not a separate process, keeping ADR 0001's three-service shape.
+Condition, Alert Debounce (see docs/adr/0010-send-alert-via-ntfy.md). Called from ingest/ingest.py
+after applying each Plugin Event, and periodically for every Smart Sensor/Plug regardless of
+whether one arrived this tick — not a separate process, keeping ADR 0001's overall process shape
+(this moved here, out of each collector, as part of ADR 0013's Plugin/Ingest pivot).
 
 Scope notes, so gaps here aren't mistaken for bugs later:
 
@@ -10,11 +11,13 @@ Scope notes, so gaps here aren't mistaken for bugs later:
   ammonia, salinity, ...) have nowhere to log an actual Reading against yet — see
   schemas/enclosure_types.py, ADR 0011. Extending sensor_reading with those columns plus a manual
   entry UI is separate follow-up work, not done here.
-- Zero Power While On is fully implemented against `plug_reading`, but stays inert until ADR
-  0009's Data Capture writer actually populates that table (nothing does yet, as of this file).
-- Plug Unreachable does NOT depend on plug_reading at all — it's driven by record_plug_poll(),
-  called directly from tuya_collector.py's existing poll try/except, so it works today regardless
-  of whether Data Capture has been wired in.
+- Zero Power While On is fully implemented against `plug_reading`, but stays inert until a
+  telemetry-capable Plug is registered — see plugins/tuya_lan/plugin.py's module docstring.
+- Plug Unreachable is driven by plug_last_seen, updated on every plug_state Plugin Event regardless
+  of whether the state changed (see CONTEXT.md: Ingest) — a plain absence check, the same mechanism
+  Sensor Unreachable already used. This is a deliberate change from the pre-ADR-0013 version of this
+  file, which drove Plug Unreachable off an explicit poll-success/failure signal instead (a failed
+  poll now simply produces no Plugin Event, which shows up as absence like everything else).
 
 Delivery is via ntfy (a plain HTTP POST to a topic, stdlib urllib — no new dependency) configured
 on app_setting.ntfy_server_url/ntfy_topic; either being empty just logs to the console instead of
@@ -71,8 +74,8 @@ def _advance(conn, table: str, id_column: str, id_value: int, condition_kind: st
     it's stayed continuously true and only fires once that reaches Alert Debounce, so a single
     debounce duration governs every condition uniformly. Pass already_debounced=True only when the
     caller has already measured "continuously bad for at least the debounce window" itself (e.g.
-    Sensor Unreachable, computed straight from a reading's age) — that skips the pending wait so the
-    duration isn't counted twice.
+    Sensor/Plug Unreachable, computed straight from an observation's age) — that skips the pending
+    wait so the duration isn't counted twice.
     """
     row = conn.execute(
         f"SELECT state FROM {table} WHERE {id_column} = ? AND condition_kind = ?",
@@ -121,7 +124,7 @@ def _advance(conn, table: str, id_column: str, id_value: int, condition_kind: st
 
 
 def evaluate_sensor_out_of_range(sensor_id: int) -> None:
-    """Call right after writing a new sensor_reading for a Smart Sensor."""
+    """Call right after applying a sensor_reading Plugin Event for a Smart Sensor."""
     with get_connection() as conn:
         sensor = conn.execute(
             "SELECT * FROM sensor WHERE id = ? AND tracking_mode = 'smart' AND auto_update_enabled = 1",
@@ -156,7 +159,7 @@ def evaluate_sensor_out_of_range(sensor_id: int) -> None:
 
 
 def evaluate_sensor_unreachable(sensor_id: int) -> None:
-    """Call periodically (e.g. every registry-refresh tick) for every registered Smart Sensor."""
+    """Call periodically (every Ingest tick) for every registered Smart Sensor."""
     with get_connection() as conn:
         sensor = conn.execute(
             "SELECT * FROM sensor WHERE id = ? AND tracking_mode = 'smart' AND auto_update_enabled = 1",
@@ -184,27 +187,40 @@ def evaluate_sensor_unreachable(sensor_id: int) -> None:
         )
 
 
-def record_plug_poll(plug_id: int, ok: bool) -> None:
-    """Call every poll cycle from tuya_collector.py's existing try/except around device.status().
-    Drives Unreachable independent of Data Capture — see module docstring."""
+def evaluate_plug_unreachable(plug_id: int) -> None:
+    """Call periodically (every Ingest tick) for every registered Smart Plug — mirrors
+    evaluate_sensor_unreachable exactly, now that plug_last_seen gives Plugs the same kind of
+    "last successful observation" signal a Sensor's own sensor_reading table already provides. See
+    CONTEXT.md: Unreachable, Ingest; ADR 0013."""
     with get_connection() as conn:
         plug = conn.execute(
-            "SELECT label FROM plug WHERE id = ? AND tracking_mode = 'smart' AND auto_update_enabled = 1",
+            "SELECT * FROM plug WHERE id = ? AND tracking_mode = 'smart' AND auto_update_enabled = 1",
             (plug_id,),
         ).fetchone()
         if plug is None:
             return
+        row = conn.execute(
+            "SELECT (julianday('now') - julianday(last_seen_at)) * 1440 AS minutes_since "
+            "FROM plug_last_seen WHERE plug_id = ?",
+            (plug_id,),
+        ).fetchone()
+        minutes_since = row["minutes_since"] if row else None
+        debounce_minutes = _debounce_minutes(conn)
+        is_bad = minutes_since is None or minutes_since >= debounce_minutes
+
         _advance(
-            conn, "plug_alert_state", "plug_id", plug_id, "unreachable", is_bad=not ok,
+            conn, "plug_alert_state", "plug_id", plug_id, "unreachable", is_bad,
             subject=f"{plug['label']} unreachable",
-            alert_message=f"{plug['label']}: repeated poll failures — check power/WiFi/local_key",
-            resolved_message=f"{plug['label']} is polling normally again",
+            alert_message=f"{plug['label']} hasn't reported in over {debounce_minutes} minutes — "
+                          f"check power/WiFi/local_key",
+            resolved_message=f"{plug['label']} is reporting again",
+            already_debounced=True,
         )
 
 
 def evaluate_plug_zero_power(plug_id: int) -> None:
-    """Call after each poll cycle (or Data Capture write) — inert until plug_reading has rows;
-    see module docstring and ADR 0009."""
+    """Call after applying a plug_state or plug_telemetry Plugin Event — inert until plug_reading
+    has rows; see plugins/tuya_lan/plugin.py's module docstring and ADR 0009."""
     with get_connection() as conn:
         plug = conn.execute(
             "SELECT * FROM plug WHERE id = ? AND tracking_mode = 'smart' AND auto_update_enabled = 1",

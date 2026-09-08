@@ -20,6 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection, init_db
+from plugins.govee_ble import identity as govee_identity
+from plugins.tuya_lan import identity as tuya_identity
 
 
 def _enclosure_id(conn: sqlite3.Connection, name: str) -> int:
@@ -92,11 +94,13 @@ def animal_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
 
 def sensor_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     enclosure_id = _enclosure_id(conn, args.enclosure)
+    external_id = govee_identity.encode_external_id(args.mac)
     conn.execute(
-        """INSERT INTO sensor (enclosure_id, label, mac_address, target_temp_min_c, target_temp_max_c,
+        """INSERT INTO sensor (enclosure_id, label, plugin, external_id, target_temp_min_c, target_temp_max_c,
                                 target_humidity_min, target_humidity_max)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (enclosure_id, args.label, args.mac.upper(), args.temp_min, args.temp_max, args.humidity_min, args.humidity_max),
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (enclosure_id, args.label, govee_identity.PLUGIN_NAME, external_id,
+         args.temp_min, args.temp_max, args.humidity_min, args.humidity_max),
     )
     print(f"Registered sensor {args.mac!r} ({args.label}) in {args.enclosure!r}")
 
@@ -106,10 +110,12 @@ def plug_add(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     # column on plug itself. This CLI command only ever links to exactly one (its --enclosure arg);
     # a Plug shared across several Enclosures ("everything on one switch") needs the Admin UI.
     enclosure_id = _enclosure_id(conn, args.enclosure)
+    external_id = tuya_identity.encode_external_id(args.device_id, args.dps_key)
+    plugin_config = tuya_identity.pack_config(args.local_key, args.ip)
     cur = conn.execute(
-        """INSERT INTO plug (label, purpose, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (args.label, args.purpose, args.device_id, args.local_key, args.ip, args.dps_key),
+        """INSERT INTO plug (label, purpose, plugin, external_id, plugin_config)
+           VALUES (?, ?, ?, ?, ?)""",
+        (args.label, args.purpose, tuya_identity.PLUGIN_NAME, external_id, plugin_config),
     )
     conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (cur.lastrowid, enclosure_id))
     print(f"Registered plug {args.device_id!r} dps={args.dps_key} ({args.purpose}: {args.label}) in {args.enclosure!r}")
@@ -133,7 +139,8 @@ def _format_plug_line(plug: sqlite3.Row) -> str:
     if plug["tracking_mode"] == "manual":
         return f"  plug:   {plug['label']} purpose={plug['purpose']} (Manual — {target or 'no target schedule set'})"
     suffix = f" {target}" if target else ""
-    return f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={plug['tuya_device_id']} dps={plug['switch_dps_key']}{suffix}"
+    device_id, dps_key = tuya_identity.decode_external_id(plug["external_id"]) if plug["external_id"] else (None, None)
+    return f"  plug:   {plug['label']} purpose={plug['purpose']} device_id={device_id} dps={dps_key}{suffix}"
 
 
 def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
@@ -145,7 +152,7 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
             if sensor["tracking_mode"] == "manual":
                 print(f"  sensor: {sensor['label']} (Manual — hand-logged readings)")
             else:
-                print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
+                print(f"  sensor: {sensor['label']} mac={sensor['external_id']}")
         for plug in conn.execute("SELECT * FROM plug WHERE room_id = ?", (room["id"],)):
             print(_format_plug_line(plug))
 
@@ -160,7 +167,7 @@ def list_all(conn: sqlite3.Connection, _args: argparse.Namespace) -> None:
             if sensor["tracking_mode"] == "manual":
                 print(f"  sensor: {sensor['label']} (Manual — hand-logged readings)")
             else:
-                print(f"  sensor: {sensor['label']} mac={sensor['mac_address']}")
+                print(f"  sensor: {sensor['label']} mac={sensor['external_id']}")
         for plug in conn.execute(
             """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
                WHERE pe.enclosure_id = ?""",

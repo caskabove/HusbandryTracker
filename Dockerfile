@@ -7,7 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY db/ db/
 COPY web/ web/
-COPY collectors/ collectors/
+COPY ingest/ ingest/
+COPY plugins/ plugins/
+COPY schemas/ schemas/
 
 EXPOSE 22255
 

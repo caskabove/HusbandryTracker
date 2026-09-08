@@ -1,11 +1,15 @@
 """On-demand, one-shot BLE listen for a dashboard Refresh (see CONTEXT.md: Refresh, ADR 0005).
 
-Distinct from collectors/govee_collector.py's continuous, all-devices background scan: this opens
-a short-lived BleakScanner from the *web* process itself, listening only for a specific set of
-MACs, and returns as soon as all of them have reported or the timeout elapses — whichever comes
-first. Two processes each passively scanning BLE advertisements (this one alongside the always-on
-collector) is standard Bluetooth behavior, not a conflict; see ADR 0005 for why that's fine while
-two concurrent scans *within this same process* are not (hence the module-level lock below).
+Distinct from plugins/govee_ble/plugin.py's continuous, all-devices background scan: this opens a
+short-lived BleakScanner from the *web* process itself, listening only for a specific set of MACs,
+and returns as soon as all of them have reported or the timeout elapses — whichever comes first.
+Two processes each passively scanning BLE advertisements (this one alongside the always-on Govee
+Plugin) is standard Bluetooth behavior, not a conflict; see ADR 0005 for why that's fine while two
+concurrent scans *within this same process* are not (hence the module-level lock below).
+
+Deliberately outside the Plugin/Registry/Inbox/Ingest pipeline (see CONTEXT.md: Refresh; ADR 0013)
+— this writes straight to sensor_reading, the same as before that pivot. A Refresh-triggered
+Reading is never a Plugin Event.
 """
 from __future__ import annotations
 
@@ -19,8 +23,8 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from collectors.govee_protocol import DECODERS, GoveeReading
 from db.db import get_connection
+from plugins.govee_ble.protocol import DECODERS, GoveeReading
 
 _lock = asyncio.Lock()
 

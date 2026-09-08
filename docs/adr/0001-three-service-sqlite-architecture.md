@@ -7,3 +7,5 @@ HerpMonitor is split into three logical services sharing one SQLite database on 
 If the collectors and database ever move off this machine (e.g. onto a Raspberry Pi nearer the animals), this decision should be revisited — the host/container split for BLE and the SQLite choice were both made specifically for the "one Windows machine" deployment target.
 
 **Amended by ADR 0002**: `web` no longer runs via docker-compose day-to-day — it runs directly via uvicorn, same as the collectors. The SQLite choice and the host-process requirement for `govee-collector` are unaffected.
+
+**Superseded in part by ADR 0013**: `govee-collector` and `tuya-collector` no longer read the database or write to it directly — each becomes a Plugin communicating with a new Ingest process via JSON files. The SQLite choice, the three-process shape, and the host-process requirement for BLE all remain unaffected; only "the collectors talk to SQLite directly" is superseded.

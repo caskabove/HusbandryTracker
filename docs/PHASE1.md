@@ -21,7 +21,7 @@ hears, the raw manufacturer-data bytes, and a **best-effort** decoded temp/humid
 
 **Before trusting the decoded numbers**, open the Govee app for the same sensor at the same
 moment and compare. If they don't match, tell me the raw hex it printed and what the Govee app
-actually shows — `collectors/govee_protocol.py`'s decode needs adjusting against your real
+actually shows — `plugins/govee_ble/protocol.py`'s decode needs adjusting against your real
 hardware, not guessed further from memory.
 
 Write down each sensor's MAC address (e.g. `A4:C1:38:XX:XX:XX`) — you'll register it in step 4.
@@ -50,7 +50,7 @@ python tools\tuya_probe.py <device_id> <local_key> --ip <ip_from_wizard>
 ```
 
 Toggle the plug from the Google Home app while this runs and confirm which key flips. If it's not
-`"1"`, tell me — `collectors/tuya_collector.py`'s `SWITCH_DPS_KEY` needs to change.
+`"1"`, pass that key to `register_device.py plug-add --dps-key` in step 4.
 
 ## 4. Register everything
 
@@ -64,22 +64,28 @@ python tools\register_device.py plug-add "Ball Python Tub" "UTH" heat abc123devi
 python tools\register_device.py list
 ```
 
-## 5. Run the collectors
+## 5. Run Ingest and the Plugins
 
-Two separate processes (see ADR 0001 for why Govee runs on the host, not in a container):
+Three separate processes (see ADR 0001 for why Govee runs on the host, not in a container, and ADR
+0013 for why Ingest and the Plugins are separate processes at all):
 
 ```
-python -u collectors\govee_collector.py
-python -u collectors\tuya_collector.py
+python -u ingest\ingest.py
+python -u plugins\govee_ble\plugin.py
+python -u plugins\tuya_lan\plugin.py
 ```
 
 (`-u` disables Python's stdout buffering — without it, `print()` output only shows up in bursts
-when piped/redirected rather than in a real terminal, even though DB writes happen immediately
+when piped/redirected rather than in a real terminal, even though file/DB writes happen immediately
 either way.)
 
-Leave both running. Check `data\herpmonitor.db` (e.g. with the `sqlite3` CLI or DB Browser for
-SQLite) — `sensor_reading` rows should accumulate continuously, and `plug_state_transition` rows
-should appear whenever a light/heat/cooling plug actually flips.
+Leave all three running (`start.bat` does this for you, plus the web app). Check `data\herpmonitor.db`
+(e.g. with the `sqlite3` CLI or DB Browser for SQLite) — `sensor_reading` rows should accumulate
+continuously, and `plug_state_transition` rows should appear whenever a light/heat/cooling plug
+actually flips. Along the way you can also watch `data\inbox\` briefly fill with Plugin Event files
+and `data\registry\` hold each Plugin's device list (see CONTEXT.md: Plugin Event, Inbox, Registry)
+— Ingest drains the Inbox roughly every `ingest_scan_interval_seconds` (default 5s), so files there
+are normally short-lived.
 
 ## What's NOT built yet
 
@@ -89,4 +95,4 @@ should appear whenever a light/heat/cooling plug actually flips.
   plugs actually running enclosure schedules haven't been re-paired yet.
 - The web app (`docs/USER_GUIDE.md`) and admin UI are built and running — see that guide for how to
   use them day to day. `docker-compose.yml`/`Dockerfile` exist but aren't the default way to run
-  things (see ADR 0002) — run `web` directly via uvicorn, same as the collectors.
+  things (see ADR 0002) — run `web` directly via uvicorn, same as Ingest and the Plugins.

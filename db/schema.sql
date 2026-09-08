@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS app_setting (
     alert_debounce_minutes         INTEGER NOT NULL DEFAULT 10,  -- see CONTEXT.md: Alert Debounce, ADR 0010
     ntfy_server_url                TEXT,                         -- e.g. "https://ntfy.sh"; NULL/empty disables Send Alert delivery
     ntfy_topic                     TEXT,
-    schedule_drift_threshold_minutes INTEGER NOT NULL DEFAULT 15  -- see CONTEXT.md: Timer Warning, ADR 0012
+    schedule_drift_threshold_minutes INTEGER NOT NULL DEFAULT 15, -- see CONTEXT.md: Timer Warning, ADR 0012
+    ingest_scan_interval_seconds   INTEGER NOT NULL DEFAULT 5    -- see CONTEXT.md: Ingest; ADR 0013
 );
 INSERT OR IGNORE INTO app_setting (id) VALUES (1);
 
@@ -80,11 +81,12 @@ CREATE TABLE IF NOT EXISTS animal (
 );
 
 -- A Sensor assigned to either an Enclosure or a Room, never both. See CONTEXT.md: Sensor,
--- Tracking Mode, Target Range, Room.
+-- Tracking Mode, Target Range, Room, Plugin, External ID, Plugin Config; ADR 0013.
 --
--- tracking_mode = 'smart': a real Govee H5074 BLE device, polled automatically — mac_address
--- required. tracking_mode = 'manual': no physical device — mac_address stays NULL, and Readings
--- are hand-logged through the Admin UI instead. A Manual Sensor must have a complete Target Range
+-- tracking_mode = 'smart': a real device, polled/listened-to by its owning Plugin — plugin and
+-- external_id required (e.g. plugin='govee_ble', external_id=the MAC address). tracking_mode =
+-- 'manual': no physical device — plugin/external_id/plugin_config stay NULL, and Readings are
+-- hand-logged through the Admin UI instead. A Manual Sensor must have a complete Target Range
 -- (min AND max) on at least one metric before it's useful, but which metric is up to the user (an
 -- IR thermometer spot-check has no humidity number to give) — that "at least one" rule is enforced
 -- in web/admin_queries.py with a friendly error, not here, so a bad value gets a clear message
@@ -101,7 +103,9 @@ CREATE TABLE IF NOT EXISTS sensor (
     room_id               INTEGER REFERENCES room(id) ON DELETE CASCADE,
     label                 TEXT NOT NULL,             -- e.g. "warm side", "cool side"
     tracking_mode         TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
-    mac_address           TEXT UNIQUE,               -- e.g. "A4:C1:38:XX:XX:XX"; NULL for Manual
+    plugin                TEXT,                      -- e.g. "govee_ble"; NULL for Manual — see CONTEXT.md: Plugin
+    external_id           TEXT,                      -- opaque per-Plugin device id, e.g. a MAC address — see CONTEXT.md: External ID
+    plugin_config         TEXT,                      -- opaque JSON credentials, NULL if the Plugin needs none — see CONTEXT.md: Plugin Config
     auto_update_enabled   INTEGER NOT NULL DEFAULT 1, -- 0/1, Smart Sensor only (see CONTEXT.md: Auto-Update)
     target_temp_min_c     REAL,
     target_temp_max_c     REAL,
@@ -126,9 +130,10 @@ CREATE TABLE IF NOT EXISTS sensor (
     target_phosphate_ppm_min    REAL,
     target_phosphate_ppm_max    REAL,
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (plugin, external_id),
     CHECK (
-        (tracking_mode = 'smart' AND mac_address IS NOT NULL) OR
-        (tracking_mode = 'manual' AND mac_address IS NULL)
+        (tracking_mode = 'smart' AND plugin IS NOT NULL AND external_id IS NOT NULL) OR
+        (tracking_mode = 'manual' AND plugin IS NULL AND external_id IS NULL)
     ),
     CHECK (
         (enclosure_id IS NOT NULL AND room_id IS NULL) OR
@@ -156,9 +161,11 @@ CREATE TABLE IF NOT EXISTS sensor_alert_state (
 -- Enclosure-linked Plug moves to Unassigned (not deleted) if it loses its last Enclosure, while a
 -- Room-owned Plug is deleted along with its Room (matching how a Room's Sensors already cascade).
 --
--- tracking_mode = 'smart': a real Tuya-controlled Gosund plug, polled automatically — Tuya
--- credentials required. tracking_mode = 'manual': no device, e.g. a mechanical timer — the Tuya
--- fields stay NULL.
+-- tracking_mode = 'smart': a real device, polled by its owning Plugin — plugin and external_id
+-- required (e.g. plugin='tuya_lan', external_id="<tuya device_id>:<switch_dps_key>", plugin_config
+-- carrying the Tuya local_key/ip_address — see CONTEXT.md: Plugin, External ID, Plugin Config; ADR
+-- 0013). tracking_mode = 'manual': no device, e.g. a mechanical timer — plugin/external_id/
+-- plugin_config all stay NULL.
 --
 -- target_on_time/target_off_time hold the Target Schedule (see CONTEXT.md: Target Schedule, ADR
 -- 0012) — available on any Plug without a Controller Kind, Smart or Manual alike. For a Manual
@@ -168,12 +175,14 @@ CREATE TABLE IF NOT EXISTS sensor_alert_state (
 -- (app_setting). Superseded "Declared Schedule" from earlier versions of this app, which only ever
 -- existed for a Manual Plug with no comparison possible.
 --
--- Not every physical Tuya device is a single-outlet plug: multi-outlet power strips expose
--- several independently-switched DPS keys (e.g. "1"/"2"/"3" for three AC outlets, "7" for a USB
--- port) on ONE device_id. Each outlet is its own Plug row here, sharing the same device_id/
--- local_key/ip but a different switch_dps_key — hence the unique constraint being on the pair,
--- not on tuya_device_id alone. Manual Plugs all have tuya_device_id NULL, which SQLite treats as
--- distinct per row in a UNIQUE index, so multiple Manual Plugs never collide on that constraint.
+-- Not every physical Tuya device is a single-outlet plug: multi-outlet power strips expose several
+-- independently-switched DPS keys (e.g. "1"/"2"/"3" for three AC outlets, "7" for a USB port) on
+-- ONE device_id. Each outlet is its own Plug row here, sharing the same plugin_config (local_key/
+-- ip) but a different switch_dps_key baked into its own external_id — hence the unique constraint
+-- being on (plugin, external_id), not on external_id's device_id portion alone (see
+-- plugins/tuya_lan/identity.py for the encode/decode). Manual Plugs all have external_id NULL,
+-- which SQLite treats as distinct per row in a UNIQUE index, so multiple Manual Plugs never
+-- collide on that constraint.
 --
 -- The Room-XOR-Enclosure-set invariant can't be a single-table CHECK (it depends on plug_enclosure
 -- row counts) — enforced in web/admin_queries.py instead, same pattern as Manual Sensor's Target
@@ -184,10 +193,9 @@ CREATE TABLE IF NOT EXISTS plug (
     label               TEXT NOT NULL,                  -- e.g. "basking bulb", "UTH"
     purpose             TEXT NOT NULL CHECK (length(purpose) > 0),  -- free text; Admin suggests common values, doesn't restrict to them
     tracking_mode       TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),
-    tuya_device_id      TEXT,
-    tuya_local_key      TEXT,
-    tuya_ip_address     TEXT,                           -- optional pin; tinytuya can also auto-discover on LAN
-    switch_dps_key      TEXT NOT NULL DEFAULT '1',      -- which outlet on the device this Plug controls
+    plugin              TEXT,                           -- e.g. "tuya_lan"; NULL for Manual — see CONTEXT.md: Plugin
+    external_id         TEXT,                           -- opaque per-Plugin device id — see CONTEXT.md: External ID
+    plugin_config       TEXT,                           -- opaque JSON credentials (Tuya local_key/ip_address) — see CONTEXT.md: Plugin Config
     auto_update_enabled INTEGER NOT NULL DEFAULT 1,     -- 0/1, Smart Plug only (see CONTEXT.md: Auto-Update)
     target_on_time      TEXT,                           -- "HH:MM", never with a Controller Kind set (see CONTEXT.md: Target Schedule)
     target_off_time     TEXT,                           -- "HH:MM", never with a Controller Kind set
@@ -195,11 +203,20 @@ CREATE TABLE IF NOT EXISTS plug (
     target_temp_c       REAL,                           -- required together with controller_kind = 'thermostat'; enforced in web/admin_queries.py, not here
     target_humidity_pct REAL,                           -- required together with controller_kind = 'hydrostat'; enforced in web/admin_queries.py, not here
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (tuya_device_id, switch_dps_key),
+    UNIQUE (plugin, external_id),
     CHECK (
-        (tracking_mode = 'smart' AND tuya_device_id IS NOT NULL AND tuya_local_key IS NOT NULL) OR
-        (tracking_mode = 'manual' AND tuya_device_id IS NULL AND tuya_local_key IS NULL)
+        (tracking_mode = 'smart' AND plugin IS NOT NULL AND external_id IS NOT NULL) OR
+        (tracking_mode = 'manual' AND plugin IS NULL AND external_id IS NULL)
     )
+);
+
+-- Last time ANY plug_state Plugin Event arrived for a Smart Plug, updated on every poll regardless
+-- of whether the on/off state changed — drives Plug Unreachable (see CONTEXT.md: Unreachable,
+-- Ingest; ADR 0013) without polluting plug_state_transition's edge-triggered semantics, which
+-- Detected Schedule depends on staying pure (only real transitions, never every poll).
+CREATE TABLE IF NOT EXISTS plug_last_seen (
+    plug_id      INTEGER PRIMARY KEY REFERENCES plug(id) ON DELETE CASCADE,
+    last_seen_at TEXT NOT NULL
 );
 
 -- Which Enclosure(s) a non-Room-owned Plug belongs to — see the plug table's comment and ADR 0006.

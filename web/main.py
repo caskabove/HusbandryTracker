@@ -22,8 +22,8 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from collectors.govee_refresh import refresh_sensors
 from db.db import get_connection, init_db
+from web.govee_refresh import refresh_sensors
 from web.admin import router as admin_router
 from web.admin_queries import get_settings
 from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading
@@ -82,13 +82,14 @@ async def _refresh_smart_sensors(column: str, entity_id: int) -> str | None:
     within the configured Refresh Timeout, else None."""
     with get_connection() as conn:
         rows = conn.execute(
-            f"SELECT id, label, mac_address FROM sensor WHERE {column} = ? AND tracking_mode = 'smart'",
+            f"SELECT id, label, external_id FROM sensor WHERE {column} = ? AND tracking_mode = 'smart' "
+            f"AND plugin = 'govee_ble'",
             (entity_id,),
         ).fetchall()
     if not rows:
         return None
 
-    sensors_by_mac = {row["mac_address"].upper(): (row["id"], row["label"]) for row in rows}
+    sensors_by_mac = {row["external_id"].upper(): (row["id"], row["label"]) for row in rows}
     sensor_ids_by_mac = {mac: sensor_id for mac, (sensor_id, _label) in sensors_by_mac.items()}
     timeout = get_settings()["ble_refresh_timeout_seconds"]
     results = await refresh_sensors(sensor_ids_by_mac, timeout)

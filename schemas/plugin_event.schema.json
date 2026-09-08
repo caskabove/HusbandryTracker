@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://herpmonitor.local/schemas/plugin_event.schema.json",
+  "title": "Plugin Event",
+  "description": "One observation a Plugin drops into the Inbox for Ingest to consume. See CONTEXT.md: Plugin, Plugin Event, Inbox, Ingest; ADR 0013.",
+  "type": "object",
+  "required": ["schema_version", "plugin", "kind", "external_id", "observed_at", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "plugin": {
+      "description": "The Plugin that produced this event, e.g. \"govee_ble\", \"tuya_lan\" — matches sensor.plugin/plug.plugin.",
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": ["sensor_reading", "plug_state", "plug_telemetry"]
+    },
+    "external_id": {
+      "description": "The opaque per-Plugin device id this event is about — matches sensor.external_id/plug.external_id for the same plugin. See CONTEXT.md: External ID.",
+      "type": "string",
+      "minLength": 1
+    },
+    "observed_at": {
+      "description": "UTC timestamp of the observation itself (not when Ingest processed it), formatted exactly like SQLite's datetime('now') — \"YYYY-MM-DD HH:MM:SS\", no 'T', no timezone suffix — so it sorts and compares correctly against every other recorded_at column in the database.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "sensor_reading" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/sensor_reading_payload" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "plug_state" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/plug_state_payload" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "plug_telemetry" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/plug_telemetry_payload" } } }
+    }
+  ],
+  "$defs": {
+    "sensor_reading_payload": {
+      "description": "See CONTEXT.md: Reading. Any subset may be present — a plugin only reports what its device actually measures.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature_c": { "type": ["number", "null"] },
+        "humidity_pct": { "type": ["number", "null"] },
+        "battery_pct": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 }
+      }
+    },
+    "plug_state_payload": {
+      "description": "See CONTEXT.md: Ingest. Reported on every poll, not just on change — Ingest does the edge-detection.",
+      "type": "object",
+      "required": ["is_on"],
+      "additionalProperties": false,
+      "properties": {
+        "is_on": { "type": "boolean" }
+      }
+    },
+    "plug_telemetry_payload": {
+      "description": "See CONTEXT.md: Data Capture. Written on a slower, independent cadence from plug_state; any subset may be present, or all null if the device exposes no telemetry.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "watts": { "type": ["number", "null"] },
+        "volts": { "type": ["number", "null"] },
+        "amps": { "type": ["number", "null"] },
+        "countdown_seconds": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    }
+  }
+}

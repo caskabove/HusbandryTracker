@@ -10,8 +10,58 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
+from plugins.govee_ble import identity as govee_identity
+from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
 from web.queries import CARE_EVENT_KINDS, _normalize_datetime_local, days_since
+
+
+def _decode_sensor(row_dict: dict) -> dict:
+    """Backfills the legacy `mac_address` key onto a sensor row dict from its Plugin/External ID
+    (see CONTEXT.md: Plugin, External ID; ADR 0013) — every existing template/route keeps reading
+    the field name it already expects. Govee is the only Smart Sensor Plugin this build supports,
+    so External ID *is* the MAC address for every Smart Sensor row today."""
+    row_dict["mac_address"] = row_dict.get("external_id")
+    return row_dict
+
+
+def _decode_plug(row_dict: dict) -> dict:
+    """Backfills the legacy tuya_device_id/tuya_local_key/tuya_ip_address/switch_dps_key keys onto
+    a plug row dict from its Plugin/External ID/Plugin Config (see CONTEXT.md: Plugin, External ID,
+    Plugin Config; ADR 0013) — every existing template/route keeps reading the field names it
+    already expects."""
+    if row_dict.get("plugin") == tuya_identity.PLUGIN_NAME and row_dict.get("external_id"):
+        device_id, dps_key = tuya_identity.decode_external_id(row_dict["external_id"])
+        config = tuya_identity.unpack_config(row_dict.get("plugin_config"))
+        row_dict["tuya_device_id"] = device_id
+        row_dict["switch_dps_key"] = dps_key
+        row_dict["tuya_local_key"] = config["local_key"]
+        row_dict["tuya_ip_address"] = config["ip_address"]
+    else:
+        row_dict["tuya_device_id"] = None
+        row_dict["tuya_local_key"] = None
+        row_dict["tuya_ip_address"] = None
+        row_dict["switch_dps_key"] = "1"
+    return row_dict
+
+
+def _encode_sensor_identity(tracking_mode: str, mac_address: str | None) -> tuple[str | None, str | None]:
+    """See CONTEXT.md: Plugin, External ID; ADR 0013. Govee is the only Smart Sensor Plugin this
+    build supports — a future second Sensor Plugin would need its own Admin form/field, same as
+    Tuya and Govee already have distinct ones, but wouldn't need another schema change."""
+    if tracking_mode != "smart" or not mac_address:
+        return None, None
+    return govee_identity.PLUGIN_NAME, govee_identity.encode_external_id(mac_address)
+
+
+def _encode_plug_identity(tracking_mode: str, tuya_device_id: str | None, tuya_local_key: str | None,
+                           tuya_ip_address: str | None, switch_dps_key: str | None) -> tuple[str | None, str | None, str | None]:
+    """See CONTEXT.md: Plugin, External ID, Plugin Config; ADR 0013."""
+    if tracking_mode != "smart" or not tuya_device_id:
+        return None, None, None
+    external_id = tuya_identity.encode_external_id(tuya_device_id, switch_dps_key)
+    plugin_config = tuya_identity.pack_config(tuya_local_key, tuya_ip_address)
+    return tuya_identity.PLUGIN_NAME, external_id, plugin_config
 
 
 def list_enclosures() -> list[dict]:
@@ -26,8 +76,8 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             return None
         enclosure = dict(row)
         enclosure["animals"] = [dict(r) for r in conn.execute("SELECT * FROM animal WHERE enclosure_id = ? ORDER BY name", (enclosure_id,))]
-        enclosure["sensors"] = [dict(r) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
-        enclosure["plugs"] = [dict(r) for r in conn.execute(
+        enclosure["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
+        enclosure["plugs"] = [_decode_plug(dict(r)) for r in conn.execute(
             """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
                WHERE pe.enclosure_id = ? ORDER BY p.label""",
             (enclosure_id,),
@@ -271,12 +321,13 @@ def _get_enclosure_type(enclosure_id: int) -> str:
 def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
                    target_ranges: TargetRanges) -> None:
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
+    plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
     with get_connection() as conn:
         conn.execute(
-            f"""INSERT INTO sensor (enclosure_id, label, tracking_mode, mac_address, {", ".join(columns)})
-                VALUES (?, ?, ?, ?, {", ".join("?" for _ in columns)})""",
-            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None, *values),
+            f"""INSERT INTO sensor (enclosure_id, label, tracking_mode, plugin, external_id, {", ".join(columns)})
+                VALUES (?, ?, ?, ?, ?, {", ".join("?" for _ in columns)})""",
+            (enclosure_id, label, tracking_mode, plugin, external_id, *values),
         )
 
 
@@ -288,7 +339,7 @@ def delete_sensor(sensor_id: int) -> None:
 def get_sensor(sensor_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM sensor WHERE id = ?", (sensor_id,)).fetchone()
-        return dict(row) if row else None
+        return _decode_sensor(dict(row)) if row else None
 
 
 def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
@@ -296,13 +347,14 @@ def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: 
     """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Sensor
     (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
+    plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
     set_clause = ", ".join(f"{c} = ?" for c in columns)
     with get_connection() as conn:
         conn.execute(
-            f"""UPDATE sensor SET enclosure_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
+            f"""UPDATE sensor SET enclosure_id = ?, label = ?, tracking_mode = ?, plugin = ?, external_id = ?,
                                    auto_update_enabled = ?, {set_clause} WHERE id = ?""",
-            (enclosure_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+            (enclosure_id, label, tracking_mode, plugin, external_id,
              int(auto_update_enabled), *values, sensor_id),
         )
 
@@ -314,12 +366,13 @@ def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address
     temperature/humidity are ever offered here, matching what ambient room comfort needs."""
     target_ranges: TargetRanges = {"temperature": (temp_min, temp_max), "humidity": (humidity_min, humidity_max)}
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
+    plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO sensor (room_id, label, tracking_mode, mac_address, target_temp_min_c,
+            """INSERT INTO sensor (room_id, label, tracking_mode, plugin, external_id, target_temp_min_c,
                                     target_temp_max_c, target_humidity_min, target_humidity_max)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (room_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (room_id, label, tracking_mode, plugin, external_id,
              temp_min, temp_max, humidity_min, humidity_max),
         )
 
@@ -329,13 +382,14 @@ def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: 
                         humidity_max: float | None, auto_update_enabled: bool = True) -> None:
     target_ranges: TargetRanges = {"temperature": (temp_min, temp_max), "humidity": (humidity_min, humidity_max)}
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
+    plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     with get_connection() as conn:
         conn.execute(
-            """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, mac_address = ?,
+            """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, plugin = ?, external_id = ?,
                                   auto_update_enabled = ?,
                                   target_temp_min_c = ?, target_temp_max_c = ?, target_humidity_min = ?,
                                   target_humidity_max = ? WHERE id = ?""",
-            (room_id, label, tracking_mode, mac_address.upper() if mac_address else None,
+            (room_id, label, tracking_mode, plugin, external_id,
              int(auto_update_enabled), temp_min, temp_max, humidity_min, humidity_max, sensor_id),
         )
 
@@ -388,14 +442,16 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         target_temp_c = None
     if controller_kind != "hydrostat":
         target_humidity_pct = None
+    plugin, external_id, plugin_config = _encode_plug_identity(
+        tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
+    )
     with get_connection() as conn:
         cur = conn.execute(
-            """INSERT INTO plug (room_id, label, purpose, tracking_mode, tuya_device_id, tuya_local_key,
-                                  tuya_ip_address, switch_dps_key, target_on_time, target_off_time,
-                                  controller_kind, target_temp_c, target_humidity_pct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (room_id, label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
-             tuya_ip_address or None, switch_dps_key or "1", target_on_time or None, target_off_time or None,
+            """INSERT INTO plug (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
+                                  target_on_time, target_off_time, controller_kind, target_temp_c, target_humidity_pct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
+             target_on_time or None, target_off_time or None,
              controller_kind, target_temp_c, target_humidity_pct),
         )
         plug_id = cur.lastrowid
@@ -414,7 +470,7 @@ def get_plug(plug_id: int) -> dict | None:
         row = conn.execute("SELECT * FROM plug WHERE id = ?", (plug_id,)).fetchone()
         if row is None:
             return None
-        plug = dict(row)
+        plug = _decode_plug(dict(row))
         plug["enclosure_ids"] = [r["enclosure_id"] for r in conn.execute(
             "SELECT enclosure_id FROM plug_enclosure WHERE plug_id = ?", (plug_id,)
         )]
@@ -453,7 +509,7 @@ def list_plugs() -> list[dict]:
     """For the top-level Plugs admin list — each row's parent_label describes where it lives,
     whichever side of the Room/Enclosure-set split it's on. See CONTEXT.md: Plug."""
     with get_connection() as conn:
-        plugs = [dict(r) for r in conn.execute("SELECT * FROM plug ORDER BY label")]
+        plugs = [_decode_plug(dict(r)) for r in conn.execute("SELECT * FROM plug ORDER BY label")]
         room_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM room")}
         for plug in plugs:
             if plug["room_id"]:
@@ -492,14 +548,17 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         target_temp_c = None
     if controller_kind != "hydrostat":
         target_humidity_pct = None
+    plugin, external_id, plugin_config = _encode_plug_identity(
+        tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
+    )
     with get_connection() as conn:
         conn.execute(
-            """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?, switch_dps_key = ?,
-                                tuya_device_id = ?, tuya_local_key = ?, tuya_ip_address = ?,
+            """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?,
+                                plugin = ?, external_id = ?, plugin_config = ?,
                                 target_on_time = ?, target_off_time = ?, auto_update_enabled = ?,
                                 controller_kind = ?, target_temp_c = ?, target_humidity_pct = ? WHERE id = ?""",
-            (room_id, label, purpose, tracking_mode, switch_dps_key or "1", tuya_device_id or None,
-             tuya_local_key or None, tuya_ip_address or None, target_on_time or None, target_off_time or None,
+            (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
+             target_on_time or None, target_off_time or None,
              int(auto_update_enabled), controller_kind, target_temp_c, target_humidity_pct,
              plug_id),
         )
@@ -525,7 +584,7 @@ def get_room(room_id: int) -> dict | None:
         if row is None:
             return None
         room = dict(row)
-        room["sensors"] = [dict(r) for r in conn.execute("SELECT * FROM sensor WHERE room_id = ? ORDER BY label", (room_id,))]
+        room["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE room_id = ? ORDER BY label", (room_id,))]
         for sensor in room["sensors"]:
             latest = conn.execute(
                 """SELECT temperature_c, humidity_pct, recorded_at FROM sensor_reading
@@ -533,7 +592,7 @@ def get_room(room_id: int) -> dict | None:
                 (sensor["id"],),
             ).fetchone()
             sensor["latest_reading"] = dict(latest) if latest else None
-        room["plugs"] = [dict(r) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
+        room["plugs"] = [_decode_plug(dict(r)) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
         for plug in room["plugs"]:
             # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
             # non-Controller-Kind Plug.
@@ -580,7 +639,7 @@ def update_settings(ble_refresh_timeout_seconds: int, alert_debounce_minutes: in
                      schedule_drift_threshold_minutes: int = 15) -> None:
     """See CONTEXT.md: Refresh (ADR 0005), Alert Debounce (ADR 0010), Timer Warning (ADR 0012).
     ntfy_server_url/ntfy_topic left blank disables Send Alert delivery entirely — see
-    collectors/alerts.py, which just logs to the console instead of sending in that case."""
+    ingest/alerts.py, which just logs to the console instead of sending in that case."""
     if ble_refresh_timeout_seconds < 1:
         raise ValueError("Refresh Timeout needs to be at least 1 second.")
     if alert_debounce_minutes < 1:
