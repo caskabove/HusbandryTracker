@@ -107,6 +107,14 @@ A one-shot instruction from Core to actuate a Smart Plug's relay right now — t
 **Interruption**:
 A Command sent to a Plug that has a *determined setting* — a Controller Kind other than `none`, or a Target Schedule — as opposed to a plain manual toggle on a Plug with neither. The distinction matters because an Interruption doesn't change the setting itself; it's a deliberate, temporary departure the Plug is expected to return from on its own, worth optionally recording *why* — unlike routine day-to-day switching. Only an Interruption's `plug_command_log` row prompts for an optional, skippable note; a plain toggle never does.
 
+**Supervisor**:
+The tray-icon process that starts, stops, restarts, and watches the Website/Ingest/Govee
+Plugin/Tuya Plugin processes (`tray/supervisor.py`), replacing `start.bat`'s four visible console
+windows as the normal way to run HerpMonitor — see ADR 0015. Not a Plugin and not part of the
+Inbox/Registry/Outbox contract; it only manages OS processes and their log files, never touches the
+database or Plugin data. Its tray menu opens the dashboard, shows each of the four's status with its
+own Start/Stop/Restart, and offers a "Start with Windows" toggle.
+
 **Reading**:
 A single Sensor data point (temperature and/or humidity) at a point in time. A `Smart Sensor`'s Readings are collected automatically by the BLE listener. A `Manual Sensor`'s Readings are logged by hand through the Admin UI — one value per metric the Sensor actually tracks — and, like a Care Event, can be backdated to when the measurement was actually taken instead of being forced to "now".
 

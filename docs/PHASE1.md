@@ -79,7 +79,8 @@ python -u plugins\tuya_lan\plugin.py
 when piped/redirected rather than in a real terminal, even though file/DB writes happen immediately
 either way.)
 
-Leave all three running (`start.bat` does this for you, plus the web app). Check `data\herpmonitor.db`
+Leave all three running (the Supervisor's tray icon does this for you, plus the web app — see
+`tray/install.py` and ADR 0015; `start.bat` is retired). Check `data\herpmonitor.db`
 (e.g. with the `sqlite3` CLI or DB Browser for SQLite) — `sensor_reading` rows should accumulate
 continuously, and `plug_state_transition` rows should appear whenever a light/heat/cooling plug
 actually flips. Along the way you can also watch `data\inbox\` briefly fill with Plugin Event files

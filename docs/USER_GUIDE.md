@@ -65,19 +65,29 @@ different computer.
 
 ### The easy way
 
-Double-click **`start.bat`** in the HerpMonitor folder. It opens four windows (the website, Ingest,
-the sensor plugin, and the plug plugin) and automatically opens the dashboard in your browser
-after a few seconds.
+The first time, run the one-time setup step below; after that, just double-click the **HerpMonitor**
+shortcut on your Desktop.
 
-Leave all four windows open (minimized is fine) — closing one stops that part. You can close the
-first little window that says "HerpMonitor is running" once it says so; the other three keep
-going.
+```
+python tray\install.py
+```
+
+This creates a **HerpMonitor** shortcut on your Desktop. Double-clicking it starts the website,
+Ingest, and both plugins in the background (no windows to manage) and opens the dashboard in your
+browser after a few seconds. You'll see a small icon appear in the system tray (bottom-right, near
+the clock) — right-click it for a menu that lets you Open Dashboard, Start/Stop/Restart each part
+individually, View Logs, or tick **"Start with Windows"** so HerpMonitor comes up automatically
+every time you log in, the same way apps like Docker Desktop or Steam do. The icon turns yellow if
+something's restarting and red if something's failed repeatedly and needs your attention.
+
+**Don't see the shortcut after running that command?** See "The Desktop shortcut didn't appear" in
+Section 7 below — it's almost always your Desktop folder being in a different location than usual,
+not a real error.
 
 ### The manual way
 
-Useful if `start.bat` doesn't work for some reason, or you want to see what it's actually doing.
-Every time you want to use HerpMonitor, you start **four things**, each in its own Command Prompt
-window:
+Useful if you want to see what's actually happening without going through the tray icon. Every time
+you want to use HerpMonitor, you start **four things**, each in its own Command Prompt window:
 
 **Website:**
 ```
@@ -476,23 +486,47 @@ if it loses its last one.
 
 ## 6. Stopping HerpMonitor
 
-Close the **"HerpMonitor - Website"**, **"HerpMonitor - Ingest"**, **"HerpMonitor - Sensor Plugin
-(Govee)"**, and **"HerpMonitor - Plug Plugin (Tuya)"** windows (or click into each and press `Ctrl+C`).
+Right-click the tray icon and choose **Stop All**, or **Quit** to also close the tray icon itself.
+(Quit is what you want before updating the software; Stop All leaves the tray icon running so you
+can Start All again from the same menu later.)
 
-You don't strictly need to stop any of them — it's fine to leave them all running all the time
-(that's actually the normal way to use it, so history keeps accumulating). Stopping is only needed
-if you're restarting the computer, updating the software, or troubleshooting.
+You don't strictly need to stop anything — it's fine to leave it running all the time (that's
+actually the normal way to use it, so history keeps accumulating, and "Start with Windows" assumes
+you will). Stopping is only needed if you're restarting the computer, updating the software, or
+troubleshooting.
 
 ---
 
 ## 7. If Something's Not Working
 
 - **The website won't load at `localhost:22255`, or Temp/Humidity is stuck on "no data yet"** —
-  One of the windows isn't running anymore. Easiest fix: close whatever HerpMonitor windows are
-  still open and double-click `start.bat` again. Also double check Bluetooth is turned on (the
-  sensor plugin needs it).
+  Right-click the tray icon and check for a red (failed) or yellow (restarting) status; click
+  **Start** on whichever part shows it, or **View Logs** to see why it's been crashing. If the tray
+  icon itself isn't there at all, double-click the HerpMonitor Desktop shortcut again. Also double
+  check Bluetooth is turned on (the sensor plugin needs it).
 - **A reading looks obviously wrong** (like a huge negative number) — Let me know rather than
   trusting it; that's a sign the sensor decoding needs another look for that specific device.
+- **The Desktop shortcut didn't appear after running `python tray\install.py`** — `install.py` asks
+  Windows itself where your Desktop is and puts the shortcut there, so if nothing shows up, your
+  Desktop folder is almost certainly somewhere other than the plain `C:\Users\<you>\Desktop` you'd
+  expect — common with OneDrive's "back up your folders"/Known Folder Move feature, or if someone
+  manually relocated it via a folder's Properties dialog. To check and fix:
+  1. Open **File Explorer**, right-click **Desktop** in the left sidebar (under Quick Access or This
+     PC), choose **Properties**, and open the **Location** tab. It'll show where Windows currently
+     thinks your Desktop is — if that's not where you were looking, that's the mismatch.
+  2. If you want it back to normal, click **Restore Default**, then **Apply**. Windows may say the
+     default folder (`C:\Users\<you>\Desktop`) doesn't exist yet — that's expected if it's never
+     been used before; let it create the folder.
+  3. It'll then ask whether to move your existing files from the old location to the new one — say
+     **Yes** only if those files are things you actually want as desktop icons, otherwise **No** (the
+     restored Desktop just starts empty; the old files stay exactly where they were).
+  4. **If OneDrive is running, it can hold a lock on the old folder and block the move** — if step 2
+     or 3 fails or hangs, click the **^** (show hidden icons) arrow in the system tray, right-click
+     the OneDrive cloud icon, open its gear/**Help & Settings** menu, choose **Close OneDrive**,
+     confirm, then retry step 2. You can reopen OneDrive afterward from the Start menu if you use it
+     for anything else.
+  5. Once your Desktop is a real, existing folder, re-run `python tray\install.py` — the shortcut
+     will land there.
 
 ---
 

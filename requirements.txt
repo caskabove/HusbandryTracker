@@ -8,3 +8,5 @@ markdown>=3.7
 jsonschema>=4.23
 pydantic>=2.0  # schemas/ entity models (§9.15) — previously only a transitive fastapi dep
 pytest>=8.0    # schemas/test_entity_schema.py — dev/test only, not used at runtime
+pystray>=0.19  # tray/supervisor.py's tray icon (ADR 0015)
+Pillow>=10.0   # tray/supervisor.py's tray icon image — also a transitive pystray dep on Windows
