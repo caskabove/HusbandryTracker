@@ -23,6 +23,27 @@ If this is your first Zigbee device, you'll need to buy a Tuya-compatible gatewa
 sold alongside these sensors, or as its own "Tuya Zigbee Hub" product) before anything below will
 work.
 
+### "But it connects fine in the Tuya app on my phone — isn't my phone the gateway?"
+
+No — your phone can't be the gateway, even if setup seemed to go smoothly. The Tuya Smart app on
+your phone only talks to Tuya's cloud over your phone's normal WiFi/cellular connection. It has no
+way to receive a Zigbee radio signal, so it physically cannot be what the sensor is pairing to.
+
+If you're seeing live readings and don't remember buying a separate gateway, one of these two things
+is actually true:
+
+- **You already have a gateway** somewhere nearby — maybe bundled with another Tuya product without
+  it being obvious that's what it was. Check your device list in the Tuya Smart app: if the sensor
+  is listed *nested under* another device (rather than standing on its own), that other device is
+  your gateway, and it's already doing its job.
+- **This particular sensor isn't actually Zigbee.** Some near-identical-looking sensors in this
+  product family are WiFi-only and connect directly, no hub required. Check the box/listing for the
+  word "Zigbee" — if it's not there, the gateway requirement in this guide doesn't apply to your
+  unit.
+
+Either way, none of this changes how the sensor gets added to HerpMonitor — it's a Manual Sensor
+either way (see [section 4](#4-adding-it-to-herpmonitor)).
+
 **Read this next:** even once it's working perfectly in the Tuya Smart app, this is a different kind
 of device than the smart plugs HerpMonitor already tracks automatically. Right now, HerpMonitor
 **cannot read this sensor's data on its own** — you'll still get full use of it in the Tuya Smart
