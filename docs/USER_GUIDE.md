@@ -27,8 +27,8 @@ out exactly.
 - **Python** — free software that runs the website and the background listeners. [Download it here](https://www.python.org/downloads/)
   (get the latest version) and install it. During installation, make sure to check the box that
   says **"Add python.exe to PATH"** — that's the one setting that matters.
-- **Your Govee H5074 sensors**, one per enclosure, already set up and working in the Govee phone
-  app.
+- **Your Govee sensors** (the **H5074** or **H5102** models — HerpMonitor understands both), one
+  or more per enclosure, already set up and working in the Govee Home phone app.
 - **Bluetooth turned on** on the Windows computer.
 
 Gosund smart plugs, for tracking light/heat/cooling — set up through the Smart Life app (not
@@ -316,28 +316,49 @@ below that depends on the enclosure's **Enclosure Type** (see [Adding a new
 enclosure](#adding-a-new-enclosure) above) — a Basic enclosure only offers temperature/humidity; a
 Freshwater/Saltwater/Amphibian one adds the water-chemistry fields for that type instead.
 
-**Smart Sensor** — this is the one step that needs a short detour into a Command Prompt, because
-finding a Govee sensor's ID isn't something the website can do on its own yet.
+**How many, and where**: an Enclosure can have more than one Sensor — a common setup is one on the
+warm side and one on the cool side, so each gets its own label and (if you want) its own target
+range. Each Sensor belongs to exactly one Enclosure (or one Room, if it's a Room's ambient sensor —
+see [Adding a Room](#adding-a-room-and-grouping-enclosures-into-it) below) — a device can't be shared
+between two places the way a Plug can.
 
-1. Open a Command Prompt in the HerpMonitor folder, and run:
+#### Smart Sensor (Govee)
+
+This is the one step that needs a short detour into a Command Prompt, because finding a Govee
+sensor's ID isn't something the website can do on its own yet.
+
+1. Pair the sensor in the **Govee Home** app first, if you haven't already (one-time, unrelated to
+   HerpMonitor — see [How To: Add a Govee Sensor](HOWTO_ADD_GOVEE_SENSOR.md) if you need the full
+   walkthrough).
+2. Open a Command Prompt in the HerpMonitor folder, and run:
    ```
    .venv\Scripts\activate
    python tools\govee_discover.py 20
    ```
-2. Wait 20 seconds. It'll print a list of nearby Govee sensors, each with a code like
+3. Wait 20 seconds. It'll print a list of nearby Govee sensors, each with a code like
    `E3:60:59:23:50:A6` — that's the sensor's ID (its "MAC address").
-3. To figure out *which* sensor belongs to *which* enclosure: check the current reading it prints
-   against what the Govee app (or the sensor's own little screen) shows for that enclosure — they
-   should match.
-4. On the Admin page, in that enclosure's **"Add Sensor"** form (Tracking Mode: Smart), paste in
+4. To figure out *which* sensor belongs to *which* enclosure: check the current reading it prints
+   against what the Govee Home app (or the sensor's own little screen) shows for that enclosure —
+   they should match.
+5. On the Admin page, in that enclosure's **"Add Sensor"** form (Tracking Mode: Smart), paste in
    that ID, give it a label (e.g. "warm side"), and optionally set a target temperature/humidity
    range — that's what turns the Temp/Humidity numbers green or red on the dashboard.
+6. Click **Create**.
 
-**Manual Sensor** — for a spot-check tool with no BLE of its own (an infrared thermometer, a
-moisture meter, a water test strip): pick Tracking Mode: Manual, give it a label, and set a target
-range (min *and* max) on whichever it measures. That range is required for a Manual Sensor, since
-there'd otherwise be nothing to judge a hand-logged reading against. Once saved, its dashboard row
-grows a small "Log Reading" form you use whenever you take a measurement.
+See [How To: Add a Govee Sensor](HOWTO_ADD_GOVEE_SENSOR.md) for this same walkthrough as a
+standalone, start-to-finish doc.
+
+#### Manual Sensor
+
+For a spot-check tool with no BLE of its own (an infrared thermometer, a moisture meter, a water
+test strip):
+
+1. In the **"Add Sensor"** form, set **Tracking Mode** to **Manual**.
+2. Give it a label.
+3. Set a target range (**min *and* max**) on whichever it measures — this is required for a Manual
+   Sensor, since there'd otherwise be nothing to judge a hand-logged reading against.
+4. Click **Create**. Its dashboard row now grows a small "Log Reading" form you use whenever you
+   take a measurement.
 
 One current limitation, so it's not a surprise: the "Log Reading" form only ever logs temperature
 and/or humidity. If you set a target range on one of the water-chemistry fields (pH, ammonia, etc.
@@ -345,6 +366,15 @@ and/or humidity. If you set a target range on one of the water-chemistry fields 
 nowhere yet to log an actual reading against it, so it won't get colored green/yellow/red like
 temperature and humidity do. Setting it up now is still fine if you're testing water chemistry by
 hand — the range itself is saved and ready for whenever reading-logging catches up to it.
+
+**Have a Tuya/Smart-Life temperature/humidity sensor (with or without a probe), not a Govee
+device?** That's a different product than what's covered above, and isn't read automatically yet —
+if it's a Zigbee device (check the box for "Zigbee" and "Gateway required" — most of these small
+screen/probe sensors are), see [How To: Add a Tuya Zigbee Temp/Humidity/Probe
+Sensor](HOWTO_TUYA_TEMP_HUMIDITY_PROBE_SENSOR.md) for exactly what works today, **including a
+required-hardware heads-up before you even open the box** (short version: it works great in the
+Tuya Smart app on its own, but needs a separate gateway/hub to do so; inside HerpMonitor it's a
+Manual Sensor for now).
 
 ### Adding a plug
 
@@ -354,7 +384,8 @@ place. Every Plug is either **Smart** (a real Tuya-controlled Gosund plug, read 
 **Manual** (no smart device — e.g. a light on a mechanical timer); pick which one in the **"Add
 Plug"** form's Tracking Mode dropdown, which shows only the fields that mode actually needs.
 
-**Belongs to** — the other dropdown on that form — is where you say what the Plug controls:
+**How many, and where** — the **"Belongs to"** dropdown on that form is where you say what a single
+physical Plug controls, and it's the one place a device can genuinely serve more than one thing:
 - **Enclosure(s)**: check the box next to each Enclosure it serves. Almost always just one; check
   more than one when a single physical switch controls several tubs at once ("everything on one
   switch," common in smaller collections) — one Plug, several Enclosures, same on/off state for
@@ -362,29 +393,46 @@ Plug"** form's Tracking Mode dropdown, which shows only the fields that mode act
 - **Room**: for a genuinely room-wide fixture (a rack's ambient light) that isn't tied to any
   specific tub — pick the Room instead of any Enclosure.
 
-A Plug always belongs to exactly one of those, never both, never neither.
+A Plug always belongs to exactly one of those, never both, never neither. Separately, a
+**multi-outlet power strip** counts as *multiple* Plug rows sharing the same device ID/local key,
+one per outlet actually in use — see Outlet/DPS key below.
 
-**Smart Plug** — this is for tracking a Gosund plug's light/heat/cooling status (see the note at
-the end of this guide for why this needs Smart Life instead of Google Home).
+#### Smart Plug (Gosund)
 
-Unlike a sensor's MAC address, a plug's ID and "local key" can't be found with a simple scan —
-getting them involves a one-time setup on Tuya's developer website (the company behind Gosund's
-underlying technology). That part still needs technical help to walk through the first time. Once
-you have a plug's **device ID** and **local key** in hand, adding it here is simple: a label (e.g.
-"UTH", "basking bulb"), a Purpose (light/heat/cooling/etc.), and those two values.
+This is for tracking a Gosund plug's light/heat/cooling status (see the note at the end of this
+guide for why this needs Smart Life instead of Google Home).
 
-Leave **Outlet / DPS key** as `1` unless the plug is a multi-outlet power strip — those expose
-each outlet as its own switch (`1`, `2`, `3`, or `7` for a USB port), so a strip needs one row here
-per outlet actually in use, all sharing the same device ID/local key. `tools\tuya_probe.py` (a
-Command Prompt tool) can confirm which number is which outlet if you're not sure.
+1. Pair the plug in the **Smart Life** app first, if you haven't already (see [How To: Add a Gosund
+   Smart Plug](HOWTO_ADD_GOSUND_PLUG.md) for the full walkthrough) — **not** Google Home.
+2. Get the plug's **device ID** and **local key**. Unlike a sensor's MAC address, these can't be
+   found with a simple scan — getting them involves a one-time setup on Tuya's developer website
+   (the company behind Gosund's underlying technology). **That part still needs technical help to
+   walk through the first time** — see the linked how-to above for the actual commands involved.
+3. On the main Admin page's **"Add Plug"** form, set **Tracking Mode** to **Smart**, give it a label
+   (e.g. "UTH", "basking bulb"), and pick a **Purpose** (light/heat/cooling/etc.).
+4. Enter the **device ID** and **local key** from step 2.
+5. Leave **Outlet / DPS key** as `1` unless the plug is a multi-outlet power strip — those expose
+   each outlet as its own switch (`1`, `2`, `3`, or `7` for a USB port), so a strip needs one row
+   here per outlet actually in use, all sharing the same device ID/local key. `tools\tuya_probe.py`
+   (a Command Prompt tool) can confirm which number is which outlet if you're not sure.
+6. Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
+   address can help.
+7. Set **Belongs to** (see above), and click **Create**.
 
-Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
-address can help.
+See [How To: Add a Gosund Smart Plug](HOWTO_ADD_GOSUND_PLUG.md) for this same walkthrough as a
+standalone, start-to-finish doc, including the Tuya developer-credentials step in full.
 
-**Manual Plug** — for a light/heat source switched by hand or by a plain mechanical timer with no
-smart features: pick Tracking Mode: Manual, give it a label and Purpose, and enter the timer's
-on-time and off-time. No device ID or local key needed. The dashboard shows that as a "Declared"
-schedule — it's exactly what you entered, not something the app is verifying against the timer.
+#### Manual Plug
+
+For a light/heat source switched by hand or by a plain mechanical timer with no smart features:
+
+1. In the **"Add Plug"** form, set **Tracking Mode** to **Manual**.
+2. Give it a label and a **Purpose**.
+3. Enter the timer's on-time and off-time. No device ID or local key needed.
+4. Set **Belongs to** (see above), and click **Create**.
+
+The dashboard shows that as a "Declared" schedule — it's exactly what you entered, not something the
+app is verifying against the timer.
 
 **Reassigning a plug already sitting in "Unassigned"**: open its edit page from the Plugs list on
 the main Admin page, check the box(es) for its real Enclosure(s) (or switch "Belongs to" over to
