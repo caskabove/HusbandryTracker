@@ -31,6 +31,14 @@ templates.env.globals["schedule_drift_status"] = schedule_drift_status
 templates.env.globals["ENCLOSURE_TYPES"] = et.ENCLOSURE_TYPES
 templates.env.globals["ENCLOSURE_TYPE_LABELS"] = et.ENCLOSURE_TYPE_LABELS
 templates.env.globals["target_range_metrics_for"] = et.target_range_metrics_for
+templates.env.globals["TARGET_RANGE_METRICS"] = et.TARGET_RANGE_METRICS
+# Cache-busting for /static/app.js and /static/style.css (see web/main.py's identical setup and
+# comment) — this router has its own separate Jinja2Templates instance, so its own globals need
+# this too; missing it here left every admin_*.html page rendering "?v=" (empty) instead of a real
+# version, silently defeating the cache-busting these pages' <link>/<script> tags already expect.
+templates.env.globals["asset_version"] = str(int(
+    max(f.stat().st_mtime for f in (Path(__file__).resolve().parent / "static").iterdir() if f.is_file())
+))
 
 
 def _f_to_c(fahrenheit: float | None) -> float | None:
@@ -211,6 +219,14 @@ def admin_delete_animal(animal_id: int, enclosure_id: int = Form(...)):
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
+@router.post("/animals/{animal_id}/dashboard-visibility")
+def admin_set_animal_dashboard_visibility(
+    animal_id: int, enclosure_id: int = Form(...), show_on_dashboard: bool = Form(False),
+):
+    q.set_animal_dashboard_visibility(animal_id, show_on_dashboard)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
 @router.post("/enclosures/{enclosure_id}/plants")
 def admin_create_plant(enclosure_id: int, name: str = Form(...), species: str = Form("")):
     try:
@@ -307,6 +323,14 @@ def admin_create_sensor(
 @router.post("/sensors/{sensor_id}/delete")
 def admin_delete_sensor(sensor_id: int, enclosure_id: int = Form(...)):
     q.delete_sensor(sensor_id)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/sensors/{sensor_id}/dashboard-visibility")
+def admin_set_sensor_dashboard_visibility(
+    sensor_id: int, enclosure_id: int = Form(...), show_on_dashboard: bool = Form(False),
+):
+    q.set_sensor_dashboard_visibility(sensor_id, show_on_dashboard)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -407,6 +431,23 @@ def admin_create_plug(
 @router.post("/plugs/{plug_id}/delete")
 def admin_delete_plug(plug_id: int):
     q.delete_plug(plug_id)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.post("/plugs/{plug_id}/dashboard-visibility")
+def admin_set_plug_dashboard_visibility(
+    plug_id: int, show_on_dashboard: bool = Form(False),
+    enclosure_id: str = Form(""), room_id: str = Form(""),
+):
+    """A Plug's parent isn't a single fixed page the way an Animal's or Sensor's is — it's either
+    one Room or one-or-more Enclosures (see CONTEXT.md: Plug) — so this one route (unlike Sensor's
+    forked /sensors/ vs /room-sensors/ pair) takes whichever hidden id the calling page's form set
+    and redirects back there, falling back to the main Admin page same as every other Plug route."""
+    q.set_plug_dashboard_visibility(plug_id, show_on_dashboard)
+    if enclosure_id:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+    if room_id:
+        return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
 
 
@@ -579,6 +620,14 @@ def admin_create_room_sensor(
 @router.post("/room-sensors/{sensor_id}/delete")
 def admin_delete_room_sensor(sensor_id: int, room_id: int = Form(...)):
     q.delete_sensor(sensor_id)
+    return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+@router.post("/room-sensors/{sensor_id}/dashboard-visibility")
+def admin_set_room_sensor_dashboard_visibility(
+    sensor_id: int, room_id: int = Form(...), show_on_dashboard: bool = Form(False),
+):
+    q.set_sensor_dashboard_visibility(sensor_id, show_on_dashboard)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
 
 

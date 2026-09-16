@@ -14,6 +14,13 @@ One thing that differs from every other entity built so far: `animal` has NO `cr
 at all (confirmed directly against db/schema.sql's CREATE TABLE block) — so `AnimalRead` adds only
 `id`, not `id`/`created_at` like Sensor/Plug/CareEvent/Enclosure/Room did. Worth remembering when
 building Plant next: check its columns too rather than assuming the `created_at` pattern holds.
+
+`show_on_dashboard` (see CONTEXT.md: Animal) isn't set through `create_animal()`/`update_animal()`
+at all — it's toggled via its own dedicated `set_animal_dashboard_visibility()` in
+web/admin_queries.py, one Animal at a time, from a checkbox on the Enclosure's Admin page. Still
+listed on `AnimalBase` (defaulted to `True`, matching the column's own DEFAULT) rather than only on
+`AnimalRead`, to keep `AnimalCreate`/`AnimalUpdate` truthful about every column `animal` actually
+has, same reasoning as Sensor/Plug's Update classes carrying fields their own real functions ignore.
 """
 from __future__ import annotations
 
@@ -26,6 +33,7 @@ class AnimalBase(BaseModel):
     species_common: str | None = None
     species_scientific: str | None = None
     dob: str | None = None                  # ISO date, nullable — not always known
+    show_on_dashboard: bool = True          # see CONTEXT.md: Animal — set via set_animal_dashboard_visibility(), not create/update
 
 
 class AnimalCreate(AnimalBase):

@@ -50,6 +50,7 @@ class SensorBase(_TargetRangeFields):  # type: ignore[misc]
     external_id: str | None = None    # opaque per-Plugin device id, e.g. a MAC address — see CONTEXT.md: External ID
     plugin_config: str | None = None  # opaque JSON credentials; NULL if the Plugin needs none — see CONTEXT.md: Plugin Config
     auto_update_enabled: bool = True  # Smart Sensor only — see CONTEXT.md: Auto-Update
+    show_on_dashboard: bool = True    # see CONTEXT.md: Sensor — set via set_sensor_dashboard_visibility(), not create/update
 
     @model_validator(mode="after")
     def _check_tracking_mode_identity(self) -> SensorBase:

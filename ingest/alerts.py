@@ -6,11 +6,11 @@ whether one arrived this tick — not a separate process, keeping ADR 0001's ove
 
 Scope notes, so gaps here aren't mistaken for bugs later:
 
-- Out of Range only ever checks temperature/humidity, because `sensor_reading` only ever stores
-  those two metrics. The other 9 Target Range metrics added for aquatic Enclosure Types (pH,
-  ammonia, salinity, ...) have nowhere to log an actual Reading against yet — see
-  schemas/enclosure_types.py, ADR 0011. Extending sensor_reading with those columns plus a manual
-  entry UI is separate follow-up work, not done here.
+- Out of Range only ever checks temperature/humidity, even though `sensor_reading` now has columns
+  for all 11 Target Range metrics (pH, ammonia, salinity, ...) and the Dashboard/Admin UI can both
+  display and hand-log any of them (see schemas/enclosure_types.py's TARGET_RANGE_METRICS, ADR
+  0011) — extending Alerting to the other 9 the same generic way is separate follow-up work, not
+  done here.
 - Zero Power While On is fully implemented against `plug_reading`, but stays inert until a
   telemetry-capable Plug is registered — see plugins/tuya_lan/plugin.py's module docstring.
 - Plug Unreachable is driven by plug_last_seen, updated on every plug_state Plugin Event regardless

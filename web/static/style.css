@@ -2,6 +2,8 @@
     --bg: #0d1913;
     --panel-bg: #16261e;
     --panel-header-bg: #1c3327;
+    --room-bg: #0a140f;      /* a shade darker than --bg itself — the Room "frame" around its Enclosures */
+    --room-header-bg: #14241b; /* darker than --panel-header-bg, so a Room's header reads apart from an Enclosure's */
     --primary: #2f6b4f;
     --primary-bright: #4f9d76;
     --text: #e8f0ec;
@@ -243,7 +245,17 @@ button.danger {
     padding: 1.5rem 1.5rem 0.5rem;
 }
 
-.room-section { margin-bottom: 0.5rem; border-radius: 10px; transition: background-color 0.1s; }
+/* Darker than an Enclosure panel (--panel-bg) on purpose — a Room is the container an Enclosure
+   sits inside, and the two used to share the same shade of dark, making them hard to tell apart
+   at a glance while scrolling. Padding added alongside the background so it reads as a frame
+   around the Room's header + its Enclosures, not just a color behind the header bar alone. */
+.room-section {
+    margin-bottom: 0.5rem;
+    padding: 0.6rem;
+    background: var(--room-bg);
+    border-radius: 10px;
+    transition: background-color 0.1s;
+}
 
 /* Drag-and-drop Enclosure -> Room reassignment (see CONTEXT.md: Room). .dragging is the panel
    being dragged; .drop-target is the Room section (or Ungrouped) currently under the cursor. */
@@ -271,7 +283,7 @@ button.danger {
 .panel.collapsed .panel-body { display: none; }
 
 .room-header {
-    background: var(--panel-header-bg);
+    background: var(--room-header-bg);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 0.8rem 1.1rem;
@@ -301,6 +313,22 @@ button.danger {
     color: var(--text-muted);
 }
 .room-ambient-item { display: flex; align-items: center; gap: 0.3rem; }
+
+/* Groups the Room header's Refresh button with a Log Reading control per Manual Sensor (see
+   dashboard.html) — wrapping them lets .room-header's own justify-content: space-between treat
+   them as one right-aligned unit instead of scattering each across the row. reading_log_form()'s
+   own .reading-form/.log-form spacing (margin/padding-left, margin-left: auto) was tuned for its
+   other home — a .reading-row inside an Enclosure panel's body — and needs zeroing out here. */
+.room-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 0.8rem 1.1rem 0 0;
+}
+.room-header-actions .entity-refresh-form { padding: 0; }
+.room-header-actions .reading-log { margin: 0; padding-left: 0; }
+.room-header-actions .reading-log .log-form { margin-left: 0; }
 
 .entity-refresh-form { flex-shrink: 0; padding: 0.8rem 1.1rem 0 0; }
 .panel-header .entity-refresh-form { padding: 0.9rem 1.1rem 0 0; }
@@ -396,6 +424,19 @@ button.danger {
     letter-spacing: 0.08em;
     color: var(--text-muted);
 }
+
+/* Collapsible Care section (see dashboard.html) — same collapse mechanics as .room-section/.panel
+   above, just scoped to this one sub-section of a panel instead of the whole panel. The header's
+   own status pill (worst of the four Care kinds) stays visible either way, so a yellow/red Care
+   section reads as due/overdue at a glance even collapsed. */
+.care-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.care-section-header .collapse-toggle { padding: 0 0.3rem 0 0; }
+.care-section.collapsed .collapse-toggle { transform: rotate(-90deg); }
+.care-section.collapsed .care-section-body { display: none; }
 
 .reading-row {
     display: flex;
@@ -497,6 +538,23 @@ a.pill:hover { opacity: 0.85; }
     margin: 0.2rem 0 0.6rem;
     padding-left: 8rem;
 }
+/* The Log Reading toggle (see dashboard.html's reading_log_form macro) — a <summary> styled to
+   match .log-form button exactly, since collapsed it *is* the button; only the disclosure
+   triangle browsers add by default is stripped off. */
+.reading-log > summary {
+    list-style: none;
+    cursor: pointer;
+    display: inline-block;
+    background: var(--primary);
+    color: var(--text);
+    border: 1px solid var(--primary-bright);
+    border-radius: 6px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+}
+.reading-log > summary::-webkit-details-marker { display: none; }
+.reading-log > summary:hover { background: var(--primary-bright); color: #0d1913; }
+.reading-log[open] > summary { margin-bottom: 0.4rem; }
 
 .badge-muted {
     background: var(--status-unknown);

@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from db.db import get_connection, init_db
+from schemas import enclosure_types as et
 from web.govee_refresh import refresh_sensors
 from web.admin import router as admin_router
 from web.admin_queries import get_settings
@@ -38,6 +39,19 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["target_range_status"] = target_range_status
 templates.env.globals["care_interval_status"] = care_interval_status
+# Lets dashboard.html's reading_row()/reading_log_form() macros loop over every possible Target
+# Range metric (not just temperature/humidity) generically — see CONTEXT.md: Reading, Target Range.
+templates.env.globals["TARGET_RANGE_METRICS"] = et.TARGET_RANGE_METRICS
+
+# Cache-busting query string for /static/app.js and /static/style.css (every template appends
+# ?v={{ asset_version }} to both) — browsers cache static JS/CSS aggressively, sometimes surviving
+# an ordinary page refresh, so an edit to either file could otherwise run stale in an already-open
+# tab even after the Website process itself has been restarted. The newest mtime across web/static/
+# changes this value on any edit, forcing a fresh fetch; computed once at startup since a running
+# process's own static files don't change underneath it (a genuine edit requires a restart anyway).
+templates.env.globals["asset_version"] = str(int(
+    max(f.stat().st_mtime for f in (BASE_DIR / "static").iterdir() if f.is_file())
+))
 
 
 @app.on_event("startup")
@@ -129,10 +143,37 @@ def create_reading(
     sensor_id: int,
     temperature_f: float | None = Form(default=None),
     humidity_pct: float | None = Form(default=None),
+    ph: float | None = Form(default=None),
+    ammonia_ppm: float | None = Form(default=None),
+    nitrite_ppm: float | None = Form(default=None),
+    nitrate_ppm: float | None = Form(default=None),
+    salinity_ppt: float | None = Form(default=None),
+    alkalinity_dkh: float | None = Form(default=None),
+    calcium_ppm: float | None = Form(default=None),
+    magnesium_ppm: float | None = Form(default=None),
+    phosphate_ppm: float | None = Form(default=None),
     recorded_at: str = Form(default=""),
 ):
+    # One Form field per schemas.enclosure_types.TARGET_RANGE_METRICS entry (see
+    # dashboard.html's reading_log_form() macro, which only ever renders the ones this particular
+    # Sensor tracks) — keyed here by sensor_reading column name; temperature is the one metric
+    # needing a unit conversion (Fahrenheit entry -> Celsius storage), every other value is already
+    # in its storage unit.
+    values = {
+        "temperature_c": _f_to_c(temperature_f),
+        "humidity_pct": humidity_pct,
+        "ph": ph,
+        "ammonia_ppm": ammonia_ppm,
+        "nitrite_ppm": nitrite_ppm,
+        "nitrate_ppm": nitrate_ppm,
+        "salinity_ppt": salinity_ppt,
+        "alkalinity_dkh": alkalinity_dkh,
+        "calcium_ppm": calcium_ppm,
+        "magnesium_ppm": magnesium_ppm,
+        "phosphate_ppm": phosphate_ppm,
+    }
     try:
-        log_reading(sensor_id, _f_to_c(temperature_f), humidity_pct, recorded_at)
+        log_reading(sensor_id, values, recorded_at)
     except ValueError as exc:
         return RedirectResponse(url=f"/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/", status_code=303)

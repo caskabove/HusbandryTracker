@@ -77,7 +77,13 @@ CREATE TABLE IF NOT EXISTS animal (
     name                TEXT NOT NULL,
     species_common      TEXT,
     species_scientific  TEXT,
-    dob                 TEXT   -- ISO date, nullable (not always known)
+    dob                 TEXT,  -- ISO date, nullable (not always known)
+    -- Whether this Animal's card shows on the Dashboard's Enclosure panel — an Enclosure housing a
+    -- colony can have more Animals than fit comfortably at a glance, so this is opt-in per Animal,
+    -- toggled from the Enclosure's own Admin page. Defaults on; web/admin_queries.py's
+    -- create_animal() only auto-enables it for the first 3 Animals in an Enclosure (see
+    -- CONTEXT.md: Animal) — after that, a new Animal defaults off until the user picks it.
+    show_on_dashboard   INTEGER NOT NULL DEFAULT 1
 );
 
 -- A Sensor assigned to either an Enclosure or a Room, never both. See CONTEXT.md: Sensor,
@@ -107,6 +113,12 @@ CREATE TABLE IF NOT EXISTS sensor (
     external_id           TEXT,                      -- opaque per-Plugin device id, e.g. a MAC address — see CONTEXT.md: External ID
     plugin_config         TEXT,                      -- opaque JSON credentials, NULL if the Plugin needs none — see CONTEXT.md: Plugin Config
     auto_update_enabled   INTEGER NOT NULL DEFAULT 1, -- 0/1, Smart Sensor only (see CONTEXT.md: Auto-Update)
+    -- Whether this Sensor's Reading row shows on the Dashboard (Enclosure panel or Room ambient
+    -- strip) — an Enclosure or Room can end up with more Sensors than fit at a glance (e.g. several
+    -- water-chemistry probes). Opt-in per Sensor, toggled from its parent's Admin page. Defaults on;
+    -- web/admin_queries.py's create_sensor()/create_room_sensor() only auto-enable it for the first
+    -- 3 Sensors under the same parent — same "top 3" default as animal.show_on_dashboard.
+    show_on_dashboard     INTEGER NOT NULL DEFAULT 1,
     target_temp_min_c     REAL,
     target_temp_max_c     REAL,
     target_humidity_min   REAL,
@@ -197,6 +209,12 @@ CREATE TABLE IF NOT EXISTS plug (
     external_id         TEXT,                           -- opaque per-Plugin device id — see CONTEXT.md: External ID
     plugin_config       TEXT,                           -- opaque JSON credentials (Tuya local_key/ip_address) — see CONTEXT.md: Plugin Config
     auto_update_enabled INTEGER NOT NULL DEFAULT 1,     -- 0/1, Smart Plug only (see CONTEXT.md: Auto-Update)
+    -- Whether this Plug's current status (on/off, or Unreachable) shows on the Dashboard — a Room
+    -- or Enclosure can end up with more Plugs than fit at a glance. Opt-in per Plug, toggled from
+    -- its parent's Admin page. Defaults on; web/admin_queries.py's create_plug() only auto-enables
+    -- it for the first 3 Plugs under the same parent — same "top 3" default as animal/sensor's own
+    -- show_on_dashboard.
+    show_on_dashboard   INTEGER NOT NULL DEFAULT 1,
     target_on_time      TEXT,                           -- "HH:MM", never with a Controller Kind set (see CONTEXT.md: Target Schedule)
     target_off_time     TEXT,                           -- "HH:MM", never with a Controller Kind set
     controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'thermostat', 'hydrostat')),  -- see CONTEXT.md: Controller Kind, ADR 0008 (supersedes ADR 0007's is_thermostat_controlled)
@@ -229,13 +247,30 @@ CREATE TABLE IF NOT EXISTS plug_enclosure (
 );
 
 -- Raw Sensor readings, captured continuously (see CONTEXT.md decision: capture everything, no charts in v1).
+-- temperature_c/humidity_pct/battery_pct are the only columns a Smart Sensor (Govee BLE) ever
+-- writes to. The water-chemistry columns below exist for Manual Sensors tracking a non-basic
+-- Enclosure Type's Target Range metrics (see CONTEXT.md: Enclosure Type, Reading; ADR 0011) —
+-- hand-logged through the Admin UI/Dashboard, one value per metric that Sensor actually tracks,
+-- same "at least one populated column" shape sensor_reading already had for temp/humidity. Column
+-- names mirror `sensor`'s own target_<metric>_min/max naming (minus "target_"/"_min"/"_max") — see
+-- schemas/enclosure_types.py's TARGET_RANGE_METRICS.reading_column, the single source of truth
+-- mapping a metric to both its Target Range columns here and its Reading column there.
 CREATE TABLE IF NOT EXISTS sensor_reading (
-    id            INTEGER PRIMARY KEY,
-    sensor_id     INTEGER NOT NULL REFERENCES sensor(id) ON DELETE CASCADE,
-    recorded_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    temperature_c REAL,
-    humidity_pct  REAL,
-    battery_pct   INTEGER
+    id             INTEGER PRIMARY KEY,
+    sensor_id      INTEGER NOT NULL REFERENCES sensor(id) ON DELETE CASCADE,
+    recorded_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    temperature_c  REAL,
+    humidity_pct   REAL,
+    battery_pct    INTEGER,
+    ph             REAL,
+    ammonia_ppm    REAL,
+    nitrite_ppm    REAL,
+    nitrate_ppm    REAL,
+    salinity_ppt   REAL,
+    alkalinity_dkh REAL,
+    calcium_ppm    REAL,
+    magnesium_ppm  REAL,
+    phosphate_ppm  REAL
 );
 CREATE INDEX IF NOT EXISTS idx_sensor_reading_sensor_time ON sensor_reading (sensor_id, recorded_at);
 

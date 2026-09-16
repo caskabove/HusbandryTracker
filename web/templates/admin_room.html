@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HerpMonitor Admin - {{ room.name }}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
@@ -36,7 +36,7 @@
         <section class="admin-card">
             <h2>Sensors</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Reading</th><th>Target Temp (F)</th><th>Target Humidity</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Reading</th><th>Target Temp (F)</th><th>Target Humidity</th><th>On Dashboard</th><th></th></tr></thead>
                 <tbody>
                 {% for s in room.sensors %}
                     {% set reading = s.latest_reading %}
@@ -54,6 +54,14 @@
                         <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
                         <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
                         <td>
+                            {# Show on Dashboard (see CONTEXT.md: Sensor) — auto-submits on change,
+                               same pattern as the Enclosure page's own quick toggle. #}
+                            <form method="post" action="/admin/room-sensors/{{ s.id }}/dashboard-visibility" class="inline-form">
+                                <input type="hidden" name="room_id" value="{{ room.id }}">
+                                <input type="checkbox" name="show_on_dashboard" value="true" onchange="this.form.submit()" {% if s.show_on_dashboard %}checked{% endif %} title="Show this Sensor's Reading on the Dashboard">
+                            </form>
+                        </td>
+                        <td>
                             <a href="/admin/room-sensors/{{ s.id }}/edit">edit</a> ·
                             <form method="post" action="/admin/room-sensors/{{ s.id }}/delete" class="inline-form">
                                 <input type="hidden" name="room_id" value="{{ room.id }}">
@@ -62,7 +70,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="empty">No sensors registered</td></tr>
+                    <tr><td colspan="8" class="empty">No sensors registered</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -94,17 +102,40 @@
         <section class="admin-card">
             <h2>Plugs</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Status</th><th>On Dashboard</th><th></th></tr></thead>
                 <tbody>
                 {% for p in room.plugs %}
+                    {% set cs = p.current_status %}
                     <tr>
                         <td class="admin-table-primary">{{ p.label }}</td>
                         <td>{{ p.purpose }}</td>
                         <td>{{ p.tracking_mode|capitalize }}</td>
+                        <td>
+                            {# Current Status — what's actually on/off right now (or Unreachable),
+                               as opposed to the Schedules section's own target/detected and
+                               last-Command pills below. See CONTEXT.md: Unreachable, Command. #}
+                            {% if cs.unreachable %}
+                            <span class="pill status-red">Unreachable</span>
+                            {% elif cs.is_on is none %}
+                            <span class="pill status-unknown">no data yet</span>
+                            {% elif cs.is_on %}
+                            <span class="pill status-green">On</span>
+                            {% else %}
+                            <span class="pill status-unknown">Off</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {# Show on Dashboard (see CONTEXT.md: Plug) — auto-submits on change,
+                               same pattern as this page's Sensors table. #}
+                            <form method="post" action="/admin/plugs/{{ p.id }}/dashboard-visibility" class="inline-form">
+                                <input type="hidden" name="room_id" value="{{ room.id }}">
+                                <input type="checkbox" name="show_on_dashboard" value="true" onchange="this.form.submit()" {% if p.show_on_dashboard %}checked{% endif %} title="Show this Plug's current status on the Dashboard">
+                            </form>
+                        </td>
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
+                    <tr><td colspan="6" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -182,6 +213,6 @@
             </table>
         </section>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

@@ -35,8 +35,10 @@ class TargetRangeMetric:
     key: str                          # stable id — form field names, validation error lookups
     label: str                        # human-readable, for Admin form labels
     unit: str                         # display unit; "" if unitless (pH)
-    min_column: str                   # db/schema.sql column name
+    min_column: str                   # db/schema.sql column name (on `sensor`)
     max_column: str
+    reading_column: str               # db/schema.sql column name (on `sensor_reading`) this metric's
+                                       # actual Readings are stored/read from — see CONTEXT.md: Reading
     enclosure_types: tuple[str, ...]  # which Enclosure Types show/allow this metric
     converts_f_c: bool = False        # True only for Temperature — stored as Celsius, shown as F
                                        # (see web/admin.py's _f_to_c/_c_to_f)
@@ -48,37 +50,37 @@ class TargetRangeMetric:
 # metric (see db/schema.sql's comment on the sensor table).
 TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
     TargetRangeMetric("temperature", "Temperature", "F",
-                       "target_temp_min_c", "target_temp_max_c",
+                       "target_temp_min_c", "target_temp_max_c", "temperature_c",
                        ENCLOSURE_TYPES, converts_f_c=True),
     TargetRangeMetric("humidity", "Humidity", "%",
-                       "target_humidity_min", "target_humidity_max",
+                       "target_humidity_min", "target_humidity_max", "humidity_pct",
                        ("basic", "amphibian")),
     TargetRangeMetric("ph", "pH", "",
-                       "target_ph_min", "target_ph_max",
+                       "target_ph_min", "target_ph_max", "ph",
                        ("freshwater", "saltwater", "amphibian")),
     TargetRangeMetric("ammonia", "Ammonia", "ppm",
-                       "target_ammonia_ppm_min", "target_ammonia_ppm_max",
+                       "target_ammonia_ppm_min", "target_ammonia_ppm_max", "ammonia_ppm",
                        ("freshwater", "saltwater", "amphibian")),
     TargetRangeMetric("nitrite", "Nitrite", "ppm",
-                       "target_nitrite_ppm_min", "target_nitrite_ppm_max",
+                       "target_nitrite_ppm_min", "target_nitrite_ppm_max", "nitrite_ppm",
                        ("freshwater", "saltwater", "amphibian")),
     TargetRangeMetric("nitrate", "Nitrate", "ppm",
-                       "target_nitrate_ppm_min", "target_nitrate_ppm_max",
+                       "target_nitrate_ppm_min", "target_nitrate_ppm_max", "nitrate_ppm",
                        ("freshwater", "saltwater", "amphibian")),
     TargetRangeMetric("salinity", "Salinity", "ppt",
-                       "target_salinity_ppt_min", "target_salinity_ppt_max",
+                       "target_salinity_ppt_min", "target_salinity_ppt_max", "salinity_ppt",
                        ("saltwater",)),
     TargetRangeMetric("alkalinity", "Alkalinity", "dKH",
-                       "target_alkalinity_dkh_min", "target_alkalinity_dkh_max",
+                       "target_alkalinity_dkh_min", "target_alkalinity_dkh_max", "alkalinity_dkh",
                        ("saltwater",)),
     TargetRangeMetric("calcium", "Calcium", "ppm",
-                       "target_calcium_ppm_min", "target_calcium_ppm_max",
+                       "target_calcium_ppm_min", "target_calcium_ppm_max", "calcium_ppm",
                        ("saltwater",)),
     TargetRangeMetric("magnesium", "Magnesium", "ppm",
-                       "target_magnesium_ppm_min", "target_magnesium_ppm_max",
+                       "target_magnesium_ppm_min", "target_magnesium_ppm_max", "magnesium_ppm",
                        ("saltwater",)),
     TargetRangeMetric("phosphate", "Phosphate", "ppm",
-                       "target_phosphate_ppm_min", "target_phosphate_ppm_max",
+                       "target_phosphate_ppm_min", "target_phosphate_ppm_max", "phosphate_ppm",
                        ("saltwater",)),
 )
 

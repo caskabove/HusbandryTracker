@@ -46,11 +46,26 @@ function syncSpotFeedAnimal(select) {
     row.querySelectorAll(".spot-feed-target").forEach(function (el) { el.value = select.value; });
 }
 
-// Dashboard: collapse/expand a Room section or Enclosure panel. Server picks the initial state
-// (collapsed when there's no sensor data to show — see dashboard.html), this just toggles it by
-// hand afterward; not persisted, so it resets to the server's default on the next page load.
+// Dashboard: a Manual Sensor's Log Reading control (see dashboard.html's reading_log_form macro)
+// starts collapsed to a single button naming the Sensor (e.g. "Log Probe Reading"); opening it
+// pre-fills the datetime-local field with the current moment, so logging "now" needs no typing.
+// Only fills it if still empty, so reopening after the user already picked a backdated time (e.g.
+// closed by mis-click) doesn't clobber it.
+function onReadingLogToggle(details) {
+    if (!details.open) return;
+    const input = details.querySelector('input[type="datetime-local"]');
+    if (!input || input.value) return;
+    const pad = (n) => String(n).padStart(2, "0");
+    const now = new Date();
+    input.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+// Dashboard: collapse/expand a Room section, Enclosure panel, or an Enclosure's own Care section.
+// Server picks the initial state (collapsed when there's no sensor data to show, or — for Care —
+// when nothing's due; see dashboard.html), this just toggles it by hand afterward; not persisted,
+// so it resets to the server's default on the next page load.
 function toggleCollapse(button) {
-    const container = button.closest(".room-section, .panel");
+    const container = button.closest(".room-section, .panel, .care-section");
     if (container) container.classList.toggle("collapsed");
 }
 

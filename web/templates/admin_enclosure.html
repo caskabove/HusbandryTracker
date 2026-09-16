@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HerpMonitor Admin - {{ enclosure.name }}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
@@ -116,13 +116,21 @@
         <section class="admin-card">
             <h2>Animals</h2>
             <table class="admin-table">
-                <thead><tr><th>Name</th><th>Species</th><th>DOB</th><th></th></tr></thead>
+                <thead><tr><th>Name</th><th>Species</th><th>DOB</th><th>On Dashboard</th><th></th></tr></thead>
                 <tbody>
                 {% for a in enclosure.animals %}
                     <tr>
                         <td class="admin-table-primary">{{ a.name }}</td>
                         <td>{{ a.species_common }} <em>({{ a.species_scientific }})</em></td>
                         <td>{{ a.dob or "unknown" }}</td>
+                        <td>
+                            {# Show on Dashboard (see CONTEXT.md: Animal) — auto-submits on change,
+                               same pattern as this page's other single-field quick toggles. #}
+                            <form method="post" action="/admin/animals/{{ a.id }}/dashboard-visibility" class="inline-form">
+                                <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                <input type="checkbox" name="show_on_dashboard" value="true" onchange="this.form.submit()" {% if a.show_on_dashboard %}checked{% endif %} title="Show this Animal on the Dashboard's Enclosure panel">
+                            </form>
+                        </td>
                         <td>
                             <a href="/admin/animals/{{ a.id }}/edit">edit</a> ·
                             <form method="post" action="/admin/animals/{{ a.id }}/delete" class="inline-form">
@@ -132,7 +140,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="empty">No animals registered</td></tr>
+                    <tr><td colspan="5" class="empty">No animals registered</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -215,15 +223,58 @@
         <section class="admin-card">
             <h2>Sensors</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Target Temp (F)</th><th>Target Humidity</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Reading</th><th>Target Range</th><th>On Dashboard</th><th></th></tr></thead>
                 <tbody>
                 {% for s in enclosure.sensors %}
+                    {% set reading = s.latest_reading %}
                     <tr>
                         <td class="admin-table-primary">{{ s.label }}</td>
                         <td>{{ s.tracking_mode|capitalize }}</td>
                         <td>{{ s.mac_address or "—" }}</td>
-                        <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
-                        <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
+                        <td>
+                            {# One pill per Target Range metric this Reading actually has a value
+                               for (see CONTEXT.md: Reading, Target Range) — not just temp/
+                               humidity, so e.g. a Freshwater Enclosure's pH shows up here too. #}
+                            {% for metric in TARGET_RANGE_METRICS %}
+                                {% set value = reading[metric.reading_column] if reading else none %}
+                                {% if value is not none %}
+                                    {% set status = target_range_status(value, s[metric.min_column], s[metric.max_column]) %}
+                                    {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                                    <span class="pill status-{{ status.value }}">
+                                        {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
+                                        {% if metric.key == "humidity" %}{{ "%.0f"|format(shown) }}{% else %}{{ "%.1f"|format(shown) }}{% endif -%}
+                                        {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
+                                    </span>
+                                {% endif %}
+                            {% endfor %}
+                            {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                        </td>
+                        <td>
+                            {# Whole-number precision for Temperature (F)/Humidity (%), matching how
+                               this table always showed them; every water-chemistry metric keeps
+                               one decimal — a pH/ammonia/etc. Target Range is routinely set to
+                               fractional values (e.g. pH 6.5-7.5), where rounding to a whole
+                               number would erase the distinction that made it a range at all. #}
+                            {% set ns = namespace(any=false) %}
+                            {% for metric in TARGET_RANGE_METRICS %}
+                                {% if s[metric.min_column] is not none or s[metric.max_column] is not none %}
+                                    {% set ns.any = true %}
+                                    {% set min_shown = s[metric.min_column]|c_to_f if metric.converts_f_c and s[metric.min_column] is not none else s[metric.min_column] %}
+                                    {% set max_shown = s[metric.max_column]|c_to_f if metric.converts_f_c and s[metric.max_column] is not none else s[metric.max_column] %}
+                                    {% set fmt = "%.0f" if metric.key in ("temperature", "humidity") else "%.1f" %}
+                                    <div>{{ metric.label }}: {{ fmt|format(min_shown) if min_shown is not none else "?" }}&ndash;{{ fmt|format(max_shown) if max_shown is not none else "?" }}{% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}</div>
+                                {% endif %}
+                            {% endfor %}
+                            {% if not ns.any %}not set{% endif %}
+                        </td>
+                        <td>
+                            {# Show on Dashboard (see CONTEXT.md: Sensor) — auto-submits on change,
+                               same pattern as the Animals table's own quick toggle. #}
+                            <form method="post" action="/admin/sensors/{{ s.id }}/dashboard-visibility" class="inline-form">
+                                <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                <input type="checkbox" name="show_on_dashboard" value="true" onchange="this.form.submit()" {% if s.show_on_dashboard %}checked{% endif %} title="Show this Sensor's Reading on the Dashboard">
+                            </form>
+                        </td>
                         <td>
                             <a href="/admin/sensors/{{ s.id }}/edit">edit</a> ·
                             <form method="post" action="/admin/sensors/{{ s.id }}/delete" class="inline-form">
@@ -233,7 +284,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="empty">No sensors registered</td></tr>
+                    <tr><td colspan="7" class="empty">No sensors registered</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -272,17 +323,40 @@
         <section class="admin-card">
             <h2>Plugs</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Status</th><th>On Dashboard</th><th></th></tr></thead>
                 <tbody>
                 {% for p in enclosure.plugs %}
+                    {% set cs = p.current_status %}
                     <tr>
                         <td class="admin-table-primary">{{ p.label }}{% if p.shared_with %} <span class="badge badge-muted">shared with {{ p.shared_with|join(", ") }}</span>{% endif %}</td>
                         <td>{{ p.purpose }}</td>
                         <td>{{ p.tracking_mode|capitalize }}</td>
+                        <td>
+                            {# Current Status — what's actually on/off right now (or Unreachable),
+                               as opposed to the Schedules section's own target/detected and
+                               last-Command pills below. See CONTEXT.md: Unreachable, Command. #}
+                            {% if cs.unreachable %}
+                            <span class="pill status-red">Unreachable</span>
+                            {% elif cs.is_on is none %}
+                            <span class="pill status-unknown">no data yet</span>
+                            {% elif cs.is_on %}
+                            <span class="pill status-green">On</span>
+                            {% else %}
+                            <span class="pill status-unknown">Off</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {# Show on Dashboard (see CONTEXT.md: Plug) — auto-submits on change,
+                               same pattern as the Animals/Sensors tables' own quick toggle. #}
+                            <form method="post" action="/admin/plugs/{{ p.id }}/dashboard-visibility" class="inline-form">
+                                <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                <input type="checkbox" name="show_on_dashboard" value="true" onchange="this.form.submit()" {% if p.show_on_dashboard %}checked{% endif %} title="Show this Plug's current status on the Dashboard">
+                            </form>
+                        </td>
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
+                    <tr><td colspan="6" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -343,6 +417,6 @@
             {% endfor %}
         </section>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

@@ -79,6 +79,17 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         enclosure = dict(row)
         enclosure["animals"] = [dict(r) for r in conn.execute("SELECT * FROM animal WHERE enclosure_id = ? ORDER BY name", (enclosure_id,))]
         enclosure["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
+        # Current Reading — same "what's actually happening right now" info the Dashboard already
+        # shows for this Enclosure's Sensors, and Room Sensors already get on their own Admin page
+        # (get_room() below); this page just didn't fetch it before.
+        for sensor in enclosure["sensors"]:
+            # SELECT * — a Reading can carry any Target Range metric, not just temp/humidity (see
+            # CONTEXT.md: Reading; schemas/enclosure_types.py's TARGET_RANGE_METRICS).
+            latest = conn.execute(
+                "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
+                (sensor["id"],),
+            ).fetchone()
+            sensor["latest_reading"] = dict(latest) if latest else None
         enclosure["plugs"] = [_decode_plug(dict(r)) for r in conn.execute(
             """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
                WHERE pe.enclosure_id = ? ORDER BY p.label""",
@@ -93,6 +104,7 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
             plug["last_command"] = _command_status(conn, plug)
+            plug["current_status"] = _current_plug_status(conn, plug)
             # "everything on one switch" — see CONTEXT.md: Plug, ADR 0006. Names the *other*
             # Enclosures sharing this Plug, so it's obvious here it's not exclusive to this one.
             plug["shared_with"] = [r["name"] for r in conn.execute(
@@ -242,10 +254,19 @@ def delete_enclosure(enclosure_id: int) -> None:
 
 
 def create_animal(enclosure_id: int, name: str, common: str | None, scientific: str | None, dob: str | None) -> None:
+    """show_on_dashboard (see CONTEXT.md: Animal) defaults on for only the first 3 Animals in an
+    Enclosure — counting those already shown, not total Animals, so an Enclosure that's had some
+    hidden by hand doesn't have that count "used up" by them. Past 3, a new Animal defaults off
+    until picked from the Enclosure's Admin page; the user can always flip any Animal's flag
+    either way regardless of this default."""
     with get_connection() as conn:
+        (shown_count,) = conn.execute(
+            "SELECT COUNT(*) FROM animal WHERE enclosure_id = ? AND show_on_dashboard = 1", (enclosure_id,)
+        ).fetchone()
         conn.execute(
-            "INSERT INTO animal (enclosure_id, name, species_common, species_scientific, dob) VALUES (?, ?, ?, ?, ?)",
-            (enclosure_id, name, common or None, scientific or None, dob or None),
+            "INSERT INTO animal (enclosure_id, name, species_common, species_scientific, dob, show_on_dashboard) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (enclosure_id, name, common or None, scientific or None, dob or None, 1 if shown_count < 3 else 0),
         )
 
 
@@ -266,6 +287,17 @@ def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | No
         conn.execute(
             "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ? WHERE id = ?",
             (enclosure_id, name, common or None, scientific or None, dob or None, animal_id),
+        )
+
+
+def set_animal_dashboard_visibility(animal_id: int, show_on_dashboard: bool) -> None:
+    """Toggled from a checkbox on the Enclosure's Admin page (see CONTEXT.md: Animal) — independent
+    of update_animal() since this is a one-field, checkbox-driven action rather than part of the
+    full Animal edit form."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE animal SET show_on_dashboard = ? WHERE id = ?",
+            (1 if show_on_dashboard else 0, animal_id),
         )
 
 
@@ -321,16 +353,28 @@ def _get_enclosure_type(enclosure_id: int) -> str:
     return row["enclosure_type"] if row else "basic"
 
 
+def _next_show_on_dashboard(conn, parent_column: str, parent_id: int) -> int:
+    """show_on_dashboard (see CONTEXT.md: Sensor) defaults on for only the first 3 Sensors under
+    the same parent (Enclosure or Room) — counting those already shown, not total Sensors, same
+    "top 3" reasoning as create_animal()'s show_on_dashboard default."""
+    (shown_count,) = conn.execute(
+        f"SELECT COUNT(*) FROM sensor WHERE {parent_column} = ? AND show_on_dashboard = 1", (parent_id,)
+    ).fetchone()
+    return 1 if shown_count < 3 else 0
+
+
 def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
                    target_ranges: TargetRanges) -> None:
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
     with get_connection() as conn:
+        show_on_dashboard = _next_show_on_dashboard(conn, "enclosure_id", enclosure_id)
         conn.execute(
-            f"""INSERT INTO sensor (enclosure_id, label, tracking_mode, plugin, external_id, {", ".join(columns)})
-                VALUES (?, ?, ?, ?, ?, {", ".join("?" for _ in columns)})""",
-            (enclosure_id, label, tracking_mode, plugin, external_id, *values),
+            f"""INSERT INTO sensor (enclosure_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
+                                     {", ".join(columns)})
+                VALUES (?, ?, ?, ?, ?, ?, {", ".join("?" for _ in columns)})""",
+            (enclosure_id, label, tracking_mode, plugin, external_id, show_on_dashboard, *values),
         )
 
 
@@ -343,6 +387,18 @@ def get_sensor(sensor_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM sensor WHERE id = ?", (sensor_id,)).fetchone()
         return _decode_sensor(dict(row)) if row else None
+
+
+def set_sensor_dashboard_visibility(sensor_id: int, show_on_dashboard: bool) -> None:
+    """Toggled from a checkbox on the Sensor's parent (Enclosure or Room) Admin page — see
+    CONTEXT.md: Sensor. Independent of update_sensor()/update_room_sensor() for the same reason as
+    set_animal_dashboard_visibility(): a one-field, checkbox-driven action, not part of the full
+    edit form."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE sensor SET show_on_dashboard = ? WHERE id = ?",
+            (1 if show_on_dashboard else 0, sensor_id),
+        )
 
 
 def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
@@ -371,11 +427,12 @@ def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     with get_connection() as conn:
+        show_on_dashboard = _next_show_on_dashboard(conn, "room_id", room_id)
         conn.execute(
-            """INSERT INTO sensor (room_id, label, tracking_mode, plugin, external_id, target_temp_min_c,
-                                    target_temp_max_c, target_humidity_min, target_humidity_max)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (room_id, label, tracking_mode, plugin, external_id,
+            """INSERT INTO sensor (room_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
+                                    target_temp_min_c, target_temp_max_c, target_humidity_min, target_humidity_max)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (room_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
              temp_min, temp_max, humidity_min, humidity_max),
         )
 
@@ -449,12 +506,14 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
     )
     with get_connection() as conn:
+        show_on_dashboard = _next_plug_show_on_dashboard(conn, room_id, enclosure_ids)
         cur = conn.execute(
             """INSERT INTO plug (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-                                  target_on_time, target_off_time, controller_kind, target_temp_c, target_humidity_pct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  show_on_dashboard, target_on_time, target_off_time, controller_kind,
+                                  target_temp_c, target_humidity_pct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-             target_on_time or None, target_off_time or None,
+             show_on_dashboard, target_on_time or None, target_off_time or None,
              controller_kind, target_temp_c, target_humidity_pct),
         )
         plug_id = cur.lastrowid
@@ -463,9 +522,46 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         return plug_id
 
 
+def _next_plug_show_on_dashboard(conn, room_id: int | None, enclosure_ids: list[int]) -> int:
+    """show_on_dashboard (see CONTEXT.md: Plug) defaults on for only the first 3 Plugs under the
+    same parent — same "top 3" reasoning as create_animal()/create_sensor()'s own default, just
+    scoped differently: a Plug's parent is either one Room (room_id, same as Sensor) or one-or-more
+    Enclosures via plug_enclosure (see CONTEXT.md: Plug, ADR 0006) — there's no plug.enclosure_id
+    column to count against directly. For an Enclosure-linked Plug (almost always exactly one
+    Enclosure; "everything on one switch" is the rare case), it's shown only if EVERY Enclosure it's
+    attached to still has room for another — a shared Plug shouldn't get a more generous default
+    just because it touches more than one Enclosure's count."""
+    if room_id is not None:
+        (shown_count,) = conn.execute(
+            "SELECT COUNT(*) FROM plug WHERE room_id = ? AND show_on_dashboard = 1", (room_id,)
+        ).fetchone()
+        return 1 if shown_count < 3 else 0
+    for enclosure_id in enclosure_ids:
+        (shown_count,) = conn.execute(
+            """SELECT COUNT(*) FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
+               WHERE pe.enclosure_id = ? AND p.show_on_dashboard = 1""",
+            (enclosure_id,),
+        ).fetchone()
+        if shown_count >= 3:
+            return 0
+    return 1
+
+
 def delete_plug(plug_id: int) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM plug WHERE id = ?", (plug_id,))
+
+
+def set_plug_dashboard_visibility(plug_id: int, show_on_dashboard: bool) -> None:
+    """Toggled from a checkbox on the Plug's parent (Enclosure or Room) Admin page — see
+    CONTEXT.md: Plug. Independent of update_plug() for the same reason as
+    set_animal_dashboard_visibility()/set_sensor_dashboard_visibility(): a one-field,
+    checkbox-driven action, not part of the full edit form."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE plug SET show_on_dashboard = ? WHERE id = ?",
+            (1 if show_on_dashboard else 0, plug_id),
+        )
 
 
 def get_plug(plug_id: int) -> dict | None:
@@ -538,6 +634,37 @@ def _command_timed_out(requested_at: str, ingest_scan_interval_seconds: int) -> 
     requested = datetime.strptime(requested_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     timeout = 2 * ingest_scan_interval_seconds + _TUYA_POLL_INTERVAL_SECONDS
     return (datetime.now(timezone.utc) - requested).total_seconds() > timeout
+
+
+def _current_plug_status(conn, plug: dict) -> dict:
+    """What's actually happening with this Plug right now, for the Plugs table's Status column —
+    distinct from last_command (what Core last *told* it to do, which a Controller Kind or
+    Schedule may have long since overridden) and from the Schedules section's target/detected
+    pills. {"unreachable": bool, "is_on": bool | None} — is_on is None when there's nothing to
+    report yet (a Smart Plug that's never polled, or a Manual Plug never Commanded).
+
+    Smart Plug: the latest observed relay state (plug_state_transition), plus whether it's
+    currently flagged Unreachable — reusing the exact state ingest/alerts.py's
+    evaluate_plug_unreachable() already maintains (see CONTEXT.md: Unreachable), not a fresh
+    live poll.
+    Manual Plug: no device to observe, so its Command log entry IS the state (see CONTEXT.md:
+    Command) — never Unreachable, since there's nothing to lose contact with.
+    """
+    if plug["tracking_mode"] != "smart":
+        last = plug.get("last_command") or _command_status(conn, plug)
+        return {"unreachable": False, "is_on": last["is_on"] if last else None}
+
+    alert = conn.execute(
+        "SELECT state FROM plug_alert_state WHERE plug_id = ? AND condition_kind = 'unreachable'",
+        (plug["id"],),
+    ).fetchone()
+    unreachable = alert is not None and alert["state"] == "alerting"
+
+    transition = conn.execute(
+        "SELECT is_on FROM plug_state_transition WHERE plug_id = ? ORDER BY recorded_at DESC LIMIT 1",
+        (plug["id"],),
+    ).fetchone()
+    return {"unreachable": unreachable, "is_on": bool(transition["is_on"]) if transition else None}
 
 
 def _command_status(conn, plug: dict) -> dict | None:
@@ -698,9 +825,11 @@ def get_room(room_id: int) -> dict | None:
         room = dict(row)
         room["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE room_id = ? ORDER BY label", (room_id,))]
         for sensor in room["sensors"]:
+            # SELECT * — see get_enclosure()'s identical comment above; a Room Sensor only ever
+            # tracks temp/humidity in practice (create_room_sensor() never writes the others), but
+            # reading this generically keeps the two Admin pages' fetch logic uniform.
             latest = conn.execute(
-                """SELECT temperature_c, humidity_pct, recorded_at FROM sensor_reading
-                   WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1""",
+                "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
                 (sensor["id"],),
             ).fetchone()
             sensor["latest_reading"] = dict(latest) if latest else None
@@ -714,6 +843,7 @@ def get_room(room_id: int) -> dict | None:
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
             plug["last_command"] = _command_status(conn, plug)
+            plug["current_status"] = _current_plug_status(conn, plug)
         room["enclosures"] = [dict(r) for r in conn.execute("SELECT * FROM enclosure WHERE room_id = ? ORDER BY name", (room_id,))]
         return room
 

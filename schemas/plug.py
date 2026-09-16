@@ -33,6 +33,7 @@ class PlugBase(BaseModel):
     external_id: str | None = None    # opaque per-Plugin device id — see CONTEXT.md: External ID
     plugin_config: str | None = None  # opaque JSON credentials (Tuya local_key/ip_address) — see CONTEXT.md: Plugin Config
     auto_update_enabled: bool = True  # Smart Plug only — see CONTEXT.md: Auto-Update
+    show_on_dashboard: bool = True    # see CONTEXT.md: Plug — set via set_plug_dashboard_visibility(), not create/update
     target_on_time: str | None = None   # "HH:MM" — see CONTEXT.md: Target Schedule
     target_off_time: str | None = None  # "HH:MM"
     controller_kind: ControllerKind = ControllerKind.NONE
