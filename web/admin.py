@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 
 from schemas import enclosure_types as et
 from web import admin_queries as q
+from web.plug_probe import probe_plug
 from web.queries import CARE_EVENT_KINDS, log_care_event
 from web.status import care_interval_status, schedule_drift_status, target_range_status
 
@@ -425,11 +426,14 @@ def admin_send_plug_command(
     return RedirectResponse(url="/admin/", status_code=303)
 
 
-@router.get("/plugs/{plug_id}/edit")
-def admin_edit_plug(request: Request, plug_id: int):
+def _render_plug_edit(request: Request, plug_id: int, error: str | None = None,
+                       probe_result: dict | None = None):
+    """Shared by the GET edit page and the POST /probe route (see CONTEXT.md: Probe, ADR 0016) —
+    Probe renders this same page directly instead of redirecting, since its raw dps result doesn't
+    fit cleanly through a redirect's query string the way a plain `error` message does."""
     plug = q.get_plug(plug_id)
     if plug is None:
-        return RedirectResponse(url="/admin", status_code=303)
+        return None
     plug["target_temp_f"] = _c_to_f(plug["target_temp_c"])
     # target_humidity_pct needs no unit conversion (already %, see CONTEXT.md: Hydrostat-Controlled)
     # — q.get_plug's row already carries it through as-is.
@@ -438,9 +442,47 @@ def admin_edit_plug(request: Request, plug_id: int):
         {
             "plug": plug, "enclosures": q.list_enclosures(), "rooms": q.list_rooms(),
             "schedule_drift_threshold_minutes": q.get_settings()["schedule_drift_threshold_minutes"],
-            "error": request.query_params.get("error"),
+            "error": error,
+            "probe_result": probe_result,
         }
     )
+
+
+@router.get("/plugs/{plug_id}/edit")
+def admin_edit_plug(request: Request, plug_id: int):
+    response = _render_plug_edit(request, plug_id, error=request.query_params.get("error"))
+    if response is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    return response
+
+
+@router.post("/plugs/{plug_id}/probe")
+def admin_probe_plug(
+    request: Request,
+    plug_id: int,
+    tracking_mode: str = Form("smart"),
+    switch_dps_key: str = Form("1"),
+    tuya_device_id: str = Form(""),
+    tuya_local_key: str = Form(""),
+    tuya_ip_address: str = Form(""),
+):
+    """Diagnostic, read-only — see CONTEXT.md: Probe, ADR 0016. Uses whatever's currently in the
+    edit form (formnovalidate, same <form> as Save — see admin_plug_edit.html), even if unsaved, so
+    new credentials can be tested before committing them. Never writes to the database; nothing
+    here is persisted. Renders the edit page directly rather than redirecting."""
+    error = None
+    probe_result = None
+    if tracking_mode != "smart" or not tuya_device_id or not tuya_local_key:
+        error = "Probe needs a Smart Plug with a Tuya device_id and local_key filled in."
+    else:
+        try:
+            probe_result = probe_plug(tuya_device_id, tuya_local_key, tuya_ip_address or None, switch_dps_key)
+        except RuntimeError as exc:
+            error = f"Probe failed — could not reach device: {exc}"
+    response = _render_plug_edit(request, plug_id, error=error, probe_result=probe_result)
+    if response is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    return response
 
 
 @router.post("/plugs/{plug_id}/update")

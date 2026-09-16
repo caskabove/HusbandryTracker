@@ -485,7 +485,23 @@ def get_plug(plug_id: int) -> dict | None:
         plug["detected_on_time"] = detected["on_time"]
         plug["detected_off_time"] = detected["off_time"]
         plug["last_command"] = _command_status(conn, plug)
+        # Data Capture (see CONTEXT.md, ADR 0009) only ever exists for a Smart Plug.
+        plug["latest_reading"] = _latest_plug_reading(conn, plug_id) if plug["tracking_mode"] == "smart" else None
         return plug
+
+
+def _latest_plug_reading(conn, plug_id: int) -> dict | None:
+    """Data Capture's most recently stored value for this Plug (see CONTEXT.md: Data Capture) — the
+    first place web/ ever reads plug_reading; every other admin view shows only the on/off Command
+    state, never telemetry. None if nothing's ever been captured — a Smart Plug that's never
+    reported a non-empty telemetry Plugin Event (see plugins/tuya_lan/plugin.py's
+    _extract_telemetry — still empty for every device model in this collection as of ADR 0009's
+    landing), or one whose Auto-Update has always been paused."""
+    row = conn.execute(
+        "SELECT watts, volts, amps, countdown_seconds, recorded_at FROM plug_reading "
+        "WHERE plug_id = ? ORDER BY recorded_at DESC LIMIT 1", (plug_id,)
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def _detect_schedule(conn, plug_id: int) -> dict:

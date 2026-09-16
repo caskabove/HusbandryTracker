@@ -82,6 +82,34 @@
                         <input type="checkbox" name="auto_update_enabled" value="true" {% if plug.auto_update_enabled %}checked{% endif %} {% if plug.tracking_mode != "smart" %}disabled{% endif %}>
                         Auto-Update (uncheck to pause background polling without losing this Plug's setup)
                     </label>
+                    {# Data Capture (see CONTEXT.md: Data Capture, ADR 0009) — passively collected,
+                       shown on load, no button needed. Probe (see CONTEXT.md: Probe, ADR 0016) is
+                       the opposite: an on-demand, read-only, unstored live query of the device
+                       itself, grouped here since both are about this Plug's telemetry. Submits
+                       inside this same form via formaction so it sends whatever's currently typed
+                       above, even if unsaved — formnovalidate so an in-progress edit elsewhere in
+                       the form (e.g. a blank Purpose) doesn't block testing new credentials. #}
+                    <p class="empty">
+                        Data Capture:
+                        {% if plug.latest_reading %}
+                            {% if plug.latest_reading.watts is not none %}{{ "%.1f"|format(plug.latest_reading.watts) }}W{% endif %}
+                            {% if plug.latest_reading.volts is not none %} · {{ "%.0f"|format(plug.latest_reading.volts) }}V{% endif %}
+                            {% if plug.latest_reading.amps is not none %} · {{ "%.2f"|format(plug.latest_reading.amps) }}A{% endif %}
+                            {% if plug.latest_reading.countdown_seconds %} · countdown {{ plug.latest_reading.countdown_seconds }}s{% endif %}
+                            — captured {{ plug.latest_reading.recorded_at[11:16] }}
+                        {% else %}
+                            no data yet
+                        {% endif %}
+                    </p>
+                    <button type="submit" formaction="/admin/plugs/{{ plug.id }}/probe" formnovalidate {% if plug.tracking_mode != "smart" %}disabled{% endif %}>Probe</button>
+                    <p class="empty">Probe asks the physical device directly, right now, for its full raw status —
+                        diagnostic only, changes nothing, and shows nothing beyond this one response (see CONTEXT.md: Probe).</p>
+                    {% if probe_result is not none %}
+                    <div class="admin-table" style="padding: 0.5em 1em;">
+                        <strong>Raw device response:</strong>
+                        <pre>{{ probe_result }}</pre>
+                    </div>
+                    {% endif %}
                 </div>
                 {# Target Schedule (see CONTEXT.md) is available on ANY Plug without a Controller
                    Kind, Smart or Manual alike — not Manual-only any more (see ADR 0012). A Smart
