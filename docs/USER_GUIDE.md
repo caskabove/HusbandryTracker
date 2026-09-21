@@ -280,8 +280,9 @@ On the Admin page, fill out the **"Add Enclosure"** form at the bottom:
   add a Sensor to this enclosure (see [Adding a sensor to an
   enclosure](#adding-a-sensor-to-an-enclosure) below) — Basic only ever needs
   temperature/humidity, Freshwater/Saltwater/Amphibian add water-chemistry fields instead (pH,
-  ammonia, nitrite, nitrate, and — Saltwater only — salinity, alkalinity, calcium, magnesium,
-  phosphate). You can change this later from Enclosure Settings if you got it wrong; it just
+  ammonia, nitrite, nitrate, and — Saltwater only — specific gravity (e.g. 1.026), salinity in ppm
+  (e.g. 35), alkalinity, calcium, magnesium, phosphate). You can change this later from Enclosure
+  Settings if you got it wrong; it just
   changes which fields show, nothing already saved is erased.
 - **Bioactive** — check this box if it has a live cleanup crew (isopods, springtails, live plants).
   Besides relaxing how often a Deep-clean is expected, this also unlocks a **Plants** card on the

@@ -150,6 +150,8 @@
                         <span class="pill status-unknown">Target: {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
                     {% elif plug.controller_kind == "hydrostat" %}
                         <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
+                    {% elif plug.always_on %}
+                        <span class="pill status-green">Always On</span>
                     {% elif plug.tracking_mode == "manual" %}
                         {% if plug.target_on_time and plug.target_off_time %}
                         <span class="pill status-unknown">{{ plug.target_on_time }}&ndash;{{ plug.target_off_time }}</span>
@@ -186,7 +188,7 @@
                     <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">
                         <button type="submit" name="is_on" value="true">Turn On</button>
                         <button type="submit" name="is_on" value="false">Turn Off</button>
-                        {% if plug.controller_kind != "none" or (plug.target_on_time and plug.target_off_time) %}
+                        {% if plug.controller_kind != "none" or plug.always_on or (plug.target_on_time and plug.target_off_time) %}
                         <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
                         {% endif %}
                     </form>

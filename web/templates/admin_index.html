@@ -133,6 +133,8 @@
                             <span class="pill status-unknown">Target: {% if p.target_temp_c is not none %}{{ "%.0f"|format(p.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
                             {% elif p.controller_kind == "hydrostat" %}
                             <span class="pill status-unknown">Target: {% if p.target_humidity_pct is not none %}{{ "%.0f"|format(p.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
+                            {% elif p.always_on %}
+                            <span class="pill status-green">Always On</span>
                             {% elif p.tracking_mode == "manual" %}
                                 {% if p.target_on_time and p.target_off_time %}
                                 <span class="pill status-unknown">{{ p.target_on_time }}&ndash;{{ p.target_off_time }}</span>
@@ -170,7 +172,7 @@
                             <form method="post" action="/admin/plugs/{{ p.id }}/command" class="admin-form plug-command-form">
                                 <button type="submit" name="is_on" value="true">Turn On</button>
                                 <button type="submit" name="is_on" value="false">Turn Off</button>
-                                {% if p.controller_kind != "none" or (p.target_on_time and p.target_off_time) %}
+                                {% if p.controller_kind != "none" or p.always_on or (p.target_on_time and p.target_off_time) %}
                                 <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
                                 {% endif %}
                             </form>
@@ -239,10 +241,17 @@
                     </div>
                     {# Target Schedule — available regardless of Tracking Mode, only hidden when a
                        Controller Kind is set (see CONTEXT.md, ADR 0012); visible by default since
-                       Controller Kind defaults to "none" above. #}
+                       Controller Kind defaults to "none" above. Always On (see CONTEXT.md) lives in
+                       this same block since it's only ever offered alongside Target Schedule (both
+                       need Controller Kind "none") and is mutually exclusive with it — checking it
+                       disables the two time inputs so a stale value is never submitted alongside it. #}
                     <div id="add-plug-schedule" class="mode-fields">
-                        <label>Target on-time <input type="time" name="target_on_time"></label>
-                        <label>Target off-time <input type="time" name="target_off_time"></label>
+                        <label class="checkbox">
+                            <input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'add-plug-target-on', 'add-plug-target-off')">
+                            Always On (e.g. a pump that runs continuously — no schedule to set)
+                        </label>
+                        <label>Target on-time <input type="time" id="add-plug-target-on" name="target_on_time"></label>
+                        <label>Target off-time <input type="time" id="add-plug-target-off" name="target_off_time"></label>
                     </div>
                     <div id="add-plug-thermostat-fields" class="mode-fields" style="display:none">
                         <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>

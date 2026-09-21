@@ -114,12 +114,20 @@
                 {# Target Schedule (see CONTEXT.md) is available on ANY Plug without a Controller
                    Kind, Smart or Manual alike — not Manual-only any more (see ADR 0012). A Smart
                    Plug additionally shows its Detected Schedule next to it, with a Timer Warning
-                   pill when the two disagree by more than the Schedule Drift Threshold. #}
+                   pill when the two disagree by more than the Schedule Drift Threshold. Always On
+                   (see CONTEXT.md) lives in this same block — mutually exclusive with Target
+                   Schedule, so checking it disables the two time inputs (onAlwaysOnChange) and
+                   suppresses Detected Schedule/Timer Warning below, since there's no Target to
+                   compare a Smart Plug's detected transitions against. #}
                 {% set schedule_hidden = plug.controller_kind != "none" %}
                 <div id="edit-plug-schedule" class="mode-fields" {% if schedule_hidden %}style="display:none"{% endif %}>
-                    <label>Target on-time <input type="time" name="target_on_time" value="{{ plug.target_on_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
-                    <label>Target off-time <input type="time" name="target_off_time" value="{{ plug.target_off_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
-                    {% if plug.tracking_mode == "smart" %}
+                    <label class="checkbox">
+                        <input type="checkbox" name="always_on" value="true" {% if plug.always_on %}checked{% endif %} {% if schedule_hidden %}disabled{% endif %} onchange="onAlwaysOnChange(this, 'edit-plug-target-on', 'edit-plug-target-off')">
+                        Always On (e.g. a pump that runs continuously — no schedule to set)
+                    </label>
+                    <label>Target on-time <input type="time" id="edit-plug-target-on" name="target_on_time" value="{{ plug.target_on_time or '' }}" {% if schedule_hidden or plug.always_on %}disabled{% endif %}></label>
+                    <label>Target off-time <input type="time" id="edit-plug-target-off" name="target_off_time" value="{{ plug.target_off_time or '' }}" {% if schedule_hidden or plug.always_on %}disabled{% endif %}></label>
+                    {% if plug.tracking_mode == "smart" and not plug.always_on %}
                     {% set on_drift = schedule_drift_status(plug.target_on_time, plug.detected_on_time, schedule_drift_threshold_minutes) %}
                     {% set off_drift = schedule_drift_status(plug.target_off_time, plug.detected_off_time, schedule_drift_threshold_minutes) %}
                     <p class="empty">

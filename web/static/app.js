@@ -38,6 +38,21 @@ function updatePlugFieldVisibility(trackingSelectId, controllerSelectId, smartBl
     setToggleBlock(document.getElementById(hydrostatBlockId), controllerKind === "hydrostat");
 }
 
+// Plug form only: Always On (see CONTEXT.md: Plug, Always On) is mutually exclusive with Target
+// Schedule and lives inside the same scheduleBlockId div, so it already inherits that block's own
+// show/hide-on-Controller-Kind-change behavior for free (setToggleBlock disables everything inside,
+// including this checkbox, when the block is hidden). This just handles the second-level toggle
+// within that block: checking Always On disables (and clears) the two time inputs so a stale value
+// is never submitted alongside it.
+function onAlwaysOnChange(checkbox, onTimeId, offTimeId) {
+    const disabled = checkbox.checked;
+    [onTimeId, offTimeId].forEach(function (id) {
+        const input = document.getElementById(id);
+        input.disabled = disabled;
+        if (disabled) input.value = "";
+    });
+}
+
 // Spot-feed (see CONTEXT.md): one visible Animal picker per Feeding row, copied into the hidden
 // animal_id field of whichever of the four small forms (Today/Yesterday/2 days ago/Advanced)
 // actually gets submitted — avoids showing four duplicate pickers for one Feeding row.

@@ -55,8 +55,8 @@
                 <label>Target Temperature min (F) <input type="number" step="0.1" name="temp_min_f" value="{{ sensor.target_temp_min_f if sensor.target_temp_min_f is not none else '' }}"></label>
                 <label>Target Temperature max (F) <input type="number" step="0.1" name="temp_max_f" value="{{ sensor.target_temp_max_f if sensor.target_temp_max_f is not none else '' }}"></label>
                 {% else %}
-                <label>Target {{ metric.label }} min {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="0.1" name="{{ metric.key }}_min" value="{{ sensor[metric.min_column] if sensor[metric.min_column] is not none else '' }}"></label>
-                <label>Target {{ metric.label }} max {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="0.1" name="{{ metric.key }}_max" value="{{ sensor[metric.max_column] if sensor[metric.max_column] is not none else '' }}"></label>
+                <label>Target {{ metric.label }} min {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_min" value="{{ sensor[metric.min_column] if sensor[metric.min_column] is not none else '' }}"></label>
+                <label>Target {{ metric.label }} max {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_max" value="{{ sensor[metric.max_column] if sensor[metric.max_column] is not none else '' }}"></label>
                 {% endif %}
                 {% endfor %}
                 <button type="submit">Save</button>

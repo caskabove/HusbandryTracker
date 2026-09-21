@@ -458,11 +458,11 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
                     target_on_time: str | None, target_off_time: str | None,
                     room_id: int | None, enclosure_ids: list[int],
                     controller_kind: str, target_temp_c: float | None,
-                    target_humidity_pct: float | None) -> None:
-    """See CONTEXT.md: Tracking Mode, Target Schedule, Plug, Controller Kind. Raised as ValueError
-    so the Admin route can show a friendly message instead of a raw SQLite CHECK failure (the
-    Room-XOR-Enclosure-set rule can't be a CHECK at all — it depends on plug_enclosure row counts, a
-    different table)."""
+                    target_humidity_pct: float | None, always_on: bool = False) -> None:
+    """See CONTEXT.md: Tracking Mode, Target Schedule, Plug, Controller Kind, Always On. Raised as
+    ValueError so the Admin route can show a friendly message instead of a raw SQLite CHECK failure
+    (the Room-XOR-Enclosure-set rule can't be a CHECK at all — it depends on plug_enclosure row
+    counts, a different table)."""
     if tracking_mode not in ("smart", "manual"):
         raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
     if controller_kind not in ("none", "thermostat", "hydrostat"):
@@ -475,9 +475,12 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
             raise ValueError("A Manual Plug has no device credentials — leave the Tuya fields blank.")
     # Target Schedule's both-or-neither rule applies to any Plug without a Controller Kind, Smart
     # or Manual alike — see ADR 0012 (this used to be Manual-only, back when it was called Declared
-    # Schedule and a Smart Plug had no way to set one at all).
-    if controller_kind == "none" and bool(target_on_time) != bool(target_off_time):
+    # Schedule and a Smart Plug had no way to set one at all). Always On (see CONTEXT.md) is the
+    # third, mutually exclusive option in that same "none" case.
+    if controller_kind == "none" and not always_on and bool(target_on_time) != bool(target_off_time):
         raise ValueError("Enter both a target on-time and off-time, or leave both blank.")
+    if controller_kind == "none" and always_on and (target_on_time or target_off_time):
+        raise ValueError("A Plug can't be both Always On and have a Target Schedule — pick one.")
     if bool(room_id) == bool(enclosure_ids):
         raise ValueError("A Plug needs exactly one parent — pick a Room, or one or more Enclosures, not both or neither.")
     if controller_kind == "thermostat" and target_temp_c is None:
@@ -491,12 +494,18 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
                  target_on_time: str | None = None, target_off_time: str | None = None,
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
-                 target_humidity_pct: float | None = None) -> int:
+                 target_humidity_pct: float | None = None, always_on: bool = False) -> int:
     enclosure_ids = enclosure_ids or []
-    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
-                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct)
+    # Always On only means anything alongside controller_kind = 'none' — see CONTEXT.md: Always On.
+    # Normalized (not an error) the same way a stray Target Schedule alongside a Controller Kind is
+    # silently cleared below, rather than rejecting the request over a field the UI already hides.
     if controller_kind != "none":
-        # Schedule isn't meaningful for a Thermostat-/Hydrostat-Controlled Plug — see ADR 0008.
+        always_on = False
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
+                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on)
+    if controller_kind != "none" or always_on:
+        # Schedule isn't meaningful for a Thermostat-/Hydrostat-Controlled Plug (see ADR 0008) or
+        # an Always On one (see CONTEXT.md: Always On) — mutually exclusive either way.
         target_on_time = target_off_time = None
     if controller_kind != "thermostat":
         target_temp_c = None
@@ -509,11 +518,11 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         show_on_dashboard = _next_plug_show_on_dashboard(conn, room_id, enclosure_ids)
         cur = conn.execute(
             """INSERT INTO plug (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-                                  show_on_dashboard, target_on_time, target_off_time, controller_kind,
-                                  target_temp_c, target_humidity_pct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  show_on_dashboard, target_on_time, target_off_time, always_on,
+                                  controller_kind, target_temp_c, target_humidity_pct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-             show_on_dashboard, target_on_time or None, target_off_time or None,
+             show_on_dashboard, target_on_time or None, target_off_time or None, int(always_on),
              controller_kind, target_temp_c, target_humidity_pct),
         )
         plug_id = cur.lastrowid
@@ -739,13 +748,16 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
                  target_on_time: str | None = None, target_off_time: str | None = None,
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
-                 target_humidity_pct: float | None = None, auto_update_enabled: bool = True) -> None:
+                 target_humidity_pct: float | None = None, auto_update_enabled: bool = True,
+                 always_on: bool = False) -> None:
     """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Plug
     (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     enclosure_ids = enclosure_ids or []
-    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
-                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct)
     if controller_kind != "none":
+        always_on = False  # see create_plug's identical normalization, and CONTEXT.md: Always On
+    _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
+                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on)
+    if controller_kind != "none" or always_on:
         target_on_time = target_off_time = None
     if controller_kind != "thermostat":
         target_temp_c = None
@@ -758,10 +770,10 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?,
                                 plugin = ?, external_id = ?, plugin_config = ?,
-                                target_on_time = ?, target_off_time = ?, auto_update_enabled = ?,
+                                target_on_time = ?, target_off_time = ?, always_on = ?, auto_update_enabled = ?,
                                 controller_kind = ?, target_temp_c = ?, target_humidity_pct = ? WHERE id = ?""",
             (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-             target_on_time or None, target_off_time or None,
+             target_on_time or None, target_off_time or None, int(always_on),
              int(auto_update_enabled), controller_kind, target_temp_c, target_humidity_pct,
              plug_id),
         )

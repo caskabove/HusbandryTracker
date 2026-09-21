@@ -13,6 +13,10 @@ purpose, per §9.15's boundary list — all of it needs data beyond a single `pl
     block below); §9.15 lists this explicitly as a service-layer concern.
   - **Target Schedule both-or-neither** (target_on_time/target_off_time) when controller_kind is
     'none' — same story: real rule, not a schema.sql CHECK, stays in _validate_plug.
+  - **Always On excludes Target Schedule** (see CONTEXT.md: Always On) — technically a single-table
+    rule (both live on `plug`), but kept out of schema.sql for the same "all Plug business rules
+    stay in _validate_plug" consistency the other two already established here, not because it
+    couldn't be a CHECK.
 
 Not yet wired into web/admin_queries.py or tools/register_device.py — see schemas/sensor.py's
 module docstring for why (still the pattern to react to, not a replacement).
@@ -36,6 +40,7 @@ class PlugBase(BaseModel):
     show_on_dashboard: bool = True    # see CONTEXT.md: Plug — set via set_plug_dashboard_visibility(), not create/update
     target_on_time: str | None = None   # "HH:MM" — see CONTEXT.md: Target Schedule
     target_off_time: str | None = None  # "HH:MM"
+    always_on: bool = False  # mutually exclusive with target_on_time/target_off_time — see CONTEXT.md: Always On
     controller_kind: ControllerKind = ControllerKind.NONE
     target_temp_c: float | None = None        # paired with controller_kind = thermostat
     target_humidity_pct: float | None = None  # paired with controller_kind = hydrostat

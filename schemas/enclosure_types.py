@@ -42,6 +42,9 @@ class TargetRangeMetric:
     enclosure_types: tuple[str, ...]  # which Enclosure Types show/allow this metric
     converts_f_c: bool = False        # True only for Temperature — stored as Celsius, shown as F
                                        # (see web/admin.py's _f_to_c/_c_to_f)
+    step: str = "0.1"                 # HTML <input step> — precision the Admin/Dashboard number
+                                       # fields accept; Specific Gravity needs finer than the 0.1
+                                       # every other metric is fine with (a 1.026-style reading).
 
 
 # Ordered for display — core environmental metrics first, then water chemistry roughly in the
@@ -67,8 +70,11 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
     TargetRangeMetric("nitrate", "Nitrate", "ppm",
                        "target_nitrate_ppm_min", "target_nitrate_ppm_max", "nitrate_ppm",
                        ("freshwater", "saltwater", "amphibian")),
-    TargetRangeMetric("salinity", "Salinity", "ppt",
-                       "target_salinity_ppt_min", "target_salinity_ppt_max", "salinity_ppt",
+    TargetRangeMetric("specific_gravity", "Specific Gravity", "",
+                       "target_specific_gravity_min", "target_specific_gravity_max", "specific_gravity",
+                       ("saltwater",), step="0.001"),
+    TargetRangeMetric("salinity", "Salinity", "ppm",
+                       "target_salinity_ppm_min", "target_salinity_ppm_max", "salinity_ppm",
                        ("saltwater",)),
     TargetRangeMetric("alkalinity", "Alkalinity", "dKH",
                        "target_alkalinity_dkh_min", "target_alkalinity_dkh_max", "alkalinity_dkh",

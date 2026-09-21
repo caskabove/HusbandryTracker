@@ -98,7 +98,10 @@ CREATE TABLE IF NOT EXISTS animal (
 -- in web/admin_queries.py with a friendly error, not here, so a bad value gets a clear message
 -- instead of a raw SQLite CHECK failure.
 -- target_ph/ammonia/nitrite/nitrate are Freshwater+ (see CONTEXT.md: Enclosure Type);
--- target_salinity/alkalinity/calcium/magnesium/phosphate are Saltwater-only. Which columns are
+-- target_specific_gravity/salinity/alkalinity/calcium/magnesium/phosphate are Saltwater-only.
+-- Specific Gravity and Salinity are two separate Target Range metrics (e.g. 1.026 SG / 35 ppm) —
+-- both describe the same water property, read off different instruments, so they're tracked and
+-- targeted independently rather than one derived from the other. Which columns are
 -- shown/editable for a given Sensor depends on its Enclosure's enclosure_type, decided in code
 -- (schemas/enclosure_types.py) — see ADR 0011. Ammonia/nitrite/phosphate "min" will usually just be
 -- 0 (the target is "as low as possible"), stored as a real min/max pair anyway for the same shape
@@ -131,8 +134,10 @@ CREATE TABLE IF NOT EXISTS sensor (
     target_nitrite_ppm_max      REAL,
     target_nitrate_ppm_min      REAL,
     target_nitrate_ppm_max      REAL,
-    target_salinity_ppt_min     REAL,
-    target_salinity_ppt_max     REAL,
+    target_specific_gravity_min REAL,
+    target_specific_gravity_max REAL,
+    target_salinity_ppm_min     REAL,
+    target_salinity_ppm_max     REAL,
     target_alkalinity_dkh_min   REAL,
     target_alkalinity_dkh_max   REAL,
     target_calcium_ppm_min      REAL,
@@ -217,6 +222,11 @@ CREATE TABLE IF NOT EXISTS plug (
     show_on_dashboard   INTEGER NOT NULL DEFAULT 1,
     target_on_time      TEXT,                           -- "HH:MM", never with a Controller Kind set (see CONTEXT.md: Target Schedule)
     target_off_time     TEXT,                           -- "HH:MM", never with a Controller Kind set
+    -- Always On (see CONTEXT.md: Plug) — e.g. a pump that runs continuously. Only meaningful when
+    -- controller_kind = 'none' and mutually exclusive with target_on_time/target_off_time, same
+    -- split as this table's other cross-column Plug rules: enforced in web/admin_queries.py, not
+    -- a CHECK here.
+    always_on           INTEGER NOT NULL DEFAULT 0,
     controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'thermostat', 'hydrostat')),  -- see CONTEXT.md: Controller Kind, ADR 0008 (supersedes ADR 0007's is_thermostat_controlled)
     target_temp_c       REAL,                           -- required together with controller_kind = 'thermostat'; enforced in web/admin_queries.py, not here
     target_humidity_pct REAL,                           -- required together with controller_kind = 'hydrostat'; enforced in web/admin_queries.py, not here
@@ -266,7 +276,8 @@ CREATE TABLE IF NOT EXISTS sensor_reading (
     ammonia_ppm    REAL,
     nitrite_ppm    REAL,
     nitrate_ppm    REAL,
-    salinity_ppt   REAL,
+    specific_gravity REAL,
+    salinity_ppm   REAL,
     alkalinity_dkh REAL,
     calcium_ppm    REAL,
     magnesium_ppm  REAL,
