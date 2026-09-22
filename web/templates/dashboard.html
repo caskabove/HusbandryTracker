@@ -84,10 +84,11 @@
     {% macro enclosure_panel(enclosure, care_kinds) %}
         {# Draggable onto a Room section below to reassign it (see CONTEXT.md: Room) — see
            app.js's onEnclosureDragStart/onEnclosureDragEnd and dashboard.html's room-section
-           drop handlers. Starts collapsed when there's no Reading to show at all (no Sensor of
-           its own and no Fallback Sensor) — see app.js's toggleCollapse. #}
-        <section class="panel{% if not enclosure.sensors and not enclosure.fallback_sensor %} collapsed{% endif %}"
-                 draggable="true" data-enclosure-id="{{ enclosure.id }}"
+           drop handlers. Starts expanded; app.js's applySavedCollapseState() collapses it again
+           if this viewer left it collapsed last time (data-collapse-key), otherwise it stays
+           expanded — see app.js's toggleCollapse. #}
+        <section class="panel"
+                 draggable="true" data-enclosure-id="{{ enclosure.id }}" data-collapse-key="enclosure:{{ enclosure.id }}"
                  ondragstart="onEnclosureDragStart(event)" ondragend="onEnclosureDragEnd(event)">
             <header class="panel-header">
                 <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
@@ -135,19 +136,19 @@
                     {% endif %}
                 </div>
 
-                {# Care starts collapsed only when every kind is green (nothing due) — a first pass
-                   finds the worst status across all four kinds so both that default and the
-                   header's own color reflect it before the section starts rendering. Recomputing
-                   care_interval_status a second time in the render loop below is a cheap pure
-                   function on plain ints, not worth threading a precomputed list through for a
-                   4-item loop. #}
+                {# Care's header pill still needs the worst status across all four kinds even though
+                   collapsed-by-default-when-green is gone (see app.js's applySavedCollapseState) —
+                   a first pass computes it once so the header's color is right before the section
+                   starts rendering. Recomputing care_interval_status a second time in the render
+                   loop below is a cheap pure function on plain ints, not worth threading a
+                   precomputed list through for a 4-item loop. #}
                 {% set severity = {"green": 0, "yellow": 1, "red": 2} %}
                 {% set ns = namespace(worst="green") %}
                 {% for kind in care_kinds %}
                     {% set kind_status = care_interval_status(enclosure.care[kind].days_since, enclosure[kind ~ "_interval_days"]) %}
                     {% if severity[kind_status.value] > severity[ns.worst] %}{% set ns.worst = kind_status.value %}{% endif %}
                 {% endfor %}
-                <div class="section care-section{% if ns.worst == 'green' %} collapsed{% endif %}">
+                <div class="section care-section" data-collapse-key="care:{{ enclosure.id }}">
                     <h3 class="care-section-header">
                         <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
                         <span>Care</span>
@@ -204,11 +205,12 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
 
         {% for room in rooms %}
-        {# Starts collapsed when the Room has no ambient Sensor of its own — see CONTEXT.md: Room;
-           app.js's toggleCollapse. Doesn't cascade to its Enclosures, which each decide their own
-           collapsed state independently (see enclosure_panel above) — matches how Refresh already
-           never cascades between a Room and its Enclosures (ADR 0005). #}
-        <section class="room-section{% if not room.sensors %} collapsed{% endif %}" data-room-id="{{ room.id }}"
+        {# Starts expanded; app.js's applySavedCollapseState() re-collapses it if this viewer left
+           it collapsed last time (data-collapse-key) — see app.js's toggleCollapse. Doesn't cascade
+           to its Enclosures, which each decide their own collapsed state independently (see
+           enclosure_panel above) — matches how Refresh already never cascades between a Room and
+           its Enclosures (ADR 0005). #}
+        <section class="room-section" data-room-id="{{ room.id }}" data-collapse-key="room:{{ room.id }}"
                  ondragover="onRoomDragOver(event)" ondragleave="onRoomDragLeave(event)" ondrop="onRoomDrop(event)">
             <header class="room-header">
                 <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
@@ -282,7 +284,7 @@
         {# Always rendered, even with zero Enclosures — otherwise there'd be nowhere to drag one
            out of a Room to (see CONTEXT.md: Room; app.js's onRoomDrop). #}
         {% if rooms or ungrouped %}
-        <section class="room-section" data-room-id=""
+        <section class="room-section" data-room-id="" data-collapse-key="room:ungrouped"
                  ondragover="onRoomDragOver(event)" ondragleave="onRoomDragLeave(event)" ondrop="onRoomDrop(event)">
             <header class="room-header">
                 <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
