@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS sensor (
     target_temp_max_c     REAL,
     target_humidity_min   REAL,
     target_humidity_max   REAL,
+    target_uvb_index_min  REAL,  -- UV Index, not raw irradiance — see schemas/enclosure_types.py
+    target_uvb_index_max  REAL,
     target_ph_min         REAL,
     target_ph_max         REAL,
     target_ammonia_ppm_min      REAL,
@@ -297,6 +299,7 @@ CREATE TABLE IF NOT EXISTS sensor_reading (
     temperature_c  REAL,
     humidity_pct   REAL,
     battery_pct    INTEGER,
+    uvb_index      REAL,
     ph             REAL,
     ammonia_ppm    REAL,
     nitrite_ppm    REAL,

@@ -54,6 +54,7 @@ templates.env.filters["c_to_f"] = _c_to_f
 
 def _sensor_target_ranges(
     temp_min_f: float | None, temp_max_f: float | None, humidity_min: float | None, humidity_max: float | None,
+    uvb_min: float | None, uvb_max: float | None,
     ph_min: float | None, ph_max: float | None, ammonia_min: float | None, ammonia_max: float | None,
     nitrite_min: float | None, nitrite_max: float | None, nitrate_min: float | None, nitrate_max: float | None,
     specific_gravity_min: float | None, specific_gravity_max: float | None,
@@ -67,6 +68,7 @@ def _sensor_target_ranges(
     return {
         "temperature": (_f_to_c(temp_min_f), _f_to_c(temp_max_f)),
         "humidity": (humidity_min, humidity_max),
+        "uvb": (uvb_min, uvb_max),
         "ph": (ph_min, ph_max),
         "ammonia": (ammonia_min, ammonia_max),
         "nitrite": (nitrite_min, nitrite_max),
@@ -291,6 +293,8 @@ def admin_create_sensor(
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
+    uvb_min: float | None = Form(None),
+    uvb_max: float | None = Form(None),
     ph_min: float | None = Form(None),
     ph_max: float | None = Form(None),
     ammonia_min: float | None = Form(None),
@@ -313,7 +317,7 @@ def admin_create_sensor(
     phosphate_max: float | None = Form(None),
 ):
     target_ranges = _sensor_target_ranges(
-        temp_min_f, temp_max_f, humidity_min, humidity_max, ph_min, ph_max, ammonia_min, ammonia_max,
+        temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max, ammonia_min, ammonia_max,
         nitrite_min, nitrite_max, nitrate_min, nitrate_max, specific_gravity_min, specific_gravity_max,
         salinity_min, salinity_max,
         alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
@@ -373,6 +377,8 @@ def admin_update_sensor(
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
+    uvb_min: float | None = Form(None),
+    uvb_max: float | None = Form(None),
     ph_min: float | None = Form(None),
     ph_max: float | None = Form(None),
     ammonia_min: float | None = Form(None),
@@ -396,7 +402,7 @@ def admin_update_sensor(
     auto_update_enabled: bool = Form(False),
 ):
     target_ranges = _sensor_target_ranges(
-        temp_min_f, temp_max_f, humidity_min, humidity_max, ph_min, ph_max, ammonia_min, ammonia_max,
+        temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max, ammonia_min, ammonia_max,
         nitrite_min, nitrite_max, nitrate_min, nitrate_max, specific_gravity_min, specific_gravity_max,
         salinity_min, salinity_max,
         alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,

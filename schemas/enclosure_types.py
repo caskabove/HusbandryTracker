@@ -58,6 +58,13 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
     TargetRangeMetric("humidity", "Humidity", "%",
                        "target_humidity_min", "target_humidity_max", "humidity_pct",
                        ("basic", "amphibian")),
+    # UV Index, not raw irradiance (uW/cm^2) — matches what a consumer meter (e.g. Solarmeter
+    # 6.5R) displays directly and the Ferguson-zone target ranges most keepers already think in.
+    # Basic + Amphibian only (Amphibian includes aquatic turtles, which do bask under UVB — see
+    # CONTEXT.md: Enclosure Type) — never Freshwater/Saltwater, which have no basking area.
+    TargetRangeMetric("uvb", "UVB Index", "UVI",
+                       "target_uvb_index_min", "target_uvb_index_max", "uvb_index",
+                       ("basic", "amphibian")),
     TargetRangeMetric("ph", "pH", "",
                        "target_ph_min", "target_ph_max", "ph",
                        ("freshwater", "saltwater", "amphibian")),

@@ -143,6 +143,7 @@ def create_reading(
     sensor_id: int,
     temperature_f: float | None = Form(default=None),
     humidity_pct: float | None = Form(default=None),
+    uvb_index: float | None = Form(default=None),
     ph: float | None = Form(default=None),
     ammonia_ppm: float | None = Form(default=None),
     nitrite_ppm: float | None = Form(default=None),
@@ -163,6 +164,7 @@ def create_reading(
     values = {
         "temperature_c": _f_to_c(temperature_f),
         "humidity_pct": humidity_pct,
+        "uvb_index": uvb_index,
         "ph": ph,
         "ammonia_ppm": ammonia_ppm,
         "nitrite_ppm": nitrite_ppm,
