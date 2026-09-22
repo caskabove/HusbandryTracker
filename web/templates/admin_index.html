@@ -124,8 +124,8 @@
                button, only ever hitting the Smart (relay/USB) members — Always-On Outlets have no
                relay to command. #}
             {% for g in plug_groups %}
-            <div>
-                <h3>{{ g.name }} <span class="empty">({{ g.parent_label }})</span></h3>
+            <details open>
+                <summary>{{ g.name }} <span class="empty">({{ g.parent_label }}, {{ g.members|length }} outlets)</span></summary>
                 <table class="admin-table">
                     <thead><tr><th>Label</th><th>Purpose</th><th>Kind</th><th></th></tr></thead>
                     <tbody>
@@ -146,7 +146,7 @@
                 <form method="post" action="/admin/plug-groups/{{ g.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete Plug Group {{ g.name }}? Its {{ g.members|length }} Plug(s) stay, ungrouped.');">
                     <button type="submit" class="danger">Delete Group (keeps Plugs)</button>
                 </form>
-            </div>
+            </details>
             {% else %}
             <p class="empty">No Plug Groups yet — add one below for a multi-outlet power strip.</p>
             {% endfor %}
@@ -297,46 +297,60 @@
                             <option value="pump">
                         </datalist>
                     </label>
-                    <label>Belongs to
-                        <select name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-room', 'add-plug-enclosures')">
-                            <option value="enclosures" selected>Enclosure(s)</option>
-                            <option value="room">Room</option>
+                    <label>Plug Group
+                        <select id="add-plug-group-select" name="plug_group_id" onchange="onAddPlugGroupChange(this, 'add-plug-belongs-to', 'add-plug-tuya-creds')">
+                            <option value="">— none (standalone Plug) —</option>
+                            {% for g in plug_groups %}
+                            <option value="{{ g.id }}">{{ g.name }} ({{ g.parent_label }})</option>
+                            {% endfor %}
                         </select>
                     </label>
-                    <div id="add-plug-enclosures" class="mode-fields">
-                        {% for e in enclosures %}
-                        <label class="checkbox"><input type="checkbox" name="enclosure_ids" value="{{ e.id }}"> {{ e.name }}</label>
-                        {% endfor %}
-                    </div>
-                    <div id="add-plug-room" class="mode-fields" style="display:none">
-                        <label>Room
-                            <select name="room_id" disabled>
-                                {% for r in rooms %}
-                                <option value="{{ r.id }}">{{ r.name }}</option>
-                                {% endfor %}
+                    <div id="add-plug-belongs-to">
+                        <label>Belongs to
+                            <select name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-room', 'add-plug-enclosures')">
+                                <option value="enclosures" selected>Enclosure(s)</option>
+                                <option value="room">Room</option>
                             </select>
                         </label>
+                        <div id="add-plug-enclosures" class="mode-fields">
+                            {% for e in enclosures %}
+                            <label class="checkbox"><input type="checkbox" name="enclosure_ids" value="{{ e.id }}"> {{ e.name }}</label>
+                            {% endfor %}
+                        </div>
+                        <div id="add-plug-room" class="mode-fields" style="display:none">
+                            <label>Room
+                                <select name="room_id" disabled>
+                                    {% for r in rooms %}
+                                    <option value="{{ r.id }}">{{ r.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                        </div>
                     </div>
+                    <p class="empty">Picking a Plug Group above ignores "Belongs to" and the Tuya fields below —
+                        the new outlet inherits both from the Group, you only set its own DPS key.</p>
                     <label>Tracking Mode
                         <select id="add-plug-tracking-mode" name="tracking_mode"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
                             <option value="smart">Smart (Tuya-controlled)</option>
                             <option value="manual">Manual (hand-switched, e.g. a timer)</option>
                         </select>
                     </label>
                     <label>Controller Kind
                         <select id="add-plug-controller-kind" name="controller_kind"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
                             <option value="none" selected>None (powers the heat/cooling/moisture source directly)</option>
                             <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
                             <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
                         </select>
                     </label>
                     <div id="add-plug-smart" class="mode-fields">
-                        <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
-                        <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                        <div id="add-plug-tuya-creds">
+                            <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
+                            <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                            <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                        </div>
                         <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
-                        <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
                     </div>
                     {# Target Schedule — available regardless of Tracking Mode, only hidden when a
                        Controller Kind is set (see CONTEXT.md, ADR 0012); visible by default since

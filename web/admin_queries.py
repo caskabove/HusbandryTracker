@@ -66,6 +66,28 @@ def _encode_plug_identity(tracking_mode: str, tuya_device_id: str | None, tuya_l
     return tuya_identity.PLUGIN_NAME, external_id, plugin_config
 
 
+def _check_external_id_available(conn, plugin: str | None, external_id: str | None,
+                                  exclude_plug_id: int | None = None) -> None:
+    """Raises a friendly ValueError instead of letting plug's UNIQUE(plugin, external_id) constraint
+    fail as a raw sqlite3.IntegrityError (500 Internal Server Error) — same device_id/switch_dps_key
+    combination can't back two Plug rows at once (see CONTEXT.md: External ID). The common real
+    trigger: a multi-outlet strip's DPS key already claimed by an existing standalone Plug — the fix
+    is attaching that existing Plug via set_plug_group(), not creating a second row for it."""
+    if plugin is None or external_id is None:
+        return
+    query = "SELECT id, label FROM plug WHERE plugin = ? AND external_id = ?"
+    params: tuple = (plugin, external_id)
+    if exclude_plug_id is not None:
+        query += " AND id != ?"
+        params += (exclude_plug_id,)
+    existing = conn.execute(query, params).fetchone()
+    if existing is not None:
+        raise ValueError(
+            f"That device_id/DPS key is already registered as Plug {existing['label']!r} "
+            f"(id {existing['id']}) — edit that existing Plug instead of creating a new one for it."
+        )
+
+
 def list_enclosures() -> list[dict]:
     with get_connection() as conn:
         return [dict(row) for row in conn.execute("SELECT * FROM enclosure ORDER BY name")]
@@ -516,6 +538,7 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
     )
     with get_connection() as conn:
+        _check_external_id_available(conn, plugin, external_id)
         show_on_dashboard = _next_plug_show_on_dashboard(conn, room_id, enclosure_ids)
         cur = conn.execute(
             """INSERT INTO plug (room_id, plug_group_id, label, purpose, tracking_mode, plugin, external_id,
@@ -768,6 +791,7 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
     )
     with get_connection() as conn:
+        _check_external_id_available(conn, plugin, external_id, exclude_plug_id=plug_id)
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?,
                                 plugin = ?, external_id = ?, plugin_config = ?,
@@ -860,6 +884,26 @@ def create_plug_group(name: str, room_id: int | None, enclosure_ids: list[int] |
     if smart_members and (not tuya_device_id or not tuya_local_key):
         raise ValueError("A Plug Group's Smart outlets need a Tuya device_id and local_key.")
 
+    # Check every Smart member's (plugin, external_id) against what's already registered *before*
+    # inserting anything — a DPS key already claimed by an existing standalone Plug (e.g. one
+    # outlet registered before anyone knew it was part of a bigger strip, same situation
+    # set_plug_group() exists for) would otherwise fail on plug's UNIQUE(plugin, external_id)
+    # constraint partway through the loop below, leaving the Group and any already-created members
+    # committed but incomplete.
+    with get_connection() as conn:
+        for member in smart_members:
+            external_id = tuya_identity.encode_external_id(tuya_device_id, member.get("switch_dps_key", "1"))
+            existing = conn.execute(
+                "SELECT id, label FROM plug WHERE plugin = ? AND external_id = ?",
+                (tuya_identity.PLUGIN_NAME, external_id),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError(
+                    f"DPS key {member.get('switch_dps_key', '1')!r} is already registered as Plug "
+                    f"{existing['label']!r} (id {existing['id']}) — remove it from this Group's form, "
+                    f"then attach that existing Plug to the Group afterward from its own Edit Plug page."
+                )
+
     with get_connection() as conn:
         cur = conn.execute("INSERT INTO plug_group (name, room_id) VALUES (?, ?)", (name.strip(), room_id))
         group_id = cur.lastrowid
@@ -890,6 +934,50 @@ def delete_plug_group(plug_group_id: int) -> None:
     UPDATE needed here; the FK's ON DELETE SET NULL does it as part of this same DELETE."""
     with get_connection() as conn:
         conn.execute("DELETE FROM plug_group WHERE id = ?", (plug_group_id,))
+
+
+def add_plug_to_group(plug_group_id: int, label: str, purpose: str, tracking_mode: str,
+                       switch_dps_key: str = "1") -> int:
+    """Adds a brand-new member Plug directly into an existing Plug Group — see CONTEXT.md: Plug
+    Group; ADR 0017. The one-step counterpart to create_plug() + set_plug_group(): inherits the
+    Group's own Room/Enclosure assignment, and for a Smart outlet, the shared Tuya
+    device_id/local_key/ip_address from whichever existing Smart member already has them (a
+    Group's outlets are, by definition, one physical device sharing one device_id — see CONTEXT.md:
+    External ID) — the caller only ever supplies the new outlet's own switch_dps_key.
+
+    A Manual outlet added this way is always created as an Always-On Outlet (see CONTEXT.md) —
+    there's no other kind of Manual Plug Group member in this model, so always_on is forced True
+    rather than exposed as a separate choice here."""
+    with get_connection() as conn:
+        group = conn.execute("SELECT room_id FROM plug_group WHERE id = ?", (plug_group_id,)).fetchone()
+        if group is None:
+            raise ValueError(f"No such Plug Group: {plug_group_id}")
+        room_id = group["room_id"]
+        enclosure_ids = [r["enclosure_id"] for r in conn.execute(
+            "SELECT enclosure_id FROM plug_group_enclosure WHERE plug_group_id = ?", (plug_group_id,)
+        )]
+        tuya_device_id = tuya_local_key = tuya_ip_address = None
+        if tracking_mode == "smart":
+            existing_smart = conn.execute(
+                "SELECT external_id, plugin_config FROM plug WHERE plug_group_id = ? AND tracking_mode = 'smart' LIMIT 1",
+                (plug_group_id,),
+            ).fetchone()
+            if existing_smart is None:
+                raise ValueError(
+                    "This Plug Group has no Smart outlet yet to inherit Tuya credentials from — add "
+                    "its first Smart outlet the ordinary way (device_id/local_key filled in), then "
+                    "attach it to the Group from its own Edit Plug page."
+                )
+            tuya_device_id, _ = tuya_identity.decode_external_id(existing_smart["external_id"])
+            config = tuya_identity.unpack_config(existing_smart["plugin_config"])
+            tuya_local_key = config["local_key"]
+            tuya_ip_address = config["ip_address"]
+
+    return create_plug(
+        label, purpose, tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address,
+        switch_dps_key, room_id=room_id, enclosure_ids=enclosure_ids,
+        always_on=(tracking_mode != "smart"), plug_group_id=plug_group_id,
+    )
 
 
 def set_plug_group(plug_id: int, plug_group_id: int | None) -> None:

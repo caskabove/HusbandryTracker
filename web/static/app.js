@@ -44,6 +44,16 @@ function updatePlugFieldVisibility(trackingSelectId, controllerSelectId, smartBl
 // including this checkbox, when the block is hidden). This just handles the second-level toggle
 // within that block: checking Always On disables (and clears) the two time inputs so a stale value
 // is never submitted alongside it.
+// Add Plug form only: picking a Plug Group (see CONTEXT.md: Plug Group) hides/disables "Belongs
+// to" and the Tuya device_id/local_key/ip fields, since add_plug_to_group() inherits both from the
+// Group — only the new outlet's own DPS key (left outside tuyaCredsBlockId, see admin_index.html)
+// still needs entering.
+function onAddPlugGroupChange(select, belongsToBlockId, tuyaCredsBlockId) {
+    const standalone = select.value === "";
+    setToggleBlock(document.getElementById(belongsToBlockId), standalone);
+    setToggleBlock(document.getElementById(tuyaCredsBlockId), standalone);
+}
+
 function onAlwaysOnChange(checkbox, onTimeId, offTimeId) {
     const disabled = checkbox.checked;
     [onTimeId, offTimeId].forEach(function (id) {
@@ -76,13 +86,36 @@ function onReadingLogToggle(details) {
 }
 
 // Dashboard: collapse/expand a Room section, Enclosure panel, or an Enclosure's own Care section.
-// Server picks the initial state (collapsed when there's no sensor data to show, or — for Care —
-// when nothing's due; see dashboard.html), this just toggles it by hand afterward; not persisted,
-// so it resets to the server's default on the next page load.
+// Everything starts expanded server-side (see dashboard.html) regardless of what's inside — this
+// toggles by hand and remembers the result per viewer via localStorage (dashboard-collapsed:<key>,
+// keyed off each container's own data-collapse-key), so the *last* state a viewer left a section in
+// wins on their next visit, not some content-based heuristic. Per-browser, not shared — same
+// tradeoff as any other localStorage use in this app; wrapped in try/catch since a private window or
+// blocked site data can throw on either read or write.
+const COLLAPSE_STORAGE_PREFIX = "dashboard-collapsed:";
+
+function applySavedCollapseState() {
+    try {
+        document.querySelectorAll("[data-collapse-key]").forEach(function (container) {
+            if (localStorage.getItem(COLLAPSE_STORAGE_PREFIX + container.dataset.collapseKey) === "1") {
+                container.classList.add("collapsed");
+            }
+        });
+    } catch (e) { /* localStorage unavailable — everything just stays expanded */ }
+}
+
 function toggleCollapse(button) {
     const container = button.closest(".room-section, .panel, .care-section");
-    if (container) container.classList.toggle("collapsed");
+    if (!container) return;
+    container.classList.toggle("collapsed");
+    const key = container.dataset.collapseKey;
+    if (!key) return;
+    try {
+        localStorage.setItem(COLLAPSE_STORAGE_PREFIX + key, container.classList.contains("collapsed") ? "1" : "0");
+    } catch (e) { /* localStorage unavailable — state just won't persist */ }
 }
+
+applySavedCollapseState();
 
 // Dashboard drag-and-drop: drag an Enclosure panel onto a Room (or Ungrouped) to reassign it (see
 // CONTEXT.md: Room). Native HTML5 Drag and Drop, no library. There's no single <form> spanning the

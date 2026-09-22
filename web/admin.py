@@ -427,12 +427,18 @@ def admin_create_plug(
     controller_kind: str = Form("none"),
     target_temp_f: float | None = Form(None),
     target_humidity_pct: float | None = Form(None),
+    plug_group_id: str = Form(""),
 ):
     try:
-        q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
-                       tuya_ip_address, switch_dps_key, target_on_time or None, target_off_time or None,
-                       int(room_id) if room_id else None, enclosure_ids,
-                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on)
+        if plug_group_id:
+            # Belongs-to and Tuya credential fields are ignored here in favor of the Group's own —
+            # see CONTEXT.md: Plug Group; ADR 0017. add_plug_to_group() inherits both.
+            q.add_plug_to_group(int(plug_group_id), label, purpose, tracking_mode, switch_dps_key)
+        else:
+            q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
+                           tuya_ip_address, switch_dps_key, target_on_time or None, target_off_time or None,
+                           int(room_id) if room_id else None, enclosure_ids,
+                           controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
