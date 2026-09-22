@@ -201,12 +201,37 @@ CREATE TABLE IF NOT EXISTS sensor_alert_state (
 -- which SQLite treats as distinct per row in a UNIQUE index, so multiple Manual Plugs never
 -- collide on that constraint.
 --
+-- A named container for several Plugs that are physically one multi-outlet Tuya device — see
+-- CONTEXT.md: Plug Group, Plug Group Template, Always-On Outlet, All On / All Off; ADR 0017.
+-- Purely organizational plus the shared All On/All Off action; it owns no polling/control state of
+-- its own. Same Room-XOR-Enclosure-set ownership rule as `plug` itself (see that table's comment) —
+-- room_id here, plug_group_enclosure below for the Enclosure side — enforced in
+-- web/admin_queries.py, not a CHECK, for the same reason plug's own version isn't.
+CREATE TABLE IF NOT EXISTS plug_group (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    room_id     INTEGER REFERENCES room(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Which Enclosure(s) a non-Room-owned Plug Group belongs to — mirrors plug_enclosure exactly (see
+-- CONTEXT.md: Plug Group).
+CREATE TABLE IF NOT EXISTS plug_group_enclosure (
+    plug_group_id INTEGER NOT NULL REFERENCES plug_group(id) ON DELETE CASCADE,
+    enclosure_id  INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    PRIMARY KEY (plug_group_id, enclosure_id)
+);
+
 -- The Room-XOR-Enclosure-set invariant can't be a single-table CHECK (it depends on plug_enclosure
 -- row counts) — enforced in web/admin_queries.py instead, same pattern as Manual Sensor's Target
 -- Range requirement.
 CREATE TABLE IF NOT EXISTS plug (
     id                  INTEGER PRIMARY KEY,
     room_id             INTEGER REFERENCES room(id) ON DELETE CASCADE,
+    -- Optional membership in a Plug Group (see CONTEXT.md: Plug Group; ADR 0017) — NULL for the
+    -- common case of a standalone Plug. ON DELETE SET NULL: deleting a Group ungroups its members
+    -- rather than deleting them (see CONTEXT.md: Plug Group).
+    plug_group_id       INTEGER REFERENCES plug_group(id) ON DELETE SET NULL,
     label               TEXT NOT NULL,                  -- e.g. "basking bulb", "UTH"
     purpose             TEXT NOT NULL CHECK (length(purpose) > 0),  -- free text; Admin suggests common values, doesn't restrict to them
     tracking_mode       TEXT NOT NULL DEFAULT 'smart' CHECK (tracking_mode IN ('smart', 'manual')),

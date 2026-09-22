@@ -118,6 +118,105 @@
         </section>
 
         <section class="admin-card">
+            <h2>Plug Groups</h2>
+            {# A multi-outlet Tuya power strip's outlets, organized under one shared name — see
+               CONTEXT.md: Plug Group; ADR 0017. All On/All Off mirrors the strip's physical master
+               button, only ever hitting the Smart (relay/USB) members — Always-On Outlets have no
+               relay to command. #}
+            {% for g in plug_groups %}
+            <div>
+                <h3>{{ g.name }} <span class="empty">({{ g.parent_label }})</span></h3>
+                <table class="admin-table">
+                    <thead><tr><th>Label</th><th>Purpose</th><th>Kind</th><th></th></tr></thead>
+                    <tbody>
+                    {% for m in g.members %}
+                        <tr>
+                            <td class="admin-table-primary">{{ m.label }}</td>
+                            <td>{{ m.purpose }}</td>
+                            <td>{% if m.tracking_mode == "smart" %}Smart{% else %}Always-On{% endif %}</td>
+                            <td><a href="/admin/plugs/{{ m.id }}/edit">edit</a></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <form method="post" action="/admin/plug-groups/{{ g.id }}/command" class="admin-form plug-command-form">
+                    <button type="submit" name="is_on" value="true">All On</button>
+                    <button type="submit" name="is_on" value="false">All Off</button>
+                </form>
+                <form method="post" action="/admin/plug-groups/{{ g.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete Plug Group {{ g.name }}? Its {{ g.members|length }} Plug(s) stay, ungrouped.');">
+                    <button type="submit" class="danger">Delete Group (keeps Plugs)</button>
+                </form>
+            </div>
+            {% else %}
+            <p class="empty">No Plug Groups yet — add one below for a multi-outlet power strip.</p>
+            {% endfor %}
+            <details>
+                <summary>+ Add Plug Group</summary>
+                <form method="post" action="/admin/plug-groups" class="admin-form">
+                    <label>Group name <input type="text" name="name" placeholder="e.g. Reef" required></label>
+                    <label>Belongs to
+                        <select name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-group-room', 'add-plug-group-enclosures')">
+                            <option value="enclosures" selected>Enclosure(s)</option>
+                            <option value="room">Room</option>
+                        </select>
+                    </label>
+                    <div id="add-plug-group-enclosures" class="mode-fields">
+                        {% for e in enclosures %}
+                        <label class="checkbox"><input type="checkbox" name="enclosure_ids" value="{{ e.id }}"> {{ e.name }}</label>
+                        {% endfor %}
+                    </div>
+                    <div id="add-plug-group-room" class="mode-fields" style="display:none">
+                        <label>Room
+                            <select name="room_id" disabled>
+                                {% for r in rooms %}
+                                <option value="{{ r.id }}">{{ r.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <p class="empty">Every outlet in this Group shares one Enclosure/Room assignment — see CONTEXT.md: Plug Group.</p>
+
+                    <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
+                    <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
+                    <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+
+                    <p class="empty"><strong>3 relay-controlled outlets</strong> (DPS keys default 1/2/3 — confirm with Probe if unsure):</p>
+                    <label>Outlet 1 label <input type="text" name="relay1_label" value="Outlet 1"></label>
+                    <label>Outlet 1 purpose <input type="text" name="relay1_purpose" list="purpose-options" required></label>
+                    <label>Outlet 1 DPS key <input type="text" name="relay1_dps" value="1" style="width:3em"></label>
+                    <label>Outlet 2 label <input type="text" name="relay2_label" value="Outlet 2"></label>
+                    <label>Outlet 2 purpose <input type="text" name="relay2_purpose" list="purpose-options" required></label>
+                    <label>Outlet 2 DPS key <input type="text" name="relay2_dps" value="2" style="width:3em"></label>
+                    <label>Outlet 3 label <input type="text" name="relay3_label" value="Outlet 3"></label>
+                    <label>Outlet 3 purpose <input type="text" name="relay3_purpose" list="purpose-options" required></label>
+                    <label>Outlet 3 DPS key <input type="text" name="relay3_dps" value="3" style="width:3em"></label>
+
+                    <p class="empty"><strong>USB outlet</strong> (DPS key defaults 7):</p>
+                    <label>USB label <input type="text" name="usb_label" value="USB"></label>
+                    <label>USB purpose <input type="text" name="usb_purpose" list="purpose-options" required></label>
+                    <label>USB DPS key <input type="text" name="usb_dps" value="7" style="width:3em"></label>
+
+                    <p class="empty"><strong>3 hardwired Always-On outlets</strong> (no DPS key — nothing Tuya can see or control):</p>
+                    <label>Always-On 1 label <input type="text" name="ao1_label" value="Always-On 1"></label>
+                    <label>Always-On 1 purpose <input type="text" name="ao1_purpose" list="purpose-options" required></label>
+                    <label>Always-On 2 label <input type="text" name="ao2_label" value="Always-On 2"></label>
+                    <label>Always-On 2 purpose <input type="text" name="ao2_purpose" list="purpose-options" required></label>
+                    <label>Always-On 3 label <input type="text" name="ao3_label" value="Always-On 3"></label>
+                    <label>Always-On 3 purpose <input type="text" name="ao3_purpose" list="purpose-options" required></label>
+
+                    <datalist id="purpose-options">
+                        <option value="light"><option value="heat"><option value="cooling">
+                        <option value="UVB"><option value="pump">
+                    </datalist>
+                    <button type="submit">Create Plug Group</button>
+                </form>
+                <p class="empty">Only one Plug Group Template exists today: 3 relay outlets + USB + 3 hardwired
+                    always-on outlets, all sharing one Tuya device_id/local_key. All labels/purposes below are
+                    pre-filled but fully editable before saving.</p>
+            </details>
+        </section>
+
+        <section class="admin-card">
             <h2>Plugs</h2>
             <table class="admin-table">
                 <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th>Schedule</th><th>Control</th><th></th></tr></thead>

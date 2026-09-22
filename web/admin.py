@@ -92,6 +92,7 @@ def admin_index(request: Request):
         request, "admin_index.html",
         {
             "enclosures": enclosures, "rooms": rooms, "plugs": q.list_plugs(),
+            "plug_groups": q.list_plug_groups(),
             "rooms_by_id": {r["id"]: r["name"] for r in rooms},
             "enclosure_count_by_room": enclosure_count_by_room,
             "settings": q.get_settings(), "error": request.query_params.get("error"),
@@ -564,6 +565,74 @@ def admin_update_plug(
                        always_on)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.post("/plug-groups")
+def admin_create_plug_group(
+    name: str = Form(...),
+    room_id: str = Form(""),
+    enclosure_ids: list[int] = Form(default=[]),
+    tuya_device_id: str = Form(""),
+    tuya_local_key: str = Form(""),
+    tuya_ip_address: str = Form(""),
+    relay1_label: str = Form("Outlet 1"),
+    relay1_purpose: str = Form(...),
+    relay1_dps: str = Form("1"),
+    relay2_label: str = Form("Outlet 2"),
+    relay2_purpose: str = Form(...),
+    relay2_dps: str = Form("2"),
+    relay3_label: str = Form("Outlet 3"),
+    relay3_purpose: str = Form(...),
+    relay3_dps: str = Form("3"),
+    usb_label: str = Form("USB"),
+    usb_purpose: str = Form(...),
+    usb_dps: str = Form("7"),
+    ao1_label: str = Form("Always-On 1"),
+    ao1_purpose: str = Form(...),
+    ao2_label: str = Form("Always-On 2"),
+    ao2_purpose: str = Form(...),
+    ao3_label: str = Form("Always-On 3"),
+    ao3_purpose: str = Form(...),
+):
+    """Creates a Plug Group from the "3 relays + USB + 3 Always-On" Plug Group Template — see
+    CONTEXT.md: Plug Group, Plug Group Template; ADR 0017. Only template offered today; a device
+    that doesn't match this shape still gets added one outlet at a time via the plain Add Plug
+    form above."""
+    smart_members = [
+        {"label": relay1_label, "purpose": relay1_purpose, "switch_dps_key": relay1_dps},
+        {"label": relay2_label, "purpose": relay2_purpose, "switch_dps_key": relay2_dps},
+        {"label": relay3_label, "purpose": relay3_purpose, "switch_dps_key": relay3_dps},
+        {"label": usb_label, "purpose": usb_purpose, "switch_dps_key": usb_dps},
+    ]
+    manual_members = [
+        {"label": ao1_label, "purpose": ao1_purpose},
+        {"label": ao2_label, "purpose": ao2_purpose},
+        {"label": ao3_label, "purpose": ao3_purpose},
+    ]
+    try:
+        q.create_plug_group(
+            name, int(room_id) if room_id else None, enclosure_ids,
+            tuya_device_id or None, tuya_local_key or None, tuya_ip_address or None,
+            smart_members, manual_members,
+        )
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.post("/plug-groups/{plug_group_id}/delete")
+def admin_delete_plug_group(plug_group_id: int):
+    """Ungroups member Plugs rather than deleting them — see CONTEXT.md: Plug Group; ADR 0017."""
+    q.delete_plug_group(plug_group_id)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.post("/plug-groups/{plug_group_id}/command")
+def admin_send_plug_group_command(plug_group_id: int, is_on: bool = Form(...)):
+    """All On/All Off — see CONTEXT.md: All On / All Off; ADR 0017. Fans out to the Group's Smart
+    members only; Always-On Outlets have no relay to command."""
+    q.send_plug_group_command(plug_group_id, is_on)
     return RedirectResponse(url="/admin/", status_code=303)
 
 

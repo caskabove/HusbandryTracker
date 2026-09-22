@@ -494,7 +494,8 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
                  target_on_time: str | None = None, target_off_time: str | None = None,
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
-                 target_humidity_pct: float | None = None, always_on: bool = False) -> int:
+                 target_humidity_pct: float | None = None, always_on: bool = False,
+                 plug_group_id: int | None = None) -> int:
     enclosure_ids = enclosure_ids or []
     # Always On only means anything alongside controller_kind = 'none' — see CONTEXT.md: Always On.
     # Normalized (not an error) the same way a stray Target Schedule alongside a Controller Kind is
@@ -517,11 +518,11 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
     with get_connection() as conn:
         show_on_dashboard = _next_plug_show_on_dashboard(conn, room_id, enclosure_ids)
         cur = conn.execute(
-            """INSERT INTO plug (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-                                  show_on_dashboard, target_on_time, target_off_time, always_on,
+            """INSERT INTO plug (room_id, plug_group_id, label, purpose, tracking_mode, plugin, external_id,
+                                  plugin_config, show_on_dashboard, target_on_time, target_off_time, always_on,
                                   controller_kind, target_temp_c, target_humidity_pct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (room_id, plug_group_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
              show_on_dashboard, target_on_time or None, target_off_time or None, int(always_on),
              controller_kind, target_temp_c, target_humidity_pct),
         )
@@ -780,6 +781,127 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         conn.execute("DELETE FROM plug_enclosure WHERE plug_id = ?", (plug_id,))
         for eid in enclosure_ids:
             conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (plug_id, eid))
+
+
+def list_plug_groups() -> list[dict]:
+    """For the top-level Plug Groups admin list — see CONTEXT.md: Plug Group; ADR 0017. Each
+    group's member Plugs come back decoded the same way list_plugs() decodes standalone ones, split
+    into smart_members/manual_members so the template can render the All On/All Off action against
+    only the Smart ones (see CONTEXT.md: All On / All Off — Always-On Outlets never included)."""
+    with get_connection() as conn:
+        groups = [dict(r) for r in conn.execute("SELECT * FROM plug_group ORDER BY name")]
+        room_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM room")}
+        for group in groups:
+            if group["room_id"]:
+                group["parent_label"] = f"Room: {room_names.get(group['room_id'], '?')}"
+            else:
+                names = [r["name"] for r in conn.execute(
+                    """SELECT e.name FROM enclosure e JOIN plug_group_enclosure pge ON pge.enclosure_id = e.id
+                       WHERE pge.plug_group_id = ? ORDER BY e.name""",
+                    (group["id"],),
+                )]
+                group["parent_label"] = ", ".join(names) if names else "—"
+            members = [_decode_plug(dict(r)) for r in conn.execute(
+                "SELECT * FROM plug WHERE plug_group_id = ? ORDER BY label", (group["id"],)
+            )]
+            for member in members:
+                member["last_command"] = _command_status(conn, member)
+            group["members"] = members
+            group["smart_members"] = [m for m in members if m["tracking_mode"] == "smart"]
+            group["manual_members"] = [m for m in members if m["tracking_mode"] != "smart"]
+        return groups
+
+
+def get_plug_group(plug_group_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM plug_group WHERE id = ?", (plug_group_id,)).fetchone()
+        if row is None:
+            return None
+        group = dict(row)
+        group["enclosure_ids"] = [r["enclosure_id"] for r in conn.execute(
+            "SELECT enclosure_id FROM plug_group_enclosure WHERE plug_group_id = ?", (plug_group_id,)
+        )]
+        members = [_decode_plug(dict(r)) for r in conn.execute(
+            "SELECT * FROM plug WHERE plug_group_id = ? ORDER BY label", (plug_group_id,)
+        )]
+        for member in members:
+            member["last_command"] = _command_status(conn, member)
+        group["members"] = members
+        group["smart_members"] = [m for m in members if m["tracking_mode"] == "smart"]
+        group["manual_members"] = [m for m in members if m["tracking_mode"] != "smart"]
+        return group
+
+
+def create_plug_group(name: str, room_id: int | None, enclosure_ids: list[int] | None,
+                       tuya_device_id: str | None, tuya_local_key: str | None, tuya_ip_address: str | None,
+                       smart_members: list[dict], manual_members: list[dict]) -> int:
+    """Creates a Plug Group and all of its member Plugs in one shot, from the (currently only)
+    Plug Group Template: relay-controlled + USB outlets (smart_members) plus hardwired Always-On
+    Outlets (manual_members) — see CONTEXT.md: Plug Group, Plug Group Template, Always-On Outlet;
+    ADR 0017.
+
+    smart_members: [{"label", "purpose", "switch_dps_key"}, ...] — share one physical device's
+    tuya_device_id/local_key/ip_address, differing only by switch_dps_key (see CONTEXT.md: External
+    ID — a multi-outlet strip's outlets already share one device_id today, this just creates all of
+    them at once instead of one Add Plug trip per outlet).
+    manual_members: [{"label", "purpose"}, ...] — created as ordinary Manual Plugs with
+    always_on=True and no device credentials (see CONTEXT.md: Always-On Outlet — reuses the
+    existing Plug/Manual/Always On model as-is).
+
+    All members inherit the Group's own room_id/enclosure_ids — there is no per-member override
+    (see CONTEXT.md: Plug Group)."""
+    enclosure_ids = enclosure_ids or []
+    if not name.strip():
+        raise ValueError("A Plug Group needs a name.")
+    if bool(room_id) == bool(enclosure_ids):
+        raise ValueError("A Plug Group needs exactly one parent — pick a Room, or one or more Enclosures, not both or neither.")
+    if not smart_members and not manual_members:
+        raise ValueError("A Plug Group needs at least one member Plug.")
+    if smart_members and (not tuya_device_id or not tuya_local_key):
+        raise ValueError("A Plug Group's Smart outlets need a Tuya device_id and local_key.")
+
+    with get_connection() as conn:
+        cur = conn.execute("INSERT INTO plug_group (name, room_id) VALUES (?, ?)", (name.strip(), room_id))
+        group_id = cur.lastrowid
+        for eid in enclosure_ids:
+            conn.execute(
+                "INSERT INTO plug_group_enclosure (plug_group_id, enclosure_id) VALUES (?, ?)",
+                (group_id, eid),
+            )
+
+    for member in smart_members:
+        create_plug(
+            member["label"], member["purpose"], "smart", tuya_device_id, tuya_local_key, tuya_ip_address,
+            member.get("switch_dps_key", "1"), room_id=room_id, enclosure_ids=enclosure_ids,
+            plug_group_id=group_id,
+        )
+    for member in manual_members:
+        create_plug(
+            member["label"], member["purpose"], "manual", None, None, None,
+            room_id=room_id, enclosure_ids=enclosure_ids, always_on=True, plug_group_id=group_id,
+        )
+    return group_id
+
+
+def delete_plug_group(plug_group_id: int) -> None:
+    """Ungroups member Plugs rather than deleting them — plug.plug_group_id is ON DELETE SET NULL
+    (see db/schema.sql, CONTEXT.md: Plug Group — same "never destroy device history over an
+    organizational action" precedent as Enclosure deletion falling back to Unassigned). No explicit
+    UPDATE needed here; the FK's ON DELETE SET NULL does it as part of this same DELETE."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM plug_group WHERE id = ?", (plug_group_id,))
+
+
+def send_plug_group_command(plug_group_id: int, is_on: bool) -> list[dict]:
+    """The Plug Group's All On/All Off action (see CONTEXT.md: All On / All Off; ADR 0017) — fans
+    out an ordinary send_plug_command() to every Smart member (the relay-controlled and USB
+    outlets), mirroring the strip's physical master button. Always-On Outlets are never included —
+    they have no relay to command. Not a new Outbox/Plugin-level concept, just N existing Commands."""
+    with get_connection() as conn:
+        member_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM plug WHERE plug_group_id = ? AND tracking_mode = 'smart'", (plug_group_id,)
+        )]
+    return [send_plug_command(plug_id, is_on) for plug_id in member_ids]
 
 
 def send_plug_command(plug_id: int, is_on: bool, note: str | None = None) -> dict:
