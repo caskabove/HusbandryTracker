@@ -444,6 +444,18 @@ def admin_delete_plug(plug_id: int):
     return RedirectResponse(url="/admin/", status_code=303)
 
 
+@router.post("/plugs/{plug_id}/group")
+def admin_set_plug_group(plug_id: int, plug_group_id: str = Form("")):
+    """Attaches/detaches an existing standalone Plug to/from a Plug Group — see CONTEXT.md: Plug
+    Group; ADR 0017. Separate from the main update form for the same reason
+    dashboard-visibility is: a one-field, dropdown-driven action, not part of the full edit form."""
+    try:
+        q.set_plug_group(plug_id, int(plug_group_id) if plug_group_id else None)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit", status_code=303)
+
+
 @router.post("/plugs/{plug_id}/dashboard-visibility")
 def admin_set_plug_dashboard_visibility(
     plug_id: int, show_on_dashboard: bool = Form(False),
@@ -492,6 +504,7 @@ def _render_plug_edit(request: Request, plug_id: int, error: str | None = None,
         request, "admin_plug_edit.html",
         {
             "plug": plug, "enclosures": q.list_enclosures(), "rooms": q.list_rooms(),
+            "plug_groups": q.list_plug_groups(),
             "schedule_drift_threshold_minutes": q.get_settings()["schedule_drift_threshold_minutes"],
             "error": error,
             "probe_result": probe_result,

@@ -892,6 +892,35 @@ def delete_plug_group(plug_group_id: int) -> None:
         conn.execute("DELETE FROM plug_group WHERE id = ?", (plug_group_id,))
 
 
+def set_plug_group(plug_id: int, plug_group_id: int | None) -> None:
+    """Attaches an existing standalone Plug to a Plug Group, or detaches it (plug_group_id=None) —
+    see CONTEXT.md: Plug Group; ADR 0017. Covers the case create_plug_group() doesn't: a Plug
+    registered before its Group existed (e.g. the first outlet found on a multi-outlet device,
+    added the ordinary one-at-a-time way before anyone knew it was part of a bigger strip).
+
+    Attaching copies the Group's own room_id/enclosure_ids onto the Plug — the Group is the source
+    of truth for a member's parent, same as every member created directly by create_plug_group()
+    already gets (see CONTEXT.md: Plug Group — no per-member override). Detaching leaves the Plug's
+    current parent alone; only its Group membership clears."""
+    with get_connection() as conn:
+        if plug_group_id is None:
+            conn.execute("UPDATE plug SET plug_group_id = NULL WHERE id = ?", (plug_id,))
+            return
+        group = conn.execute("SELECT room_id FROM plug_group WHERE id = ?", (plug_group_id,)).fetchone()
+        if group is None:
+            raise ValueError(f"No such Plug Group: {plug_group_id}")
+        enclosure_ids = [r["enclosure_id"] for r in conn.execute(
+            "SELECT enclosure_id FROM plug_group_enclosure WHERE plug_group_id = ?", (plug_group_id,)
+        )]
+        conn.execute(
+            "UPDATE plug SET plug_group_id = ?, room_id = ? WHERE id = ?",
+            (plug_group_id, group["room_id"], plug_id),
+        )
+        conn.execute("DELETE FROM plug_enclosure WHERE plug_id = ?", (plug_id,))
+        for eid in enclosure_ids:
+            conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (plug_id, eid))
+
+
 def send_plug_group_command(plug_group_id: int, is_on: bool) -> list[dict]:
     """The Plug Group's All On/All Off action (see CONTEXT.md: All On / All Off; ADR 0017) — fans
     out an ordinary send_plug_command() to every Smart member (the relay-controlled and USB

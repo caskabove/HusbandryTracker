@@ -151,6 +151,21 @@
                 </div>
                 <button type="submit">Save</button>
             </form>
+            {# Plug Group membership — separate from the main form, same as dashboard-visibility
+               (see CONTEXT.md: Plug Group; ADR 0017). Attaching copies the Group's own
+               Room/Enclosure assignment onto this Plug — the Group is the source of truth for a
+               member's parent, so picking one here overrides whatever's set above on Save. #}
+            <form method="post" action="/admin/plugs/{{ plug.id }}/group" class="admin-form">
+                <label>Plug Group
+                    <select name="plug_group_id">
+                        <option value="" {% if not plug.plug_group_id %}selected{% endif %}>— none (standalone Plug) —</option>
+                        {% for g in plug_groups %}
+                        <option value="{{ g.id }}" {% if g.id == plug.plug_group_id %}selected{% endif %}>{{ g.name }} ({{ g.parent_label }})</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit">Set Plug Group</button>
+            </form>
             <form method="post" action="/admin/plugs/{{ plug.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete {{ plug.label }}? This cannot be undone.');">
                 <button type="submit" class="danger">Delete Plug</button>
             </form>
