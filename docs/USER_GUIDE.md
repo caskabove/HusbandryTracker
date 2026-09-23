@@ -8,6 +8,12 @@ This guide explains what you need, how to set HerpMonitor up, how to start it, a
 day to day. No technical background assumed — anywhere you need to type something, it's spelled
 out exactly.
 
+**Installed HerpMonitor using `HerpMonitorSetup.exe` from the
+[downloads page](https://github.com/kevinramsey2002/HerpMonitor/releases/latest)?** You can skip
+straight to [Section 4](#4-using-the-dashboard) — Sections 1–3 below are the from-source setup
+path (running the project directly with Python instead of the installer), which the installer
+already did for you.
+
 **Contents**
 1. [What You Need](#1-what-you-need)
 2. [One-Time Setup](#2-one-time-setup)
@@ -15,7 +21,8 @@ out exactly.
 4. [Using the Dashboard](#4-using-the-dashboard)
 5. [Using the Admin Page](#5-using-the-admin-page-addingediting-enclosures)
 6. [Stopping HerpMonitor](#6-stopping-herpmonitor)
-7. [If Something's Not Working](#7-if-somethings-not-working)
+7. [Backing Up and Restoring Your Data](#7-backing-up-and-restoring-your-data)
+8. [If Something's Not Working](#8-if-somethings-not-working)
 
 ---
 
@@ -81,7 +88,7 @@ every time you log in, the same way apps like Docker Desktop or Steam do. The ic
 something's restarting and red if something's failed repeatedly and needs your attention.
 
 **Don't see the shortcut after running that command?** See "The Desktop shortcut didn't appear" in
-Section 7 below — it's almost always your Desktop folder being in a different location than usual,
+Section 8 below — it's almost always your Desktop folder being in a different location than usual,
 not a real error.
 
 ### The manual way
@@ -498,8 +505,54 @@ troubleshooting.
 
 ---
 
-## 7. If Something's Not Working
+## 7. Backing Up and Restoring Your Data
 
+Everything HerpMonitor knows — enclosures, animals, readings, feeding/watering/cleaning history,
+and your sensors' and plugs' device credentials — lives in one file. HerpMonitor backs it up for
+you automatically, and you can also trigger one yourself right before doing anything that makes you
+nervous (like uninstalling, reinstalling, or moving to a new computer).
+
+### Automatic backups
+
+Once a day, while HerpMonitor is running, it quietly saves a backup to a `backups` folder inside
+wherever HerpMonitor is installed. You don't need to do anything for this to happen. Backups older
+than 14 days are cleaned up automatically so this folder doesn't grow forever.
+
+### Backing up before doing something risky
+
+Right-click the tray icon and choose **Back Up Now**. It takes a few seconds (up to about 5) to
+actually happen — you don't need to wait or watch for anything, it just happens in the background.
+Good moments to do this: right before uninstalling, right before updating to a new version, or any
+time you just want extra peace of mind.
+
+### If you uninstall and reinstall on the same computer
+
+You don't need to do anything — uninstalling HerpMonitor never deletes your data, only the program
+itself. Reinstalling to the same location picks your existing data back up automatically.
+
+### Moving to a new computer, or recovering from a drive failure
+
+Automatic backups live on the same drive as HerpMonitor itself, so they won't survive that drive
+failing. For real protection, copy the `backups` folder (or just its newest file) somewhere else —
+a USB drive, or a folder that syncs to OneDrive or a similar service — the same way you'd back up
+any other important file. Copy it to the new computer's HerpMonitor installation folder before you
+start using it there, and it'll be picked up the next time you use **Restore from Backup** (below).
+
+### Restoring from a backup
+
+Right-click the tray icon, choose **Restore from Backup**, and pick the one you want from the list
+(most recent first, with the date and time it was made). Confirm when asked — this stops
+HerpMonitor, saves your *current* data as one more backup first (so this itself isn't a one-way
+door), then swaps in the one you picked and starts everything back up. Takes a few seconds.
+
+---
+
+## 8. If Something's Not Working
+
+- **Windows shows a blue "Windows protected your PC" screen when running `HerpMonitorSetup.exe`** —
+  Expected, not a sign anything's wrong. HerpMonitor is a small open-source project without a paid
+  code-signing certificate, so Windows doesn't yet recognize it as a well-known publisher. Click
+  **More info**, then **Run anyway** to continue installing.
 - **The website won't load at `localhost:22255`, or Temp/Humidity is stuck on "no data yet"** —
   Right-click the tray icon and check for a red (failed) or yellow (restarting) status; click
   **Start** on whichever part shows it, or **View Logs** to see why it's been crashing. If the tray

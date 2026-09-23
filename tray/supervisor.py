@@ -8,53 +8,85 @@ exactly the console window this exists to avoid. It launches its four children w
 console of their own (CREATE_NO_WINDOW) and their stdout/stderr redirected to data/logs/<name>.log,
 since a hidden window can't be watched directly the way start.bat's visible ones could.
 
-Not a Plugin, not part of the Inbox/Registry/Outbox contract (see ADR 0013/0014) — it doesn't talk
-to the database or to any Plugin's data at all, it only starts OS processes and watches whether
-they're still alive.
+Not a Plugin, not part of the Inbox/Registry/Outbox contract (see ADR 0013/0014), and never opens
+the database itself (see CONTEXT.md: Backup; ADR 0019) — a manual "Back Up Now" click just touches
+a request file for Ingest to notice, the same filesystem-contract shape Command/Outbox already use.
+Restore is the one exception: swapping the live database file for a backup fundamentally needs
+every process that could have it open to be stopped first, which only the Supervisor can do, so
+Restore lives here as a plain file copy performed while everything it's supervising sits stopped —
+still never a database operation in its own right.
 """
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 import pystray
 from PIL import Image, ImageDraw
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from app_paths import APP_ROOT
+
+REPO_ROOT = APP_ROOT
 VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 VENV_PYTHONW = REPO_ROOT / ".venv" / "Scripts" / "pythonw.exe"
 LOG_DIR = REPO_ROOT / "data" / "logs"
 DASHBOARD_URL = "http://localhost:22255"
 DASHBOARD_OPEN_DELAY_SECONDS = 3  # give uvicorn a moment to come up first, same as start.bat did
 
+# Mirrors ingest.py's own DB_PATH/BACKUP_DIR/BACKUP_REQUEST_PATH constants rather than importing
+# them — see the module docstring above on why this process still never imports db.db.
+DB_PATH = REPO_ROOT / "data" / "herpmonitor.db"
+BACKUP_DIR = REPO_ROOT / "data" / "backups"
+BACKUP_REQUEST_PATH = REPO_ROOT / "data" / "backup_requested"
+BACKUP_MENU_LIMIT = 20  # most recent backups shown in the Restore submenu
+
 MAX_LOG_BYTES = 5 * 1024 * 1024  # a log past this size is rotated the next time its process (re)starts
 CRASH_BACKOFF_SECONDS = [2, 5, 15, 30, 60]  # capped, growing delay between auto-restarts of a crasher
 MAX_CONSECUTIVE_FAILURES = 5  # stop auto-restarting and go to FAILED after this many quick deaths
 MIN_HEALTHY_SECONDS = 60  # staying up this long resets a component's failure count back to 0
 
-# One entry per child process. "args" is what follows VENV_PYTHON on the command line.
+# True when running as a PyInstaller-frozen build (ADR 0018) rather than from a source checkout's
+# venv — set by PyInstaller's bootloader, never by us.
+IS_FROZEN = getattr(sys, "frozen", False)
+
+# One entry per child process. "args" is what follows VENV_PYTHON on the command line when running
+# from source; "frozen_exe" is that same child's sibling .exe name in the onedir build (see
+# packaging/herpmonitor.spec) when running frozen.
 COMPONENTS = {
     "website": {
         "label": "Website",
         "args": ["-u", "-m", "uvicorn", "web.main:app", "--host", "127.0.0.1", "--port", "22255"],
+        "frozen_exe": "HerpMonitorWeb.exe",
     },
     "ingest": {
         "label": "Ingest",
         "args": ["-u", "ingest/ingest.py"],
+        "frozen_exe": "HerpMonitorIngest.exe",
     },
     "govee": {
         "label": "Sensor Plugin (Govee)",
         "args": ["-u", "plugins/govee_ble/plugin.py"],
+        "frozen_exe": "HerpMonitorGovee.exe",
     },
     "tuya": {
         "label": "Plug Plugin (Tuya)",
         "args": ["-u", "plugins/tuya_lan/plugin.py"],
+        "frozen_exe": "HerpMonitorTuya.exe",
     },
 }
+
+
+def _child_command(spec: dict) -> list[str]:
+    if IS_FROZEN:
+        return [str(REPO_ROOT / spec["frozen_exe"])]
+    return [str(VENV_PYTHON), *spec["args"]]
 
 STATUS_COLORS = {
     "running": (46, 160, 67, 255),
@@ -124,7 +156,7 @@ class Component:
         while True:
             log_fh = _open_log(self.key)
             proc = subprocess.Popen(
-                [str(VENV_PYTHON), *self.spec["args"]],
+                _child_command(self.spec),
                 cwd=str(REPO_ROOT),
                 stdout=log_fh,
                 stderr=subprocess.STDOUT,
@@ -220,16 +252,26 @@ def is_autostart_enabled() -> bool:
     return _startup_shortcut_path().exists()
 
 
+def _supervisor_target_and_args() -> tuple[str, str]:
+    """What the Startup-folder (and, when frozen, Desktop/Start Menu) shortcut should launch:
+    the frozen Supervisor .exe itself with no arguments, or pythonw.exe + this script when running
+    from a source checkout's venv."""
+    if IS_FROZEN:
+        return str(Path(sys.executable).resolve()), ""
+    return str(VENV_PYTHONW), f'"{Path(__file__).resolve()}"'
+
+
 def enable_autostart() -> None:
-    """Drop a Startup-folder shortcut pointing at this same pythonw+supervisor.py invocation — the
-    same mechanism Windows shortcuts always use, just written by PowerShell's WScript.Shell COM
-    object instead of a bundled dependency (avoids adding pywin32 just for this)."""
+    """Drop a Startup-folder shortcut pointing at this same Supervisor invocation — the same
+    mechanism Windows shortcuts always use, just written by PowerShell's WScript.Shell COM object
+    instead of a bundled dependency (avoids adding pywin32 just for this)."""
     shortcut = _startup_shortcut_path()
+    target, args = _supervisor_target_and_args()
     script = f'''
 $ws = New-Object -ComObject WScript.Shell
 $s = $ws.CreateShortcut("{shortcut}")
-$s.TargetPath = "{VENV_PYTHONW}"
-$s.Arguments = '"{Path(__file__).resolve()}"'
+$s.TargetPath = "{target}"
+$s.Arguments = '{args}'
 $s.WorkingDirectory = "{REPO_ROOT}"
 $s.Description = "HerpMonitor Supervisor"
 $s.Save()
@@ -286,6 +328,91 @@ def _quit(icon, item) -> None:
     icon.stop()
 
 
+def _backup_now(icon=None, item=None) -> None:
+    """Touches BACKUP_REQUEST_PATH — see the module docstring and ingest.py's _run_backup_check()
+    for why this doesn't back up the database directly. Lands within one Ingest scan interval
+    (default 5s), not instantly."""
+    BACKUP_REQUEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BACKUP_REQUEST_PATH.touch()
+
+
+def _list_backups() -> list[Path]:
+    if not BACKUP_DIR.is_dir():
+        return []
+    return sorted(BACKUP_DIR.glob("herpmonitor-*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+_BACKUP_REASON_LABELS = {
+    "auto": "automatic",
+    "manual": "manual",
+    "prerestore": "safety copy before a restore",
+}
+
+
+def _backup_label(path: Path) -> str:
+    parts = path.stem.split("-")  # ["herpmonitor", "YYYYMMDD", "HHMMSS", reason]
+    try:
+        when = datetime.strptime(parts[1] + parts[2], "%Y%m%d%H%M%S")
+    except (IndexError, ValueError):
+        return path.name
+    reason = _BACKUP_REASON_LABELS.get(parts[3], parts[3]) if len(parts) > 3 else ""
+    return f"{when:%Y-%m-%d %H:%M} ({reason})" if reason else f"{when:%Y-%m-%d %H:%M}"
+
+
+def _confirm(message: str, title: str) -> bool:
+    """A native Windows Yes/No dialog via .NET's MessageBox — same "shell out to PowerShell for a
+    bit of native Windows UI" pattern _run_powershell()'s other callers already use (shortcut
+    creation, Startup-folder resolution), rather than adding a GUI toolkit dependency just for this
+    one confirmation."""
+    script = f'''
+Add-Type -AssemblyName System.Windows.Forms
+$result = [System.Windows.Forms.MessageBox]::Show("{message}", "{title}", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
+Write-Output $result
+'''
+    return _run_powershell(script, capture=True) == "Yes"
+
+
+def _restore_backup(path: Path) -> None:
+    """Stops every supervised process, safety-backs-up the current database, then swaps in the
+    chosen backup — see the module docstring on why this, uniquely, lives in the Supervisor rather
+    than being a request file for Ingest to notice: nothing may hold the database open while the
+    file underneath it gets replaced, and only the Supervisor can guarantee that."""
+    if not _confirm(
+        f"Restore the database from the backup made {_backup_label(path)}?\n\n"
+        "This stops HerpMonitor, replaces the current database with this backup, and restarts it. "
+        "Your current data is saved as a new backup first, so this can be undone.",
+        "Restore HerpMonitor Backup",
+    ):
+        return
+    stop_all()
+    try:
+        if DB_PATH.exists():
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            safety_copy = BACKUP_DIR / f"{datetime.now().strftime('herpmonitor-%Y%m%d-%H%M%S')}-prerestore.db"
+            shutil.copy2(DB_PATH, safety_copy)
+        shutil.copy2(path, DB_PATH)
+    finally:
+        start_all()
+
+
+def _make_restore(path: Path):
+    def action(icon, item) -> None:
+        threading.Thread(target=_restore_backup, args=(path,), daemon=True).start()
+
+    return action
+
+
+def _restore_menu_items():
+    """A callable, not a fixed item list — pystray re-evaluates this every time the submenu opens
+    (see pystray.Menu's docs), so it always reflects whatever's currently in BACKUP_DIR."""
+    backups = _list_backups()[:BACKUP_MENU_LIMIT]
+    if not backups:
+        yield pystray.MenuItem("(no backups yet)", lambda icon, item: None, enabled=False)
+        return
+    for path in backups:
+        yield pystray.MenuItem(_backup_label(path), _make_restore(path))
+
+
 def _component_text(key: str):
     def text(item):
         comp = components[key]
@@ -336,6 +463,9 @@ def build_menu() -> pystray.Menu:
         pystray.MenuItem("View Logs", _open_logs),
         pystray.MenuItem("Start with Windows", _toggle_autostart, checked=lambda item: is_autostart_enabled()),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Back Up Now", _backup_now),
+        pystray.MenuItem("Restore from Backup", pystray.Menu(_restore_menu_items)),
+        pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit", _quit),
     )
 
@@ -357,7 +487,7 @@ def _delayed_open_dashboard() -> None:
 
 
 def main() -> None:
-    if not VENV_PYTHON.exists():
+    if not IS_FROZEN and not VENV_PYTHON.exists():
         raise SystemExit(
             "Virtual environment not found (.venv). Run the one-time setup steps in "
             "docs\\USER_GUIDE.md first, then try again."

@@ -127,9 +127,31 @@ A Command sent to a Plug that has a *determined setting* — a Controller Kind o
 The tray-icon process that starts, stops, restarts, and watches the Website/Ingest/Govee
 Plugin/Tuya Plugin processes (`tray/supervisor.py`), replacing `start.bat`'s four visible console
 windows as the normal way to run HerpMonitor — see ADR 0015. Not a Plugin and not part of the
-Inbox/Registry/Outbox contract; it only manages OS processes and their log files, never touches the
-database or Plugin data. Its tray menu opens the dashboard, shows each of the four's status with its
-own Start/Stop/Restart, and offers a "Start with Windows" toggle.
+Inbox/Registry/Outbox contract; it manages OS processes and their log files and never opens the
+database itself, with one exception — see Backup, Restore. Its tray menu opens the dashboard, shows
+each of the four's status with its own Start/Stop/Restart, offers a "Start with Windows" toggle, and
+triggers Backup/Restore.
+
+**Backup**:
+A point-in-time copy of `data/herpmonitor.db` — the single file holding every durable piece of
+HerpMonitor's state, including Device Registration's Plugin Config (Tuya/Govee credentials), so
+restoring one Backup fully recovers a working system, not just readings — written to
+`data/backups/` by Ingest (see CONTEXT.md: Ingest; ADR 0019) via SQLite's Online Backup API, which
+safely snapshots a database other processes are actively reading/writing. Happens automatically
+once a day, and on demand when the Supervisor's "Back Up Now" is clicked — a plain request file
+Ingest notices on its next scan, the same filesystem-contract shape as Command/Outbox, deliberately
+keeping this out of the Supervisor itself (see Supervisor). Backups older than the retention window
+(14 days) are pruned automatically. Distinct from `data/` surviving an uninstall (see ADR 0018) —
+that protects a reinstall to the same machine/folder; a Backup is a separate file you could also
+copy anywhere else (a USB drive, a synced cloud folder) for real protection against drive failure.
+
+**Restore**:
+Replacing the live database with a chosen Backup — the one operation the Supervisor performs that
+does touch the database, and only as a plain file copy while every process that could have it open
+is stopped first (see Supervisor, ADR 0019), never as a live query. Triggered from the Supervisor's
+"Restore from Backup" tray submenu (one item per Backup, newest first), behind a confirmation
+dialog. Always safety-backs-up the current database as its own Backup immediately before
+overwriting it, so a Restore can itself be undone the same way.
 
 **Reading**:
 A single Sensor data point at a point in time — any of the Target Range metrics that Sensor tracks (temperature, humidity, pH, ammonia, ...; see Target Range, Enclosure Type). A `Smart Sensor`'s Readings are collected automatically by the BLE listener (temperature/humidity only — a Govee device has nothing to report for the water-chemistry metrics). A `Manual Sensor`'s Readings are logged by hand through the Dashboard or Admin UI — one value per metric the Sensor actually tracks (has a Target Range configured for) — and, like a Care Event, can be backdated to when the measurement was actually taken instead of being forced to "now".

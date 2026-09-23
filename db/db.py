@@ -8,8 +8,10 @@ import sqlite3
 import time
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "herpmonitor.db"
-SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
+from app_paths import APP_ROOT
+
+DB_PATH = APP_ROOT / "data" / "herpmonitor.db"
+SCHEMA_PATH = APP_ROOT / "db" / "schema.sql"
 
 _OPEN_RETRIES = 3
 _OPEN_RETRY_DELAY_SECONDS = 0.2
@@ -49,6 +51,18 @@ def init_db() -> None:
     """Create tables if they don't exist yet. Safe to call on every process startup."""
     with get_connection() as conn:
         conn.executescript(SCHEMA_PATH.read_text())
+
+
+def backup_database(dest_path: Path) -> None:
+    """Copy the live database to dest_path via SQLite's Online Backup API (see CONTEXT.md: Backup;
+    ADR 0019) — a consistent, safe snapshot of a database other processes are actively reading and
+    writing, unlike a plain file copy, which risks capturing a half-written page if a writer commits
+    mid-copy. ingest/ingest.py decides *when* to call this (daily schedule, on-demand request); this
+    is just the mechanism, same split as get_connection()/init_db() above.
+    """
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    with get_connection() as source, sqlite3.connect(dest_path) as dest:
+        source.backup(dest)
 
 
 if __name__ == "__main__":

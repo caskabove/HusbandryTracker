@@ -17,14 +17,16 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app_paths import APP_ROOT
 from schemas import enclosure_types as et
 from web import admin_queries as q
 from web.plug_probe import probe_plug
 from web.queries import CARE_EVENT_KINDS, log_care_event
 from web.status import care_interval_status, schedule_drift_status, target_range_status
 
+_WEB_DIR = APP_ROOT / "web"
 router = APIRouter(prefix="/admin")
-templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
+templates = Jinja2Templates(directory=_WEB_DIR / "templates")
 templates.env.globals["care_interval_status"] = care_interval_status
 templates.env.globals["target_range_status"] = target_range_status
 templates.env.globals["schedule_drift_status"] = schedule_drift_status
@@ -37,7 +39,7 @@ templates.env.globals["TARGET_RANGE_METRICS"] = et.TARGET_RANGE_METRICS
 # this too; missing it here left every admin_*.html page rendering "?v=" (empty) instead of a real
 # version, silently defeating the cache-busting these pages' <link>/<script> tags already expect.
 templates.env.globals["asset_version"] = str(int(
-    max(f.stat().st_mtime for f in (Path(__file__).resolve().parent / "static").iterdir() if f.is_file())
+    max(f.stat().st_mtime for f in (_WEB_DIR / "static").iterdir() if f.is_file())
 ))
 
 

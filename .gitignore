@@ -1,4 +1,5 @@
 .venv/
+.venv-build/
 __pycache__/
 *.pyc
 data/
@@ -6,3 +7,7 @@ tinytuya.json
 snapshot.json
 devices.json
 tuya-raw.json
+
+# PyInstaller/Inno Setup build output (see ADR 0018) — built by CI, never committed
+build/
+dist/

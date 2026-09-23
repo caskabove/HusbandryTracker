@@ -50,7 +50,7 @@ the day-to-day entry point.
   creation failed. Resolving the known folder properly fixes it generically instead of special-casing
   OneDrive; the Startup-folder lookup is cached after its first call since it's checked on every tray
   menu refresh (~2s) and a redirected folder doesn't move again mid-session. See
-  `docs/USER_GUIDE.md` §7 ("The Desktop shortcut didn't appear") for the user-facing fix when the
+  `docs/USER_GUIDE.md` §8 ("The Desktop shortcut didn't appear") for the user-facing fix when the
   Desktop folder itself doesn't exist yet.
 - **Stays in the venv.** The Supervisor is just another script run the same way Ingest/the Plugins
   already are — no PyInstaller build, no standalone `.exe`, no installer. `tray/install.py` is a
@@ -83,3 +83,7 @@ to `requirements.txt`; `start.bat` removed; `docs/USER_GUIDE.md`/`docs/PHASE1.md
 existing blanket `data/` gitignore rule). Not built here: a real installer/`.exe` (see Considered
 Options), and log rotation continuous enough to cap a process that runs for weeks without ever
 restarting.
+
+**Amended by ADR 0018**: the PyInstaller-bundled installer left open above is now built — see ADR
+0018 for the packaging decision. `tray/install.py`'s Desktop-shortcut flow is superseded for
+end users but remains the setup step for anyone running from source.

@@ -19,8 +19,9 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-OUTBOX_DIR = REPO_ROOT / "data" / "outbox"
+from app_paths import APP_ROOT
+
+OUTBOX_DIR = APP_ROOT / "data" / "outbox"
 
 _UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
 

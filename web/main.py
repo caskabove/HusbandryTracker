@@ -22,6 +22,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app_paths import APP_ROOT
 from db.db import get_connection, init_db
 from schemas import enclosure_types as et
 from web.govee_refresh import refresh_sensors
@@ -30,8 +31,8 @@ from web.admin_queries import get_settings
 from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading
 from web.status import care_interval_status, target_range_status
 
-BASE_DIR = Path(__file__).resolve().parent
-USER_GUIDE_PATH = BASE_DIR.parent / "docs" / "USER_GUIDE.md"
+BASE_DIR = APP_ROOT / "web"
+USER_GUIDE_PATH = APP_ROOT / "docs" / "USER_GUIDE.md"
 
 app = FastAPI(title="HerpMonitor")
 app.include_router(admin_router)

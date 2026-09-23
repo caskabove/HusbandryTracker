@@ -16,11 +16,12 @@ from pathlib import Path
 
 import jsonschema
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-INBOX_DIR = REPO_ROOT / "data" / "inbox"
-REGISTRY_DIR = REPO_ROOT / "data" / "registry"
-OUTBOX_DIR = REPO_ROOT / "data" / "outbox"
-_COMMAND_SCHEMA_PATH = REPO_ROOT / "schemas" / "plug_command.schema.json"
+from app_paths import APP_ROOT
+
+INBOX_DIR = APP_ROOT / "data" / "inbox"
+REGISTRY_DIR = APP_ROOT / "data" / "registry"
+OUTBOX_DIR = APP_ROOT / "data" / "outbox"
+_COMMAND_SCHEMA_PATH = APP_ROOT / "schemas" / "plug_command.schema.json"
 
 _UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
 

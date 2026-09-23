@@ -1,0 +1,49 @@
+name: Release Windows installer
+
+# Builds the Windows installer (see docs/adr/0018-pyinstaller-innosetup-packaging.md) and attaches
+# it to the matching GitHub Release whenever a version tag is pushed. This is the only supported
+# way installers get built — no hand-built installer should ever be uploaded manually, so every
+# download traces back to a reproducible run against a known commit.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime + build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r packaging/requirements-build.txt
+
+      - name: Freeze with PyInstaller
+        run: pyinstaller packaging/herpmonitor.spec --noconfirm
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Determine version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compile installer
+        shell: cmd
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\herpmonitor.iss /DMyAppVersion=${{ steps.version.outputs.version }}'
+
+      - name: Attach installer to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/installer/HerpMonitorSetup.exe
+          generate_release_notes: true

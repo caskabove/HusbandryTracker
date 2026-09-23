@@ -17,23 +17,34 @@ from __future__ import annotations
 import json
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import jsonschema
 
-from db.db import get_connection, init_db
+from app_paths import APP_ROOT
+from db.db import backup_database, get_connection, init_db
 from ingest import alerts
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-INBOX_DIR = REPO_ROOT / "data" / "inbox"
-REGISTRY_DIR = REPO_ROOT / "data" / "registry"
+INBOX_DIR = APP_ROOT / "data" / "inbox"
+REGISTRY_DIR = APP_ROOT / "data" / "registry"
 REJECTED_DIR = INBOX_DIR / "_rejected"
-SCHEMA_PATH = REPO_ROOT / "schemas" / "plugin_event.schema.json"
+SCHEMA_PATH = APP_ROOT / "schemas" / "plugin_event.schema.json"
 EVENT_KINDS = ["sensor_reading", "plug_state", "plug_telemetry"]
 
 DEFAULT_SCAN_INTERVAL_SECONDS = 5
+
+# See CONTEXT.md: Backup; ADR 0019. BACKUP_REQUEST_PATH is a trigger file — tray/supervisor.py
+# touches it when "Back Up Now" is clicked, deliberately never importing db.db itself (matches this
+# codebase's existing "each process's own half of a filesystem contract" pattern, e.g. Outbox/
+# Command — see web/outbox.py's docstring), so Ingest is still the only process that ever opens the
+# database for anything beyond a Supervisor-orchestrated restore's stop-everything file swap.
+BACKUP_DIR = APP_ROOT / "data" / "backups"
+BACKUP_REQUEST_PATH = APP_ROOT / "data" / "backup_requested"
+BACKUP_RETENTION_DAYS = 14
+_BACKUP_STEM_FMT = "herpmonitor-%Y%m%d-%H%M%S"
 
 
 def _load_validator() -> jsonschema.Draft202012Validator:
@@ -202,6 +213,53 @@ def _run_periodic_unreachable_checks() -> None:
         alerts.evaluate_plug_unreachable(plug_id)
 
 
+def _unique_backup_path(reason: str) -> Path:
+    """Two backups requested within the same second (e.g. a manual click landing in the same
+    second as the daily auto-check) would otherwise collide on filename and silently overwrite
+    each other — append -2, -3, ... until the name's actually free."""
+    stem = f"{datetime.now().strftime(_BACKUP_STEM_FMT)}-{reason}"
+    dest = BACKUP_DIR / f"{stem}.db"
+    n = 2
+    while dest.exists():
+        dest = BACKUP_DIR / f"{stem}-{n}.db"
+        n += 1
+    return dest
+
+
+def _perform_backup(reason: str) -> None:
+    dest = _unique_backup_path(reason)
+    try:
+        backup_database(dest)
+        print(f"[ingest] backup written: {dest.name}")
+    except Exception as exc:  # a failed backup shouldn't crash the scan loop
+        print(f"[ingest] backup failed: {exc}")
+
+
+def _prune_old_backups() -> None:
+    cutoff = time.time() - BACKUP_RETENTION_DAYS * 86400
+    for path in BACKUP_DIR.glob("herpmonitor-*.db"):
+        if path.stat().st_mtime < cutoff:
+            path.unlink(missing_ok=True)
+
+
+def _run_backup_check() -> None:
+    """Runs a backup (see CONTEXT.md: Backup; ADR 0019) once a day automatically, plus on-demand
+    whenever tray/supervisor.py's "Back Up Now" has touched BACKUP_REQUEST_PATH — checked every scan
+    interval, so a manual request lands within one cycle (default 5s)."""
+    manual_request = BACKUP_REQUEST_PATH.exists()
+    if manual_request:
+        BACKUP_REQUEST_PATH.unlink(missing_ok=True)
+
+    today_prefix = f"herpmonitor-{datetime.now():%Y%m%d}-"
+    has_todays_backup = BACKUP_DIR.is_dir() and any(
+        p.name.startswith(today_prefix) for p in BACKUP_DIR.glob("*.db")
+    )
+
+    if manual_request or not has_todays_backup:
+        _perform_backup("manual" if manual_request else "auto")
+        _prune_old_backups()
+
+
 def _scan_interval_seconds() -> int:
     with get_connection() as conn:
         row = conn.execute("SELECT ingest_scan_interval_seconds FROM app_setting WHERE id = 1").fetchone()
@@ -221,6 +279,7 @@ def main() -> None:
             _export_registry()
             _drain_inbox(validator)
             _run_periodic_unreachable_checks()
+            _run_backup_check()
             time.sleep(_scan_interval_seconds())
     except KeyboardInterrupt:
         print("\n[ingest] stopping...")
