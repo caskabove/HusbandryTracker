@@ -37,7 +37,7 @@
                     {% set shown = value|c_to_f if metric.converts_f_c else value %}
                     <span class="pill status-{{ status.value if colored else 'unknown' }}">
                         {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
-                        {% if metric.key == "humidity" %}{{ "%.0f"|format(shown) }}{% else %}{{ "%.1f"|format(shown) }}{% endif -%}
+                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
                         {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
                     </span>
                 {% endif %}
@@ -136,15 +136,19 @@
                     {% endif %}
                 </div>
 
-                {# Care's header pill still needs the worst status across all four kinds even though
+                {# Care's header pill still needs the worst status across all shown kinds even though
                    collapsed-by-default-when-green is gone (see app.js's applySavedCollapseState) —
                    a first pass computes it once so the header's color is right before the section
                    starts rendering. Recomputing care_interval_status a second time in the render
                    loop below is a cheap pure function on plain ints, not worth threading a
-                   precomputed list through for a 4-item loop. #}
+                   precomputed list through for a 4-item loop. Each kind is opt-in per Enclosure
+                   (show_*_on_dashboard — see CONTEXT.md: Care Interval), same pattern as Animal/
+                   Sensor/Plug's own show_on_dashboard; Admin's own Care section always lists every
+                   kind regardless (see web/admin_queries.py's get_enclosure()). #}
                 {% set severity = {"green": 0, "yellow": 1, "red": 2} %}
-                {% set ns = namespace(worst="green") %}
-                {% for kind in care_kinds %}
+                {% set ns = namespace(worst="green", any=false) %}
+                {% for kind in care_kinds if enclosure["show_" ~ kind ~ "_on_dashboard"] %}
+                    {% set ns.any = true %}
                     {% set kind_status = care_interval_status(enclosure.care[kind].days_since, enclosure[kind ~ "_interval_days"]) %}
                     {% if severity[kind_status.value] > severity[ns.worst] %}{% set ns.worst = kind_status.value %}{% endif %}
                 {% endfor %}
@@ -152,10 +156,10 @@
                     <h3 class="care-section-header">
                         <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
                         <span>Care</span>
-                        <span class="pill status-{{ ns.worst }}" title="Worst status among this Enclosure's Care kinds">{{ ns.worst|capitalize }}</span>
+                        <span class="pill status-{{ ns.worst if ns.any else 'unknown' }}" title="Worst status among this Enclosure's Care kinds">{{ ns.worst|capitalize if ns.any else 'Unknown' }}</span>
                     </h3>
                     <div class="care-section-body">
-                    {% for kind in care_kinds %}
+                    {% for kind in care_kinds if enclosure["show_" ~ kind ~ "_on_dashboard"] %}
                         {% set entry = enclosure.care[kind] %}
                         {% set interval = enclosure[kind ~ "_interval_days"] %}
                         {% set status = care_interval_status(entry.days_since, interval) %}
@@ -166,6 +170,8 @@
                                 {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
                             </a>
                         </div>
+                    {% else %}
+                        <p class="empty">No Care kinds selected to display &mdash; pick some on the Enclosure page</p>
                     {% endfor %}
                     </div>
                 </div>

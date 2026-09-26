@@ -207,23 +207,29 @@ def _validate_enclosure_type(enclosure_type: str) -> None:
 
 
 def create_enclosure(name: str, enclosure_type: str, bioactive: bool, feeding: int, watering: int,
-                      spot: int, deep: int) -> int:
+                      spot: int, deep: int, show_feeding: bool = True, show_watering: bool = True,
+                      show_spot_clean: bool = True, show_deep_clean: bool = True) -> int:
     # Room assignment happens as a follow-up edit (see update_enclosure), not at creation — keeps
     # this quick-create form minimal, matching how Sensor/Plug reassignment already works.
     _validate_enclosure_type(enclosure_type)
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO enclosure (name, enclosure_type, bioactive, feeding_interval_days, watering_interval_days,
-                                       spot_clean_interval_days, deep_clean_interval_days)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (name, enclosure_type, int(bioactive), feeding, watering, spot, deep),
+                                       spot_clean_interval_days, deep_clean_interval_days,
+                                       show_feeding_on_dashboard, show_watering_on_dashboard,
+                                       show_spot_clean_on_dashboard, show_deep_clean_on_dashboard)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, enclosure_type, int(bioactive), feeding, watering, spot, deep,
+             int(show_feeding), int(show_watering), int(show_spot_clean), int(show_deep_clean)),
         )
         return cur.lastrowid
 
 
 def update_enclosure(enclosure_id: int, name: str, enclosure_type: str, bioactive: bool, feeding: int,
                       watering: int, spot: int, deep: int,
-                      room_id: int | None, fallback_sensor_id: int | None) -> None:
+                      room_id: int | None, fallback_sensor_id: int | None,
+                      show_feeding: bool = True, show_watering: bool = True,
+                      show_spot_clean: bool = True, show_deep_clean: bool = True) -> None:
     """room_id and fallback_sensor_id see CONTEXT.md: Room, Fallback Sensor. The Admin UI only ever
     offers a Fallback Sensor dropdown scoped to the chosen Room's own Sensors and only when this
     Enclosure has none of its own, so no extra cross-check is done here — display logic (see
@@ -233,15 +239,23 @@ def update_enclosure(enclosure_id: int, name: str, enclosure_type: str, bioactiv
     Changing enclosure_type doesn't retroactively clear any of this Enclosure's Sensors' now-
     inapplicable Target Range values (e.g. Saltwater -> Basic leaves salinity values sitting
     unused) — see CONTEXT.md: Enclosure Type. They're just hidden/unvalidated going forward, not
-    wiped; a deliberate scope cut, not an oversight."""
+    wiped; a deliberate scope cut, not an oversight.
+
+    show_feeding/watering/spot_clean/deep_clean are each Care kind's Dashboard visibility (see
+    CONTEXT.md: Care Interval) — unlike Animal/Sensor/Plug's show_on_dashboard there's no per-row
+    edit page for these, so they're saved together with the rest of this same Enclosure Settings
+    form instead of through a standalone toggle endpoint."""
     _validate_enclosure_type(enclosure_type)
     with get_connection() as conn:
         conn.execute(
             """UPDATE enclosure SET name = ?, enclosure_type = ?, bioactive = ?, feeding_interval_days = ?,
                                      watering_interval_days = ?, spot_clean_interval_days = ?,
-                                     deep_clean_interval_days = ?, room_id = ?,
-                                     fallback_sensor_id = ? WHERE id = ?""",
-            (name, enclosure_type, int(bioactive), feeding, watering, spot, deep, room_id, fallback_sensor_id, enclosure_id),
+                                     deep_clean_interval_days = ?, room_id = ?, fallback_sensor_id = ?,
+                                     show_feeding_on_dashboard = ?, show_watering_on_dashboard = ?,
+                                     show_spot_clean_on_dashboard = ?, show_deep_clean_on_dashboard = ?
+                                     WHERE id = ?""",
+            (name, enclosure_type, int(bioactive), feeding, watering, spot, deep, room_id, fallback_sensor_id,
+             int(show_feeding), int(show_watering), int(show_spot_clean), int(show_deep_clean), enclosure_id),
         )
 
 

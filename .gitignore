@@ -11,3 +11,5 @@ tuya-raw.json
 # PyInstaller/Inno Setup build output (see ADR 0018) — built by CI, never committed
 build/
 dist/
+handoff-*.md
+migrate*.py

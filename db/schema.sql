@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS enclosure (
     watering_interval_days    INTEGER NOT NULL DEFAULT 3,
     spot_clean_interval_days  INTEGER NOT NULL DEFAULT 7,
     deep_clean_interval_days  INTEGER NOT NULL DEFAULT 30,
+    -- Whether each Care kind's pill shows in this Enclosure's Dashboard panel — same opt-in-per-item
+    -- pattern as Animal/Sensor/Plug show_on_dashboard (see CONTEXT.md: Care Interval), just fixed to
+    -- the 4 Care kinds instead of a variable-length list of rows. Defaults on for all 4 — Admin's own
+    -- Care section (web/admin_queries.py's get_enclosure()) always lists every kind regardless.
+    show_feeding_on_dashboard     INTEGER NOT NULL DEFAULT 1,
+    show_watering_on_dashboard    INTEGER NOT NULL DEFAULT 1,
+    show_spot_clean_on_dashboard  INTEGER NOT NULL DEFAULT 1,
+    show_deep_clean_on_dashboard  INTEGER NOT NULL DEFAULT 1,
     created_at                TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

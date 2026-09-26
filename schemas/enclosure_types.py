@@ -45,6 +45,10 @@ class TargetRangeMetric:
     step: str = "0.1"                 # HTML <input step> — precision the Admin/Dashboard number
                                        # fields accept; Specific Gravity needs finer than the 0.1
                                        # every other metric is fine with (a 1.026-style reading).
+    decimals: int = 1                 # display precision for Dashboard/Admin pills and Target
+                                       # Range min–max text — Temperature/Humidity round to whole
+                                       # numbers, Specific Gravity needs all 3 decimals (1.026-style)
+                                       # to distinguish readings a hydrometer actually resolves.
 
 
 # Ordered for display — core environmental metrics first, then water chemistry roughly in the
@@ -54,10 +58,10 @@ class TargetRangeMetric:
 TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
     TargetRangeMetric("temperature", "Temperature", "F",
                        "target_temp_min_c", "target_temp_max_c", "temperature_c",
-                       ENCLOSURE_TYPES, converts_f_c=True),
+                       ENCLOSURE_TYPES, converts_f_c=True, decimals=0),
     TargetRangeMetric("humidity", "Humidity", "%",
                        "target_humidity_min", "target_humidity_max", "humidity_pct",
-                       ("basic", "amphibian")),
+                       ("basic", "amphibian"), decimals=0),
     # UV Index, not raw irradiance (uW/cm^2) — matches what a consumer meter (e.g. Solarmeter
     # 6.5R) displays directly and the Ferguson-zone target ranges most keepers already think in.
     # Basic + Amphibian only (Amphibian includes aquatic turtles, which do bask under UVB — see
@@ -79,7 +83,7 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
                        ("freshwater", "saltwater", "amphibian")),
     TargetRangeMetric("specific_gravity", "Specific Gravity", "",
                        "target_specific_gravity_min", "target_specific_gravity_max", "specific_gravity",
-                       ("saltwater",), step="0.001"),
+                       ("saltwater",), step="0.001", decimals=3),
     TargetRangeMetric("salinity", "Salinity", "ppm",
                        "target_salinity_ppm_min", "target_salinity_ppm_max", "salinity_ppm",
                        ("saltwater",)),

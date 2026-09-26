@@ -31,10 +31,18 @@
                     </select>
                 </label>
                 <label class="checkbox"><input type="checkbox" name="bioactive" value="true" {% if enclosure.bioactive %}checked{% endif %}> Bioactive</label>
+                {# Care kind Dashboard visibility (show_*_on_dashboard) — see CONTEXT.md: Care
+                   Interval — saved together with the rest of this form rather than a standalone
+                   toggle endpoint, since (unlike Animal/Sensor/Plug) there's no per-row edit page
+                   for a Care kind to hang its own toggle off of. #}
                 <label>Feeding interval (days) <input type="number" name="feeding_interval" value="{{ enclosure.feeding_interval_days }}" min="1"></label>
+                <label class="checkbox"><input type="checkbox" name="show_feeding_on_dashboard" value="true" {% if enclosure.show_feeding_on_dashboard %}checked{% endif %}> Feeding on Dashboard</label>
                 <label>Watering interval (days) <input type="number" name="watering_interval" value="{{ enclosure.watering_interval_days }}" min="1"></label>
+                <label class="checkbox"><input type="checkbox" name="show_watering_on_dashboard" value="true" {% if enclosure.show_watering_on_dashboard %}checked{% endif %}> Watering on Dashboard</label>
                 <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="{{ enclosure.spot_clean_interval_days }}" min="1"></label>
+                <label class="checkbox"><input type="checkbox" name="show_spot_clean_on_dashboard" value="true" {% if enclosure.show_spot_clean_on_dashboard %}checked{% endif %}> Spot-clean on Dashboard</label>
                 <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="{{ enclosure.deep_clean_interval_days }}" min="1"></label>
+                <label class="checkbox"><input type="checkbox" name="show_deep_clean_on_dashboard" value="true" {% if enclosure.show_deep_clean_on_dashboard %}checked{% endif %}> Deep-clean on Dashboard</label>
                 <label>Room
                     <select name="room_id">
                         <option value="">&mdash; None &mdash;</option>
@@ -242,7 +250,7 @@
                                     {% set shown = value|c_to_f if metric.converts_f_c else value %}
                                     <span class="pill status-{{ status.value }}">
                                         {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
-                                        {% if metric.key == "humidity" %}{{ "%.0f"|format(shown) }}{% else %}{{ "%.1f"|format(shown) }}{% endif -%}
+                                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
                                         {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
                                     </span>
                                 {% endif %}
@@ -250,18 +258,20 @@
                             {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
                         </td>
                         <td>
-                            {# Whole-number precision for Temperature (F)/Humidity (%), matching how
-                               this table always showed them; every water-chemistry metric keeps
-                               one decimal — a pH/ammonia/etc. Target Range is routinely set to
-                               fractional values (e.g. pH 6.5-7.5), where rounding to a whole
-                               number would erase the distinction that made it a range at all. #}
+                            {# Precision per metric.decimals (schemas/enclosure_types.py) — whole
+                               numbers for Temperature (F)/Humidity (%), matching how this table
+                               always showed them; most water-chemistry metrics keep one decimal —
+                               a pH/ammonia/etc. Target Range is routinely set to fractional values
+                               (e.g. pH 6.5-7.5), where rounding to a whole number would erase the
+                               distinction that made it a range at all. Specific Gravity needs all
+                               3 decimals (1.026-style) to mean anything. #}
                             {% set ns = namespace(any=false) %}
                             {% for metric in TARGET_RANGE_METRICS %}
                                 {% if s[metric.min_column] is not none or s[metric.max_column] is not none %}
                                     {% set ns.any = true %}
                                     {% set min_shown = s[metric.min_column]|c_to_f if metric.converts_f_c and s[metric.min_column] is not none else s[metric.min_column] %}
                                     {% set max_shown = s[metric.max_column]|c_to_f if metric.converts_f_c and s[metric.max_column] is not none else s[metric.max_column] %}
-                                    {% set fmt = "%.0f" if metric.key in ("temperature", "humidity") else "%.1f" %}
+                                    {% set fmt = "%." ~ metric.decimals ~ "f" %}
                                     <div>{{ metric.label }}: {{ fmt|format(min_shown) if min_shown is not none else "?" }}&ndash;{{ fmt|format(max_shown) if max_shown is not none else "?" }}{% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}</div>
                                 {% endif %}
                             {% endfor %}

@@ -130,6 +130,9 @@ def admin_create_enclosure(
     spot_clean_interval: int = Form(7),
     deep_clean_interval: int = Form(30),
 ):
+    # Care Dashboard-visibility (show_*_on_dashboard) isn't offered on this quick-create form — same
+    # "secondary settings happen on the Enclosure's own page after it's created" deferral as Room
+    # assignment below — so every kind just starts shown, matching the schema's own default.
     try:
         enclosure_id = q.create_enclosure(name, enclosure_type, bioactive, feeding_interval,
                                            watering_interval, spot_clean_interval, deep_clean_interval)
@@ -190,12 +193,18 @@ def admin_update_enclosure(
     deep_clean_interval: int = Form(30),
     room_id: str = Form(""),
     fallback_sensor_id: str = Form(""),
+    show_feeding_on_dashboard: bool = Form(False),
+    show_watering_on_dashboard: bool = Form(False),
+    show_spot_clean_on_dashboard: bool = Form(False),
+    show_deep_clean_on_dashboard: bool = Form(False),
 ):
     try:
         q.update_enclosure(
             enclosure_id, name, enclosure_type, bioactive, feeding_interval, watering_interval,
             spot_clean_interval, deep_clean_interval,
             int(room_id) if room_id else None, int(fallback_sensor_id) if fallback_sensor_id else None,
+            show_feeding_on_dashboard, show_watering_on_dashboard,
+            show_spot_clean_on_dashboard, show_deep_clean_on_dashboard,
         )
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
