@@ -345,9 +345,15 @@ button.danger {
 
 .panel-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1.25rem;
     padding: 1rem 0 1.5rem;
+}
+
+@media (max-width: 900px) {
+    .panel-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .panel {
@@ -425,37 +431,73 @@ button.danger {
     color: var(--text-muted);
 }
 
-/* Collapsible Care section (see dashboard.html) — same collapse mechanics as .room-section/.panel
-   above, just scoped to this one sub-section of a panel instead of the whole panel. The header's
-   own status pill (worst of the four Care kinds) stays visible either way, so a yellow/red Care
-   section reads as due/overdue at a glance even collapsed. */
-.care-section-header {
+/* Collapsible sub-section of a panel (Readings/Care/Plugs — see dashboard.html) — same collapse
+   mechanics as .room-section/.panel above, just scoped to one sub-section instead of the whole
+   panel. Care's header also carries a status pill (worst of the four Care kinds) that stays visible
+   either way, so a yellow/red Care section reads as due/overdue at a glance even collapsed. */
+.collapsible-section-header {
     display: flex;
     align-items: center;
     gap: 0.4rem;
 }
-.care-section-header .collapse-toggle { padding: 0 0.3rem 0 0; }
-.care-section.collapsed .collapse-toggle { transform: rotate(-90deg); }
-.care-section.collapsed .care-section-body { display: none; }
+.collapsible-section-header .collapse-toggle { padding: 0 0.3rem 0 0; }
+.collapsible-section.collapsed .collapse-toggle { transform: rotate(-90deg); }
+.collapsible-section.collapsed .collapsible-section-body { display: none; }
+.collapsible-section-body { padding-left: 1.2rem; }
 
 .reading-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     padding: 0.3rem 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
 }
 .reading-label {
     min-width: 8rem;
+    flex-shrink: 0;
     font-size: 0.9rem;
 }
+
+/* A row inside Readings/Care/Plugs (see dashboard.html) — three fixed-position columns (Label,
+   Type, Status) instead of .reading-row's plain flex run, so every row lines up the same across
+   all three sections of a card regardless of label length or whether a given row actually has a
+   Type badge (only a Sensor's own Reading row does — M/A tracking mode; Care/Plugs just leave that
+   column empty, same width). Only Status (column 3) scrolls on its own if a row's content is wide
+   enough to overflow the card. */
+.reading-row-grid {
+    display: grid;
+    grid-template-columns: 6rem 2.6rem minmax(0, 1fr);
+    overflow: visible;
+}
+.reading-row-grid .reading-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.reading-type {
+    display: flex;
+    justify-content: center;
+}
+.reading-status {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    min-width: 0;
+}
 .reading-meta {
+    flex-shrink: 0;
+    white-space: nowrap;
     font-size: 0.75rem;
     color: var(--text-muted);
 }
 
 .pill {
     display: inline-block;
+    flex-shrink: 0;
     padding: 0.15rem 0.55rem;
     border-radius: 999px;
     font-size: 0.85rem;
@@ -536,29 +578,33 @@ a.pill:hover { opacity: 0.85; }
 .log-form button:hover { background: var(--primary-bright); color: #0d1913; }
 .reading-form {
     margin: 0.2rem 0 0.6rem;
-    padding-left: 8rem;
+    padding-left: 9.4rem;
 }
-/* The Log Reading toggle (see dashboard.html's reading_log_form macro) — a <summary> styled to
-   match .log-form button exactly, since collapsed it *is* the button; only the disclosure
-   triangle browsers add by default is stripped off. */
+/* The Log Reading toggle (see dashboard.html's reading_log_form macro) — a plain underlined text
+   link rather than a button, since collapsed it's just an unobtrusive way to reveal the form; only
+   the disclosure triangle browsers add by default is stripped off. */
 .reading-log > summary {
     list-style: none;
     cursor: pointer;
     display: inline-block;
-    background: var(--primary);
-    color: var(--text);
-    border: 1px solid var(--primary-bright);
-    border-radius: 6px;
-    padding: 0.25rem 0.6rem;
+    color: var(--text-muted);
+    text-decoration: underline;
     font-size: 0.8rem;
 }
 .reading-log > summary::-webkit-details-marker { display: none; }
-.reading-log > summary:hover { background: var(--primary-bright); color: #0d1913; }
+.reading-log > summary:hover { color: var(--text); }
 .reading-log[open] > summary { margin-bottom: 0.4rem; }
 
 .badge-muted {
     background: var(--status-unknown);
     color: var(--text);
+}
+
+/* The M/A tracking-mode badge on a Reading row (see dashboard.html's reading_row macro) — a fixed
+   min-width so it lines up the same regardless of which single letter it holds. */
+.badge-tracking {
+    min-width: 1.1em;
+    text-align: center;
 }
 
 .empty { color: var(--text-muted); font-style: italic; font-size: 0.85rem; }

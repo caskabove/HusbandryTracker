@@ -86,10 +86,10 @@ function onReadingLogToggle(details) {
 }
 
 // Dashboard: collapse/expand a Room section, Enclosure panel, or an Enclosure's own Care section.
-// Everything starts expanded server-side (see dashboard.html) regardless of what's inside — this
+// Room/Enclosure start expanded server-side, Care starts collapsed (see dashboard.html) — this
 // toggles by hand and remembers the result per viewer via localStorage (dashboard-collapsed:<key>,
 // keyed off each container's own data-collapse-key), so the *last* state a viewer left a section in
-// wins on their next visit, not some content-based heuristic. Per-browser, not shared — same
+// wins on their next visit regardless of its server-rendered default. Per-browser, not shared — same
 // tradeoff as any other localStorage use in this app; wrapped in try/catch since a private window or
 // blocked site data can throw on either read or write.
 const COLLAPSE_STORAGE_PREFIX = "dashboard-collapsed:";
@@ -97,15 +97,18 @@ const COLLAPSE_STORAGE_PREFIX = "dashboard-collapsed:";
 function applySavedCollapseState() {
     try {
         document.querySelectorAll("[data-collapse-key]").forEach(function (container) {
-            if (localStorage.getItem(COLLAPSE_STORAGE_PREFIX + container.dataset.collapseKey) === "1") {
+            const saved = localStorage.getItem(COLLAPSE_STORAGE_PREFIX + container.dataset.collapseKey);
+            if (saved === "1") {
                 container.classList.add("collapsed");
+            } else if (saved === "0") {
+                container.classList.remove("collapsed");
             }
         });
-    } catch (e) { /* localStorage unavailable — everything just stays expanded */ }
+    } catch (e) { /* localStorage unavailable — server-rendered default state stays as-is */ }
 }
 
 function toggleCollapse(button) {
-    const container = button.closest(".room-section, .panel, .care-section");
+    const container = button.closest(".room-section, .panel, .collapsible-section");
     if (!container) return;
     container.classList.toggle("collapsed");
     const key = container.dataset.collapseKey;

@@ -26,27 +26,35 @@
        since a Room's Target Range reflects human comfort, not what's healthy for a specific
        animal), so nothing gets colored against a Room Sensor's own targets by accident. #}
     {% macro reading_row(label, reading, sensor, colored, badge_text='') %}
-        <div class="reading-row">
-            <span class="reading-label">{{ label }}{% if badge_text %} <span class="badge badge-muted">{{ badge_text }}</span>{% endif %}</span>
-            {% for metric in TARGET_RANGE_METRICS %}
-                {% set value = reading[metric.reading_column] if reading else none %}
-                {% if value is not none %}
-                    {% set min_v = sensor[metric.min_column] if sensor else none %}
-                    {% set max_v = sensor[metric.max_column] if sensor else none %}
-                    {% set status = target_range_status(value, min_v, max_v) if colored else none %}
-                    {% set shown = value|c_to_f if metric.converts_f_c else value %}
-                    <span class="pill status-{{ status.value if colored else 'unknown' }}">
-                        {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
-                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
-                        {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
-                    </span>
+        {# Three aligned columns — Label, Type (the M/A tracking-mode badge), Status (every metric
+           pill plus the "as of"/"no data yet" tail) — see .reading-row-grid in style.css. Columns 1
+           and 2 are fixed-width so every Reading row in a card lines up regardless of label length
+           or whether this particular Sensor has a badge; column 3 scrolls horizontally on its own
+           if a Sensor tracks enough metrics to overflow the card. #}
+        <div class="reading-row reading-row-grid">
+            <span class="reading-label">{{ label }}</span>
+            <span class="reading-type">{% if badge_text %}<span class="badge badge-muted badge-tracking">{{ badge_text }}</span>{% endif %}</span>
+            <span class="reading-status">
+                {% for metric in TARGET_RANGE_METRICS %}
+                    {% set value = reading[metric.reading_column] if reading else none %}
+                    {% if value is not none %}
+                        {% set min_v = sensor[metric.min_column] if sensor else none %}
+                        {% set max_v = sensor[metric.max_column] if sensor else none %}
+                        {% set status = target_range_status(value, min_v, max_v) if colored else none %}
+                        {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                        <span class="pill status-{{ status.value if colored else 'unknown' }}">
+                            {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }} {% endif -%}
+                            {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                            {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
+                        </span>
+                    {% endif %}
+                {% endfor %}
+                {% if reading %}
+                <span class="reading-meta">as of {{ reading.recorded_at }}</span>
+                {% else %}
+                <span class="pill status-unknown">no data yet</span>
                 {% endif %}
-            {% endfor %}
-            {% if reading %}
-            <span class="reading-meta">as of {{ reading.recorded_at }}</span>
-            {% else %}
-            <span class="pill status-unknown">no data yet</span>
-            {% endif %}
+            </span>
         </div>
     {% endmacro %}
 
@@ -61,7 +69,7 @@
            it's stored in), matching TARGET_RANGE_METRICS.reading_column exactly. #}
         {% if sensor.tracking_mode == "manual" %}
         <details class="reading-form reading-log" ontoggle="onReadingLogToggle(this)">
-            <summary>Log {{ sensor.label }} Reading</summary>
+            <summary>Log {{ sensor.label }}</summary>
             <form method="post" action="/sensors/{{ sensor.id }}/readings" class="log-form">
                 {% for metric in TARGET_RANGE_METRICS %}
                     {% if sensor[metric.min_column] is not none or sensor[metric.max_column] is not none %}
@@ -120,11 +128,15 @@
             </header>
 
             <div class="panel-body">
-                <div class="section">
-                    <h3>Readings</h3>
+                <div class="section collapsible-section" data-collapse-key="readings:{{ enclosure.id }}">
+                    <h3 class="collapsible-section-header">
+                        <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
+                        <span>Readings</span>
+                    </h3>
+                    <div class="collapsible-section-body">
                     {% if enclosure.sensors %}
                         {% for sensor in enclosure.sensors %}
-                            {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "manual" if sensor.tracking_mode == "manual" else "") }}
+                            {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "M" if sensor.tracking_mode == "manual" else "A") }}
                             {{ reading_log_form(sensor) }}
                         {% endfor %}
                     {% elif enclosure.fallback_sensor %}
@@ -134,17 +146,20 @@
                     {% else %}
                         <p class="empty">No sensors registered</p>
                     {% endif %}
+                    </div>
                 </div>
 
-                {# Care's header pill still needs the worst status across all shown kinds even though
-                   collapsed-by-default-when-green is gone (see app.js's applySavedCollapseState) —
-                   a first pass computes it once so the header's color is right before the section
-                   starts rendering. Recomputing care_interval_status a second time in the render
-                   loop below is a cheap pure function on plain ints, not worth threading a
-                   precomputed list through for a 4-item loop. Each kind is opt-in per Enclosure
-                   (show_*_on_dashboard — see CONTEXT.md: Care Interval), same pattern as Animal/
-                   Sensor/Plug's own show_on_dashboard; Admin's own Care section always lists every
-                   kind regardless (see web/admin_queries.py's get_enclosure()). #}
+                {# Care starts collapsed by default (unlike Room/Enclosure, which start expanded —
+                   see app.js's applySavedCollapseState) since it's the least glance-critical section;
+                   a viewer who expands it gets that remembered per-viewer like any other section. Its
+                   header pill still needs the worst status across all shown kinds even while
+                   collapsed, so a first pass computes it once before the section starts rendering.
+                   Recomputing care_interval_status a second time in the render loop below is a cheap
+                   pure function on plain ints, not worth threading a precomputed list through for a
+                   4-item loop. Each kind is opt-in per Enclosure (show_*_on_dashboard — see
+                   CONTEXT.md: Care Interval), same pattern as Animal/Sensor/Plug's own
+                   show_on_dashboard; Admin's own Care section always lists every kind regardless
+                   (see web/admin_queries.py's get_enclosure()). #}
                 {% set severity = {"green": 0, "yellow": 1, "red": 2} %}
                 {% set ns = namespace(worst="green", any=false) %}
                 {% for kind in care_kinds if enclosure["show_" ~ kind ~ "_on_dashboard"] %}
@@ -152,23 +167,26 @@
                     {% set kind_status = care_interval_status(enclosure.care[kind].days_since, enclosure[kind ~ "_interval_days"]) %}
                     {% if severity[kind_status.value] > severity[ns.worst] %}{% set ns.worst = kind_status.value %}{% endif %}
                 {% endfor %}
-                <div class="section care-section" data-collapse-key="care:{{ enclosure.id }}">
-                    <h3 class="care-section-header">
+                <div class="section collapsible-section collapsed" data-collapse-key="care:{{ enclosure.id }}">
+                    <h3 class="collapsible-section-header">
                         <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
                         <span>Care</span>
                         <span class="pill status-{{ ns.worst if ns.any else 'unknown' }}" title="Worst status among this Enclosure's Care kinds">{{ ns.worst|capitalize if ns.any else 'Unknown' }}</span>
                     </h3>
-                    <div class="care-section-body">
+                    <div class="collapsible-section-body">
                     {% for kind in care_kinds if enclosure["show_" ~ kind ~ "_on_dashboard"] %}
                         {% set entry = enclosure.care[kind] %}
                         {% set interval = enclosure[kind ~ "_interval_days"] %}
                         {% set status = care_interval_status(entry.days_since, interval) %}
-                        <div class="reading-row care-row">
+                        <div class="reading-row reading-row-grid care-row">
                             <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
-                            <a class="pill status-{{ status.value }}" href="/admin/enclosures/{{ enclosure.id }}#care-{{ kind }}"
-                               title="Log {{ kind|replace('_', ' ') }} on the Enclosure page">
-                                {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
-                            </a>
+                            <span class="reading-type"></span>
+                            <span class="reading-status">
+                                <a class="pill status-{{ status.value }}" href="/admin/enclosures/{{ enclosure.id }}#care-{{ kind }}"
+                                   title="Log {{ kind|replace('_', ' ') }} on the Enclosure page">
+                                    {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
+                                </a>
+                            </span>
                         </div>
                     {% else %}
                         <p class="empty">No Care kinds selected to display &mdash; pick some on the Enclosure page</p>
@@ -179,21 +197,45 @@
                 {# Plugs — opt-in per Plug (show_on_dashboard), same "top 3 by default" pattern as
                    Animals/Sensors (see CONTEXT.md: Plug). Status only, read-only: on/off control
                    and Schedules stay Admin-only (see web/main.py's module docstring). #}
-                <div class="section">
-                    <h3>Plugs</h3>
+                <div class="section collapsible-section" data-collapse-key="plugs:{{ enclosure.id }}">
+                    <h3 class="collapsible-section-header">
+                        <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
+                        <span>Plugs</span>
+                    </h3>
+                    <div class="collapsible-section-body">
                     {% for plug in enclosure.plugs %}
                         {% set cs = plug.current_status %}
-                        <div class="reading-row">
+                        <div class="reading-row reading-row-grid">
                             <span class="reading-label">{{ plug.label }}</span>
-                            {% if cs.unreachable %}
-                            <a class="pill status-red" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">Unreachable</a>
-                            {% elif cs.is_on is none %}
-                            <a class="pill status-unknown" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">no data yet</a>
-                            {% elif cs.is_on %}
-                            <a class="pill status-green" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">On</a>
-                            {% else %}
-                            <a class="pill status-unknown" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">Off</a>
-                            {% endif %}
+                            <span class="reading-type"></span>
+                            <span class="reading-status">
+                                {% if cs.unreachable %}
+                                <a class="pill status-red" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">Unreachable</a>
+                                {% elif cs.is_on is none %}
+                                <a class="pill status-unknown" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">no data yet</a>
+                                {% elif cs.is_on %}
+                                <a class="pill status-green" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">On</a>
+                                {% else %}
+                                <a class="pill status-unknown" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">Off</a>
+                                {% endif %}
+                                {# What decides this Plug's on/off, after the status pill (see CONTEXT.md:
+                                   Controller Kind, Target Schedule) — a Thermostat/Hydrostat-Controlled
+                                   Plug shows its target setpoint (own source of truth, not the schedule
+                                   fields, which stay NULL together with a Controller Kind — see db/schema.sql),
+                                   otherwise Always On or its Target Schedule (times only, same as Room's
+                                   own Light display above). #}
+                                {% if plug.controller_kind == "thermostat" %}
+                                <span class="reading-meta">target {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</span>
+                                {% elif plug.controller_kind == "hydrostat" %}
+                                <span class="reading-meta">target {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %}</span>
+                                {% elif plug.always_on %}
+                                <span class="reading-meta">Always On</span>
+                                {% elif plug.target_on_time and plug.target_off_time %}
+                                <span class="reading-meta">{{ plug.target_on_time }}&ndash;{{ plug.target_off_time }}</span>
+                                {% else %}
+                                <span class="reading-meta">no schedule set</span>
+                                {% endif %}
+                            </span>
                         </div>
                     {% else %}
                         {% if enclosure.plug_count %}
@@ -202,6 +244,7 @@
                         <p class="empty">No plugs registered</p>
                         {% endif %}
                     {% endfor %}
+                    </div>
                 </div>
             </div>
         </section>
