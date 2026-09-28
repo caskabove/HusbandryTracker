@@ -1,11 +1,11 @@
-; Inno Setup script for HerpMonitor (see docs/adr/0018-pyinstaller-innosetup-packaging.md).
+; Inno Setup script for Husbandry Tracker (see docs/adr/0018-pyinstaller-innosetup-packaging.md).
 ;
-; Expects packaging/herpmonitor.spec to have already been built, with its output sitting at
-; dist/HerpMonitor/ (one folder up from this script) — see the GitHub Actions workflow
+; Expects packaging/husbandrytracker.spec to have already been built, with its output sitting at
+; dist/HusbandryTracker/ (one folder up from this script) — see the GitHub Actions workflow
 ; (.github/workflows/release.yml) for the full build sequence.
 ;
-; Build locally with (from the repo root, after `pyinstaller packaging/herpmonitor.spec`):
-;   iscc packaging\herpmonitor.iss /DMyAppVersion=1.0.0
+; Build locally with (from the repo root, after `pyinstaller packaging/husbandrytracker.spec`):
+;   iscc packaging\husbandrytracker.iss /DMyAppVersion=1.0.0
 ;
 ; MyAppVersion defaults to 0.0.0-dev for a manual build with no /D override; CI always passes the
 ; real version from the pushed git tag.
@@ -14,16 +14,18 @@
   #define MyAppVersion "0.0.0-dev"
 #endif
 
-#define MyAppName "HerpMonitor"
-#define MyAppPublisher "HerpMonitor (open source)"
-#define MyAppURL "https://github.com/kevinramsey2002/HerpMonitor"
-#define MyAppExeName "HerpMonitorSupervisor.exe"
-#define DistDir "..\dist\HerpMonitor"
+#define MyAppName "Husbandry Tracker"
+#define MyAppPublisher "CaskAbove"
+#define MyAppURL "https://github.com/kevinramsey2002/HusbandryTracker"
+#define MyAppExeName "HusbandryTrackerSupervisor.exe"
+#define DistDir "..\dist\HusbandryTracker"
 
 [Setup]
-; Generated once for this project — keep stable across releases so Windows treats every version
-; as the same app (upgrade in place, one Add/Remove Programs entry) rather than a fresh install.
-AppId={{6C1F6E3E-6E7C-4C3A-9E9D-6E6F1E3E7A9C}
+; Generated once for this project (reissued at the HerpMonitor -> Husbandry Tracker rename, ADR
+; 0020, since no installer had shipped yet) — keep stable across releases so Windows treats every
+; version as the same app (upgrade in place, one Add/Remove Programs entry) rather than a fresh
+; install.
+AppId={{36462FD1-575B-447F-BE5E-9061D7995BA3}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -37,7 +39,7 @@ DefaultGroupName={#MyAppName}
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 OutputDir=..\dist\installer
-OutputBaseFilename=HerpMonitorSetup
+OutputBaseFilename=HusbandryTrackerSetup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

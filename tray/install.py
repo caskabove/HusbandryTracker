@@ -33,13 +33,13 @@ def main() -> None:
     # exactly what makes CreateShortcut's Save() fail.
     script = f'''
 $desktop = [Environment]::GetFolderPath('Desktop')
-$shortcutPath = Join-Path $desktop 'HerpMonitor.lnk'
+$shortcutPath = Join-Path $desktop 'HusbandryTracker.lnk'
 $ws = New-Object -ComObject WScript.Shell
 $s = $ws.CreateShortcut($shortcutPath)
 $s.TargetPath = "{VENV_PYTHONW}"
 $s.Arguments = '"{SUPERVISOR}"'
 $s.WorkingDirectory = "{REPO_ROOT}"
-$s.Description = "HerpMonitor Supervisor"
+$s.Description = "Husbandry Tracker Supervisor"
 $s.Save()
 Write-Output $shortcutPath
 '''
@@ -49,7 +49,7 @@ Write-Output $shortcutPath
     )
     shortcut = result.stdout.strip().splitlines()[-1]
     print(f"Created {shortcut}")
-    print('Double-click it to start HerpMonitor. Once it\'s running, tick "Start with Windows" in')
+    print('Double-click it to start Husbandry Tracker. Once it\'s running, tick "Start with Windows" in')
     print("its tray icon menu if you want it to launch automatically at login.")
 
 

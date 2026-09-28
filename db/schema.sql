@@ -1,4 +1,4 @@
--- HerpMonitor schema.
+-- Husbandry Tracker schema.
 -- Terminology matches CONTEXT.md — read that first if a name here is surprising.
 
 PRAGMA foreign_keys = ON;

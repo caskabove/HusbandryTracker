@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://herpmonitor.local/schemas/plugin_event.schema.json",
+  "$id": "https://husbandrytracker.local/schemas/plugin_event.schema.json",
   "title": "Plugin Event",
   "description": "One observation a Plugin drops into the Inbox for Ingest to consume. See CONTEXT.md: Plugin, Plugin Event, Inbox, Ingest; ADR 0013.",
   "type": "object",

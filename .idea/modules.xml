@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/HerpMonitor.iml" filepath="$PROJECT_DIR$/HerpMonitor.iml" />
+      <module fileurl="file://$PROJECT_DIR$/HusbandryTracker.iml" filepath="$PROJECT_DIR$/HusbandryTracker.iml" />
     </modules>
   </component>
 </project>

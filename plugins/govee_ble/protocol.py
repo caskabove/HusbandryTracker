@@ -9,7 +9,7 @@ humidity) where the original big-endian guess produced nonsense (192C, 258% humi
 H5102 — verified 2026-08-23 against 1 real H5102 sensor: a 24-bit big-endian packed field (temp
 and humidity combined into one integer, H5075-style) matched the Govee app's reading once the
 app's own calibration offset was accounted for (the app applies a user-configurable +/- correction
-on top of the raw sensor value; HerpMonitor stores the raw value, same as it does for the H5074s,
+on top of the raw sensor value; Husbandry Tracker stores the raw value, same as it does for the H5074s,
 not the calibrated one). Broadcasts under manufacturer ID 0x0001, not 0xEC88 — a completely
 different company ID from the H5074, despite being the same brand.
 

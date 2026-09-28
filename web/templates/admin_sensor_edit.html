@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HerpMonitor Admin - Edit Sensor</title>
+    <title>Husbandry Tracker Admin - Edit Sensor</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
@@ -21,6 +21,23 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>{{ sensor.label }}</h2>
+            <p class="empty">
+                {% if sensor.latest_reading %}
+                    {% for metric in TARGET_RANGE_METRICS %}
+                        {% set value = sensor.latest_reading[metric.reading_column] %}
+                        {% if value is not none %}
+                            {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                            {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }} {% endif -%}
+                            {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                            {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
+                            &nbsp;
+                        {% endif %}
+                    {% endfor %}
+                    — as of {{ sensor.latest_reading.recorded_at }}
+                {% else %}
+                    No Reading yet.
+                {% endif %}
+            </p>
             <form method="post" action="/admin/sensors/{{ sensor.id }}/update" class="admin-form">
                 <label>Enclosure
                     <select name="enclosure_id">
@@ -42,6 +59,12 @@
                         <input type="checkbox" name="auto_update_enabled" value="true" {% if sensor.auto_update_enabled %}checked{% endif %}>
                         Auto-Update (uncheck to pause background collection without losing this Sensor's setup)
                     </label>
+                    {# Tests this one Sensor in isolation — e.g. right after entering its MAC address —
+                       without saving the rest of the form first (formnovalidate, same trick as Probe on
+                       admin_plug_edit.html): a short live BLE listen for just this MAC, writing a real
+                       Reading on success (see web/admin.py's _refresh_one_sensor()). #}
+                    <button type="submit" formaction="/admin/sensors/{{ sensor.id }}/refresh" formnovalidate
+                            title="Listen for this Sensor's next BLE broadcast and log it as a Reading">&#8635; Refresh</button>
                 </div>
                 <div id="edit-sensor-manual" class="mode-fields" {% if sensor.tracking_mode != "manual" %}style="display:none"{% endif %}>
                     <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric — whichever this Sensor tracks.</p>

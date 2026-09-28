@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HerpMonitor Admin - {{ room.name }}</title>
+    <title>Husbandry Tracker Admin - {{ room.name }}</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
@@ -47,8 +47,8 @@
                         <td>{{ s.tracking_mode|capitalize }}</td>
                         <td>{{ s.mac_address or "—" }}</td>
                         <td>
-                            {% if reading and reading.temperature_c is not none %}<span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span>{% endif %}
-                            {% if reading and reading.humidity_pct is not none %}<span class="pill status-{{ humidity_status.value }}">{{ "%.0f"|format(reading.humidity_pct) }}%</span>{% endif %}
+                            {% if reading and reading.temperature_c is not none %}<div><span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span></div>{% endif %}
+                            {% if reading and reading.humidity_pct is not none %}<div><span class="pill status-{{ humidity_status.value }}">{{ "%.0f"|format(reading.humidity_pct) }}%</span></div>{% endif %}
                             {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
                         </td>
                         <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>

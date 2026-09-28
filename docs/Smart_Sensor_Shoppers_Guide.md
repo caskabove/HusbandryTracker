@@ -11,7 +11,7 @@ You'll see "Tuya" everywhere on these listings, but it's not one company selling
 1. **A device can be "Tuya-powered" and still not be Tuya-compatible in the way you'd expect.** Some brands white-label the Tuya backend but lock their device to their *own* app and account — you can't just add it inside the generic Tuya Smart app, even though the underlying tech is the same. Watch for this: if a listing has its own named app in the instructions (not "Tuya Smart" or "Smart Life"), assume you'll need to create a separate account with that brand, with its own login and password, even if it's Tuya under the hood.
 2. **Ecosystem compatibility is really about the app/account, not the radio protocol.** Two "Zigbee 3.0" devices from different brands can still fail to talk to each other if their apps/clouds don't match (see the Aqara note below).
 
-## What HerpMonitor already reads automatically today
+## What Husbandry Tracker already reads automatically today
 
 - **Govee sensors** — supported now, automatic.
 - **Gosund plugs** (Tuya-based) — supported now, automatic.
@@ -30,7 +30,7 @@ You'll see "Tuya" everywhere on these listings, but it's not one company selling
 
 - Want it hands-off starting **today**? → stick to **Govee** (sensors) or **Gosund** (plugs) — the only two with automatic support right now.
 - OK hand-logging for now, in exchange for more sensor/brand choice? → **Tuya-app devices** (open field, huge selection, cheaper competition) are fine — you'll just use a Manual Sensor until the plugin arrives.
-- Considering some other named brand? → Check whether its app is literally "Tuya Smart"/"Smart Life" (roadmap item, will eventually be automatic) or its own separate branded app (see the account/password section below — likely never automatic unless HerpMonitor builds a dedicated plugin for that specific brand).
+- Considering some other named brand? → Check whether its app is literally "Tuya Smart"/"Smart Life" (roadmap item, will eventually be automatic) or its own separate branded app (see the account/password section below — likely never automatic unless Husbandry Tracker builds a dedicated plugin for that specific brand).
 
 ### 2. Will you be adding more animals/sensors down the road?
 
@@ -43,7 +43,7 @@ This decides whether a Zigbee gateway is worth the extra money (this applies wit
 
 ### 3. Do you need to *control* something, or just *monitor* it?
 
-- **Monitor-only sensors** — just report readings to your phone (and to HerpMonitor, automatically or by hand depending on brand — see above).
+- **Monitor-only sensors** — just report readings to your phone (and to Husbandry Tracker, automatically or by hand depending on brand — see above).
 - **Plug/relay controllers** — a sensor combined with a smart outlet that can automatically turn a heat mat, humidifier, or fan on/off. Gosund's automatic plug support is specifically this category.
 
 **If you already have a thermostat** (like a Zoo Med ReptiTemp) controlling your heat source, you likely just want a **monitor-only** sensor.
@@ -79,7 +79,7 @@ There aren't any. Zoo Med's ReptiTemp thermostats/gauges are standalone digital/
 Looks Tuya-compatible, isn't. Runs on its own separate proprietary cloud/app, not Tuya's — won't show up in Tuya Smart no matter how you try to add it. Treat it as a fully separate ecosystem.
 
 ### ⚠️ Any device with its own named brand app (not "Tuya Smart"/"Smart Life")
-This is the "branded account" trap. Some devices are Tuya-powered underneath but require you to sign up for *that brand's own account* — with its own password — to use the device at all. That account boundary means HerpMonitor can't reach the device's data without a plugin built specifically for that brand, even if it's technically running on Tuya's infrastructure. Practically: if setup asks you to create an account under a brand name you don't recognize (not Tuya, not Govee, not Gosund), assume it's its own island for now.
+This is the "branded account" trap. Some devices are Tuya-powered underneath but require you to sign up for *that brand's own account* — with its own password — to use the device at all. That account boundary means Husbandry Tracker can't reach the device's data without a plugin built specifically for that brand, even if it's technically running on Tuya's infrastructure. Practically: if setup asks you to create an account under a brand name you don't recognize (not Tuya, not Govee, not Gosund), assume it's its own island for now.
 
 ### ❌ Mixing hub brands (Zigbee specifically)
 A Zigbee sensor only pairs with a Tuya gateway if it's a **Tuya-protocol** Zigbee device. **Aqara**, for example, makes Zigbee 3.0 sensors that need *Aqara's own* hub — "Zigbee 3.0" on the box doesn't guarantee cross-brand compatibility. When buying a Zigbee sensor for a Tuya gateway, confirm the listing says "Tuya" or "Smart Life app," not just "Zigbee 3.0."
@@ -91,9 +91,9 @@ Neither WiFi-direct sensors nor Tuya gateways can join a 5GHz network — only 2
 
 ## FAQ: Does the gateway (or my computer) need to stay on all the time?
 
-**The gateway: yes, always on.** It's the *only* path a Zigbee sensor has to reach WiFi or the internet at all — if it loses power, every sensor connected to it goes dark immediately, even inside the Tuya app itself, completely separate from HerpMonitor. Treat it like your router or modem: plug it in somewhere you never unplug.
+**The gateway: yes, always on.** It's the *only* path a Zigbee sensor has to reach WiFi or the internet at all — if it loses power, every sensor connected to it goes dark immediately, even inside the Tuya app itself, completely separate from Husbandry Tracker. Treat it like your router or modem: plug it in somewhere you never unplug.
 
-**Your HerpMonitor computer: no — gateway or not.** This is independent of whether you have a gateway at all:
+**Your Husbandry Tracker computer: no — gateway or not.** This is independent of whether you have a gateway at all:
 - **Today (Manual Sensor logging):** it only needs to be on at the moment you sit down to type in a reading. Off the rest of the time, no data is "missed" — you're just choosing when to transcribe.
 - **Once automatic plugin support ships:** it would only need to be on when it checks in to pull fresh data. The cloud (Tuya's, Govee's, whichever) holds the history in between, so your computer being off overnight wouldn't lose readings — it'd just catch up next time it's on.
 
@@ -103,9 +103,9 @@ Neither WiFi-direct sensors nor Tuya gateways can join a 5GHz network — only 2
 
 ## Quick picks
 
-- **"I want automatic readings in HerpMonitor starting today, simplest option"** → Govee sensor (monitoring) or Gosund plug (if you need on/off control).
+- **"I want automatic readings in Husbandry Tracker starting today, simplest option"** → Govee sensor (monitoring) or Gosund plug (if you need on/off control).
 - **"I'm OK hand-logging for now, but want more sensor choice/lower cost"** → Tuya-app WiFi sensor, monitor-only. ~$10–15.
-- **"I have several tanks and plan to add more"** → Tuya Zigbee gateway (~$20–25) + Zigbee sensors per tank (~$10–20 each) — still Manual Sensors in HerpMonitor for now, automatic later.
+- **"I have several tanks and plan to add more"** → Tuya Zigbee gateway (~$20–25) + Zigbee sensors per tank (~$10–20 each) — still Manual Sensors in Husbandry Tracker for now, automatic later.
 - **"I want the app to turn my heat mat on/off automatically, today"** → Gosund relay/plug.
 - **"I own Zoo Med or REPTI ZOO smart gear already"** → Won't integrate with any of the above. Keep it separate, or replace with a Govee/Gosund/Tuya product if you want one unified app.
-- **"A product's setup wants me to create some other brand's account"** → Treat it as its own island unless/until HerpMonitor lists a plugin for that specific brand.
+- **"A product's setup wants me to create some other brand's account"** → Treat it as its own island unless/until Husbandry Tracker lists a plugin for that specific brand.

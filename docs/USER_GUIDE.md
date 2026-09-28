@@ -1,15 +1,15 @@
-# HerpMonitor — User Guide
+# Husbandry Tracker — User Guide
 
-HerpMonitor is a private website, running on your own computer, that keeps track of each
+Husbandry Tracker is a private website, running on your own computer, that keeps track of each
 enclosure's temperature, humidity, and feeding/watering/cleaning history in one place — instead of
 juggling a separate phone app and your own memory for each tank.
 
-This guide explains what you need, how to set HerpMonitor up, how to start it, and how to use it
+This guide explains what you need, how to set Husbandry Tracker up, how to start it, and how to use it
 day to day. No technical background assumed — anywhere you need to type something, it's spelled
 out exactly.
 
-**Installed HerpMonitor using `HerpMonitorSetup.exe` from the
-[downloads page](https://github.com/kevinramsey2002/HerpMonitor/releases/latest)?** You can skip
+**Installed Husbandry Tracker using `HusbandryTrackerSetup.exe` from the
+[downloads page](https://github.com/kevinramsey2002/HusbandryTracker/releases/latest)?** You can skip
 straight to [Section 4](#4-using-the-dashboard) — Sections 1–3 below are the from-source setup
 path (running the project directly with Python instead of the installer), which the installer
 already did for you.
@@ -17,10 +17,10 @@ already did for you.
 **Contents**
 1. [What You Need](#1-what-you-need)
 2. [One-Time Setup](#2-one-time-setup)
-3. [Starting HerpMonitor](#3-starting-herpmonitor)
+3. [Starting Husbandry Tracker](#3-starting-husbandry-tracker)
 4. [Using the Dashboard](#4-using-the-dashboard)
 5. [Using the Admin Page](#5-using-the-admin-page-addingediting-enclosures)
-6. [Stopping HerpMonitor](#6-stopping-herpmonitor)
+6. [Stopping Husbandry Tracker](#6-stopping-husbandry-tracker)
 7. [Backing Up and Restoring Your Data](#7-backing-up-and-restoring-your-data)
 8. [If Something's Not Working](#8-if-somethings-not-working)
 
@@ -34,7 +34,7 @@ already did for you.
 - **Python** — free software that runs the website and the background listeners. [Download it here](https://www.python.org/downloads/)
   (get the latest version) and install it. During installation, make sure to check the box that
   says **"Add python.exe to PATH"** — that's the one setting that matters.
-- **Your Govee sensors** (the **H5074** or **H5102** models — HerpMonitor understands both), one
+- **Your Govee sensors** (the **H5074** or **H5102** models — Husbandry Tracker understands both), one
   or more per enclosure, already set up and working in the Govee Home phone app.
 - **Bluetooth turned on** on the Windows computer.
 
@@ -45,14 +45,14 @@ Google Home; see the note at the end of this guide for why).
 
 ## 2. One-Time Setup
 
-You only do this once, when first installing HerpMonitor on a computer.
+You only do this once, when first installing Husbandry Tracker on a computer.
 
-1. Get the HerpMonitor project folder onto the computer (however you normally do that — copying
+1. Get the Husbandry Tracker project folder onto the computer (however you normally do that — copying
    the folder, or `git clone` if you're comfortable with that).
 2. Open a **Command Prompt** (search "cmd" in the Start menu) and navigate into the folder. If the
-   folder is at `C:\Users\YourName\HerpMonitor`, type:
+   folder is at `C:\Users\YourName\HusbandryTracker`, type:
    ```
-   cd C:\Users\YourName\HerpMonitor
+   cd C:\Users\YourName\HusbandryTracker
    ```
 3. Set up Python's workspace (this only needs to happen once):
    ```
@@ -63,27 +63,27 @@ You only do this once, when first installing HerpMonitor on a computer.
    You'll know it worked if you see a list of package names scroll by with no red error text at
    the end.
 
-That's it for one-time setup. You won't need to repeat this unless you move HerpMonitor to a
+That's it for one-time setup. You won't need to repeat this unless you move Husbandry Tracker to a
 different computer.
 
 ---
 
-## 3. Starting HerpMonitor
+## 3. Starting Husbandry Tracker
 
 ### The easy way
 
-The first time, run the one-time setup step below; after that, just double-click the **HerpMonitor**
+The first time, run the one-time setup step below; after that, just double-click the **Husbandry Tracker**
 shortcut on your Desktop.
 
 ```
 python tray\install.py
 ```
 
-This creates a **HerpMonitor** shortcut on your Desktop. Double-clicking it starts the website,
+This creates a **Husbandry Tracker** shortcut on your Desktop. Double-clicking it starts the website,
 Ingest, and both plugins in the background (no windows to manage) and opens the dashboard in your
 browser after a few seconds. You'll see a small icon appear in the system tray (bottom-right, near
 the clock) — right-click it for a menu that lets you Open Dashboard, Start/Stop/Restart each part
-individually, View Logs, or tick **"Start with Windows"** so HerpMonitor comes up automatically
+individually, View Logs, or tick **"Start with Windows"** so Husbandry Tracker comes up automatically
 every time you log in, the same way apps like Docker Desktop or Steam do. The icon turns yellow if
 something's restarting and red if something's failed repeatedly and needs your attention.
 
@@ -94,7 +94,7 @@ not a real error.
 ### The manual way
 
 Useful if you want to see what's actually happening without going through the tray icon. Every time
-you want to use HerpMonitor, you start **four things**, each in its own Command Prompt window:
+you want to use Husbandry Tracker, you start **four things**, each in its own Command Prompt window:
 
 **Website:**
 ```
@@ -124,7 +124,7 @@ Then open a web browser to:
 ```
 http://localhost:22255
 ```
-This only works on the computer HerpMonitor is running on (that's intentional — it's a private,
+This only works on the computer Husbandry Tracker is running on (that's intentional — it's a private,
 local-only dashboard, not accessible from other devices or the internet).
 
 ---
@@ -188,7 +188,7 @@ Care entry there brings you straight here).
 
 ### Getting notified when something's wrong (Send Alert)
 
-Besides coloring things red on the dashboard, HerpMonitor can push a notification straight to your
+Besides coloring things red on the dashboard, Husbandry Tracker can push a notification straight to your
 phone when a Sensor reading goes out of range, a heat/cooling Plug is switched on but not actually
 drawing power (a burnt-out bulb or failed element), or a Smart Sensor/Plug stops reporting
 altogether. This only checks Smart Sensors/Plugs with Auto-Update on (see below) — Manual ones have
@@ -205,17 +205,17 @@ app:
 1. Install the **ntfy** app on your phone (search your phone's app store) — or use
    [ntfy.sh](https://ntfy.sh) in a browser if you'd rather.
 2. In the app, **subscribe to a topic** — pick any name nobody else is likely to guess (it's not
-   password-protected, so something like `herpmonitor-yourname-4821` is safer than plain
-   `herpmonitor`). This is like a private radio channel: whoever subscribes to the same topic name
+   password-protected, so something like `husbandrytracker-yourname-4821` is safer than plain
+   `husbandrytracker`). This is like a private radio channel: whoever subscribes to the same topic name
    gets the same notifications.
-3. On HerpMonitor's main Admin page, in the **Settings** card, enter:
+3. On Husbandry Tracker's main Admin page, in the **Settings** card, enter:
    - **ntfy Server URL**: `https://ntfy.sh` (unless you're self-hosting your own ntfy server)
    - **ntfy Topic**: the exact topic name you subscribed to
    - **Alert Debounce (minutes)**: how long a problem has to persist before you're notified
      (default 10)
 4. Click **Save**.
 
-Leave the ntfy fields blank to turn notifications off entirely — HerpMonitor still tracks whether
+Leave the ntfy fields blank to turn notifications off entirely — Husbandry Tracker still tracks whether
 things are OK internally, it just won't push anything to your phone.
 
 One current gap, so it's not a surprise: the "Plug switched on but not drawing power" check needs
@@ -254,7 +254,7 @@ rather than the moisture source directly — set its **Controller Kind** to **Th
 or **Hydrostat-Controlled** when adding or editing it, and enter the matching **Target Temperature**
 or **Target Humidity** you've set that controller to. A Plug is at most one of the two — one
 physical relay powers one downstream device. This works whether the Plug itself is Smart or Manual
-— either way, the controller's actual on/off cycling happens downstream, invisible to HerpMonitor,
+— either way, the controller's actual on/off cycling happens downstream, invisible to Husbandry Tracker,
 so showing a Schedule for it would be misleading; the Target value is the one thing that's actually
 meaningful to record. This doesn't judge whether the enclosure is actually at that temperature/
 humidity — that's still a real Sensor's Target Range, if you have one in there.
@@ -346,9 +346,9 @@ This is the one step that needs a short detour into a Command Prompt, because fi
 sensor's ID isn't something the website can do on its own yet.
 
 1. Pair the sensor in the **Govee Home** app first, if you haven't already (one-time, unrelated to
-   HerpMonitor — see [How To: Add a Govee Sensor](HOWTO_ADD_GOVEE_SENSOR.md) if you need the full
+   Husbandry Tracker — see [How To: Add a Govee Sensor](HOWTO_ADD_GOVEE_SENSOR.md) if you need the full
    walkthrough).
-2. Open a Command Prompt in the HerpMonitor folder, and run:
+2. Open a Command Prompt in the Husbandry Tracker folder, and run:
    ```
    .venv\Scripts\activate
    python tools\govee_discover.py 20
@@ -391,7 +391,7 @@ if it's a Zigbee device (check the box for "Zigbee" and "Gateway required" — m
 screen/probe sensors are), see [How To: Add a Tuya Zigbee Temp/Humidity/Probe
 Sensor](HOWTO_TUYA_TEMP_HUMIDITY_PROBE_SENSOR.md) for exactly what works today, **including a
 required-hardware heads-up before you even open the box** (short version: it works great in the
-Tuya Smart app on its own, but needs a separate gateway/hub to do so; inside HerpMonitor it's a
+Tuya Smart app on its own, but needs a separate gateway/hub to do so; inside Husbandry Tracker it's a
 Manual Sensor for now).
 
 ### Adding a plug
@@ -492,7 +492,7 @@ if it loses its last one.
 
 ---
 
-## 6. Stopping HerpMonitor
+## 6. Stopping Husbandry Tracker
 
 Right-click the tray icon and choose **Stop All**, or **Quit** to also close the tray icon itself.
 (Quit is what you want before updating the software; Stop All leaves the tray icon running so you
@@ -507,15 +507,15 @@ troubleshooting.
 
 ## 7. Backing Up and Restoring Your Data
 
-Everything HerpMonitor knows — enclosures, animals, readings, feeding/watering/cleaning history,
-and your sensors' and plugs' device credentials — lives in one file. HerpMonitor backs it up for
+Everything Husbandry Tracker knows — enclosures, animals, readings, feeding/watering/cleaning history,
+and your sensors' and plugs' device credentials — lives in one file. Husbandry Tracker backs it up for
 you automatically, and you can also trigger one yourself right before doing anything that makes you
 nervous (like uninstalling, reinstalling, or moving to a new computer).
 
 ### Automatic backups
 
-Once a day, while HerpMonitor is running, it quietly saves a backup to a `backups` folder inside
-wherever HerpMonitor is installed. You don't need to do anything for this to happen. Backups older
+Once a day, while Husbandry Tracker is running, it quietly saves a backup to a `backups` folder inside
+wherever Husbandry Tracker is installed. You don't need to do anything for this to happen. Backups older
 than 14 days are cleaned up automatically so this folder doesn't grow forever.
 
 ### Backing up before doing something risky
@@ -527,36 +527,36 @@ time you just want extra peace of mind.
 
 ### If you uninstall and reinstall on the same computer
 
-You don't need to do anything — uninstalling HerpMonitor never deletes your data, only the program
+You don't need to do anything — uninstalling Husbandry Tracker never deletes your data, only the program
 itself. Reinstalling to the same location picks your existing data back up automatically.
 
 ### Moving to a new computer, or recovering from a drive failure
 
-Automatic backups live on the same drive as HerpMonitor itself, so they won't survive that drive
+Automatic backups live on the same drive as Husbandry Tracker itself, so they won't survive that drive
 failing. For real protection, copy the `backups` folder (or just its newest file) somewhere else —
 a USB drive, or a folder that syncs to OneDrive or a similar service — the same way you'd back up
-any other important file. Copy it to the new computer's HerpMonitor installation folder before you
+any other important file. Copy it to the new computer's Husbandry Tracker installation folder before you
 start using it there, and it'll be picked up the next time you use **Restore from Backup** (below).
 
 ### Restoring from a backup
 
 Right-click the tray icon, choose **Restore from Backup**, and pick the one you want from the list
 (most recent first, with the date and time it was made). Confirm when asked — this stops
-HerpMonitor, saves your *current* data as one more backup first (so this itself isn't a one-way
+Husbandry Tracker, saves your *current* data as one more backup first (so this itself isn't a one-way
 door), then swaps in the one you picked and starts everything back up. Takes a few seconds.
 
 ---
 
 ## 8. If Something's Not Working
 
-- **Windows shows a blue "Windows protected your PC" screen when running `HerpMonitorSetup.exe`** —
-  Expected, not a sign anything's wrong. HerpMonitor is a small open-source project without a paid
+- **Windows shows a blue "Windows protected your PC" screen when running `HusbandryTrackerSetup.exe`** —
+  Expected, not a sign anything's wrong. Husbandry Tracker is a small open-source project without a paid
   code-signing certificate, so Windows doesn't yet recognize it as a well-known publisher. Click
   **More info**, then **Run anyway** to continue installing.
 - **The website won't load at `localhost:22255`, or Temp/Humidity is stuck on "no data yet"** —
   Right-click the tray icon and check for a red (failed) or yellow (restarting) status; click
   **Start** on whichever part shows it, or **View Logs** to see why it's been crashing. If the tray
-  icon itself isn't there at all, double-click the HerpMonitor Desktop shortcut again. Also double
+  icon itself isn't there at all, double-click the Husbandry Tracker Desktop shortcut again. Also double
   check Bluetooth is turned on (the sensor plugin needs it).
 - **A reading looks obviously wrong** (like a huge negative number) — Let me know rather than
   trusting it; that's a sign the sensor decoding needs another look for that specific device.
@@ -593,5 +593,5 @@ enclosure in Admin until you tell it which real enclosure and purpose (light/hea
 one is — see [Adding a plug](#adding-a-plug) above for the reassignment steps.
 
 Even once a plug is properly assigned, the "Schedules" section will still say "no schedule data
-yet" for a while — HerpMonitor figures out a plug's on-time/duration by *watching* it over time,
+yet" for a while — Husbandry Tracker figures out a plug's on-time/duration by *watching* it over time,
 not by reading a schedule directly, so it needs to see at least one full on/off cycle first.

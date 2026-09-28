@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://herpmonitor.local/schemas/plug_command.schema.json",
+  "$id": "https://husbandrytracker.local/schemas/plug_command.schema.json",
   "title": "Plug Command",
   "description": "A one-shot instruction Core drops into a Plugin's Outbox to actuate a Smart Plug's relay right now. See CONTEXT.md: Command, Outbox; ADR 0014.",
   "type": "object",

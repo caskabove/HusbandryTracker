@@ -238,8 +238,8 @@ A snapshot of what is actually implemented, so the requirements above can be rea
 - **Later:** cameras, breeding tools, multi-user, remote access.
 - **Open:** the exact order and cut line for v1 launch — especially whether cameras and any multi-user scaffolding are in v1 or deferred.
 
-### 9.10 Naming / Branding — ⚪ Open
-- Working name in the codebase is **HerpMonitor**. Public product name / branding not decided.
+### 9.10 Naming / Branding — ✅ Decided (2026-09-23, executed 2026-09-27)
+- See Project Plan §10. The app is **Husbandry Tracker**, a CaskAbove product — see `docs/adr/0020-rename-to-husbandry-tracker.md`.
 
 ### 9.11 Go-to-Market — 🟡 Recommended, not confirmed
 - Organic-first: Reddit (r/reptiles + species subs), FB husbandry groups, Discord, GitHub/HN. Paid ads only as a modest ~$300–500 test if desired.

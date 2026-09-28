@@ -46,7 +46,7 @@ def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> sqlite3.Connecti
     """Points db.db.DB_PATH at a private tmp_path file and initializes it from the real
     db/schema.sql, so ingest._apply_event's own get_connection() calls (it opens a fresh
     connection per DB operation, so an in-memory ":memory:" database wouldn't survive between
-    them) land in an isolated file instead of the real data/herpmonitor.db."""
+    them) land in an isolated file instead of the real data/husbandrytracker.db."""
     import db.db as db_module
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()

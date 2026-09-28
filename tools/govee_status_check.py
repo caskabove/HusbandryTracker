@@ -1,4 +1,4 @@
-"""HerpMonitor Govee Sensor Report - a plain-language status check for non-technical users.
+"""Husbandry Tracker Govee Sensor Report - a plain-language status check for non-technical users.
 
 Covers three things about the govee_ble Plugin (Govee H5074/H5102 BLE thermometer/hygrometers -
 see CONTEXT.md: Plugin; plugins/govee_ble/plugin.py):
@@ -192,7 +192,7 @@ def print_known_sensors(sensors: list[KnownSensor], heard: dict[str, GoveeReadin
 
 
 def print_new_devices(new_candidates: list[tuple[str, str, int]]) -> None:
-    print("== Govee-looking devices heard nearby that aren't in HerpMonitor yet ==")
+    print("== Govee-looking devices heard nearby that aren't in Husbandry Tracker yet ==")
     if not new_candidates:
         print("  None heard during this check.")
         print()
@@ -268,7 +268,7 @@ def main() -> int:
 
     print()
     print("=" * 60)
-    print("  HerpMonitor Govee Sensor Report")
+    print("  Husbandry Tracker Govee Sensor Report")
     print("=" * 60)
     print()
 

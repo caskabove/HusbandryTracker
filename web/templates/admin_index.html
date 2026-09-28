@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HerpMonitor Admin</title>
+    <title>Husbandry Tracker Admin</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
-        <h1>HerpMonitor Admin</h1>
+        <h1>Husbandry Tracker Admin</h1>
         <nav>
             <a href="/">Dashboard</a>
             <a href="/guide">Guide</a>
@@ -31,7 +31,7 @@
                     <input type="text" name="ntfy_server_url" value="{{ settings.ntfy_server_url or '' }}" placeholder="https://ntfy.sh">
                 </label>
                 <label>ntfy Topic
-                    <input type="text" name="ntfy_topic" value="{{ settings.ntfy_topic or '' }}" placeholder="herpmonitor-yourname">
+                    <input type="text" name="ntfy_topic" value="{{ settings.ntfy_topic or '' }}" placeholder="husbandrytracker-yourname">
                 </label>
                 <label>Schedule Drift Threshold (minutes)
                     <input type="number" name="schedule_drift_threshold_minutes" value="{{ settings.schedule_drift_threshold_minutes }}" min="1">
@@ -113,6 +113,111 @@
                 <form method="post" action="/admin/rooms" class="admin-form">
                     <label>Name <input type="text" name="name" placeholder="e.g. Living Room" required></label>
                     <button type="submit">Create</button>
+                </form>
+            </details>
+        </section>
+
+        <section class="admin-card">
+            <h2>Sensors</h2>
+            <table class="admin-table">
+                <thead><tr><th>Label</th><th>Tracking</th><th>Belongs to</th><th>MAC</th><th>Reading</th><th>Target Range</th><th>On Dashboard</th><th></th></tr></thead>
+                <tbody>
+                {% for s in sensors %}
+                    {% set reading = s.latest_reading %}
+                    <tr>
+                        <td class="admin-table-primary">{{ s.label }}</td>
+                        <td>{{ s.tracking_mode|capitalize }}</td>
+                        <td>{{ s.parent_label }} ({{ s.parent_kind|capitalize }})</td>
+                        <td>{{ s.mac_address or "—" }}</td>
+                        <td>
+                            {# One pill per Target Range metric this Reading actually has a value for
+                               (see CONTEXT.md: Reading, Target Range), each on its own line — same
+                               per-metric-own-line shape as the Target Range column below, so a Govee
+                               Sensor's Temp/Humidity read as two separate lines here too. #}
+                            {% for metric in TARGET_RANGE_METRICS %}
+                                {% set value = reading[metric.reading_column] if reading else none %}
+                                {% if value is not none %}
+                                    {% set status = target_range_status(value, s[metric.min_column], s[metric.max_column]) %}
+                                    {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                                    <div>
+                                        <span class="pill status-{{ status.value }}">
+                                            {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
+                                            {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                                            {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
+                                        </span>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                            {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                        </td>
+                        <td>
+                            {% set ns = namespace(any=false) %}
+                            {% for metric in TARGET_RANGE_METRICS %}
+                                {% if s[metric.min_column] is not none or s[metric.max_column] is not none %}
+                                    {% set ns.any = true %}
+                                    {% set min_shown = s[metric.min_column]|c_to_f if metric.converts_f_c and s[metric.min_column] is not none else s[metric.min_column] %}
+                                    {% set max_shown = s[metric.max_column]|c_to_f if metric.converts_f_c and s[metric.max_column] is not none else s[metric.max_column] %}
+                                    {% set fmt = "%." ~ metric.decimals ~ "f" %}
+                                    <div>{{ metric.label }}: {{ fmt|format(min_shown) if min_shown is not none else "?" }}&ndash;{{ fmt|format(max_shown) if max_shown is not none else "?" }}{% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}</div>
+                                {% endif %}
+                            {% endfor %}
+                            {% if not ns.any %}not set{% endif %}
+                        </td>
+                        <td>
+                            <form method="post" action="/admin/{{ 'sensors' if s.parent_kind == 'enclosure' else 'room-sensors' }}/{{ s.id }}/dashboard-visibility" class="inline-form">
+                                <input type="hidden" name="{{ 'enclosure_id' if s.parent_kind == 'enclosure' else 'room_id' }}" value="{{ s.enclosure_id if s.parent_kind == 'enclosure' else s.room_id }}">
+                                <input type="checkbox" name="show_on_dashboard" value="true" onchange="this.form.submit()" {% if s.show_on_dashboard %}checked{% endif %} title="Show this Sensor's Reading on the Dashboard">
+                            </form>
+                        </td>
+                        <td>
+                            <a href="/admin/{{ 'sensors' if s.parent_kind == 'enclosure' else 'room-sensors' }}/{{ s.id }}/edit">edit</a> ·
+                            <form method="post" action="/admin/{{ 'sensors' if s.parent_kind == 'enclosure' else 'room-sensors' }}/{{ s.id }}/delete" class="inline-form">
+                                <input type="hidden" name="{{ 'enclosure_id' if s.parent_kind == 'enclosure' else 'room_id' }}" value="{{ s.enclosure_id if s.parent_kind == 'enclosure' else s.room_id }}">
+                                <button type="submit" class="danger-small">remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8" class="empty">No sensors yet — add one below.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <details>
+                <summary>+ Add Sensor</summary>
+                <form method="post" action="/admin/sensors" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                    <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+                    <label>Belongs to
+                        <select name="parent_type" onchange="onToggleChange(this, 'enclosure', 'add-sensor-global-enclosure', 'add-sensor-global-room')">
+                            <option value="enclosure" selected>Enclosure</option>
+                            <option value="room">Room</option>
+                        </select>
+                    </label>
+                    <div id="add-sensor-global-enclosure" class="mode-fields">
+                        <label>Enclosure
+                            <select name="enclosure_id">
+                                {% for e in enclosures %}
+                                <option value="{{ e.id }}">{{ e.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <div id="add-sensor-global-room" class="mode-fields" style="display:none">
+                        <label>Room
+                            <select name="room_id" disabled>
+                                {% for r in rooms %}
+                                <option value="{{ r.id }}">{{ r.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <p class="empty">Smart (Govee BLE) Sensors only — its Target Range is set afterward, on Edit.
+                        A Manual Sensor still needs the per-Enclosure/Room Add Sensor form instead, since it needs a
+                        Target Range set at creation.</p>
+                    <p class="empty">One device = one Sensor here, even though its Temp and Humidity show as two
+                        separate rows on the Dashboard — that's just a display split. Adding this same MAC address
+                        twice (once "for Temp", once "for Humidity") will be rejected.</p>
+                    <button type="submit">Add Sensor</button>
                 </form>
             </details>
         </section>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HerpMonitor Admin - Edit Room Sensor</title>
+    <title>Husbandry Tracker Admin - Edit Room Sensor</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
@@ -21,6 +21,15 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>{{ sensor.label }}</h2>
+            <p class="empty">
+                {% if sensor.latest_reading %}
+                    {% if sensor.latest_reading.temperature_c is not none %}{{ "%.1f"|format(sensor.latest_reading.temperature_c|c_to_f) }}&deg;F&nbsp;{% endif %}
+                    {% if sensor.latest_reading.humidity_pct is not none %}{{ "%.0f"|format(sensor.latest_reading.humidity_pct) }}%&nbsp;{% endif %}
+                    — as of {{ sensor.latest_reading.recorded_at }}
+                {% else %}
+                    No Reading yet.
+                {% endif %}
+            </p>
             <form method="post" action="/admin/room-sensors/{{ sensor.id }}/update" class="admin-form">
                 <label>Room
                     <select name="room_id">
@@ -42,6 +51,12 @@
                         <input type="checkbox" name="auto_update_enabled" value="true" {% if sensor.auto_update_enabled %}checked{% endif %}>
                         Auto-Update (uncheck to pause background collection without losing this Sensor's setup)
                     </label>
+                    {# Tests this one Sensor in isolation — e.g. right after entering its MAC address —
+                       without saving the rest of the form first (formnovalidate, same trick as Probe on
+                       admin_plug_edit.html): a short live BLE listen for just this MAC, writing a real
+                       Reading on success (see web/admin.py's _refresh_one_sensor()). #}
+                    <button type="submit" formaction="/admin/room-sensors/{{ sensor.id }}/refresh" formnovalidate
+                            title="Listen for this Sensor's next BLE broadcast and log it as a Reading">&#8635; Refresh</button>
                 </div>
                 <div id="edit-room-sensor-manual" class="mode-fields" {% if sensor.tracking_mode != "manual" %}style="display:none"{% endif %}>
                     <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on temperature or humidity.</p>

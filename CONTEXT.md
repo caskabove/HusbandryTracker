@@ -1,6 +1,7 @@
-# HerpMonitor
+# Husbandry Tracker
 
-A local-only monitoring and husbandry-tracking system for a reptile collection: environmental readings (temperature, humidity), device schedules (light, heat, cooling), and care events (feeding, watering, cleaning).
+A local-only monitoring and husbandry-tracking system for a reptile collection: environmental readings (temperature, humidity), device schedules (light, heat, cooling), and care events (feeding, watering, cleaning). A CaskAbove product — CaskAbove is the publisher (installer, LICENSE, GitHub org), not part of the in-app name; the running app refers to itself only as "Husbandry Tracker".
+_Formerly_: HerpMonitor (renamed before first release — see ADR 0020). Historical ADRs written before the rename still say "HerpMonitor" in their prose; that's original wording, not a typo — see ADR 0020.
 
 ## Language
 
@@ -40,7 +41,7 @@ _Avoid_: conflating with a single Plug linked to multiple Enclosures (one relay,
 The set of known multi-outlet Tuya device layouts a user picks from when creating a Plug Group, rather than the app auto-detecting the physical device's type from Tuya metadata (out of scope for the first version — nothing in this codebase currently reads a device's category/product_id). The first template: 3 independently-switched relay outlets + 1 USB outlet (all Smart, all swept by All On/All Off) + 3 always-on outlets (no relay, no DPS key — see Always-On Outlet). Picking a template drives the Plug Group creation wizard: it creates all member Plug rows at once instead of the current one-at-a-time Admin flow, each pre-filled with a default label (e.g. "Reef — Outlet 1", "Reef — Always-On 1") that's fully editable before saving, same as Purpose (see Purpose — stays per-member, not shared across the Group).
 
 **Always-On Outlet**:
-A Plug Group member with no DPS key at all — a physically hardwired-on socket on a multi-outlet strip, wired straight to mains with no relay Tuya (or HerpMonitor) can address, distinct from the existing per-Plug **Always On** attribute (see Always On), which is a *setting* on an otherwise-controllable Plug. An Always-On Outlet is a `Manual` Tracking Mode Plug (no plugin/external_id — nothing to poll) with its existing `always_on` flag set, created with an editable name during Plug Group creation. Reuses the existing Plug/Manual/Always On model exactly as-is; the only actual gap it fills is bulk creation with a name, not new schema on `plug` itself.
+A Plug Group member with no DPS key at all — a physically hardwired-on socket on a multi-outlet strip, wired straight to mains with no relay Tuya (or Husbandry Tracker) can address, distinct from the existing per-Plug **Always On** attribute (see Always On), which is a *setting* on an otherwise-controllable Plug. An Always-On Outlet is a `Manual` Tracking Mode Plug (no plugin/external_id — nothing to poll) with its existing `always_on` flag set, created with an editable name during Plug Group creation. Reuses the existing Plug/Manual/Always On model exactly as-is; the only actual gap it fills is bulk creation with a name, not new schema on `plug` itself.
 
 **All On / All Off**:
 A Plug Group's one shared action, mirroring the multi-outlet device's physical master button: sends an individual Command (see Command) to every *Smart* member of the group — the relay-controlled outlets and the USB outlet — turning them all on, or all off, in one click. Always-On Outlets are never included (nothing to toggle). Implemented as an ordinary fan-out of existing per-Plug Commands, not a new Outbox/Plugin-level concept.
@@ -99,11 +100,11 @@ A Plug's captured telemetry snapshot — current wattage/voltage/current draw, a
 A per-Sensor or per-Plug toggle, meaningful only for a `Smart` Sensor/Plug, that pauses automatic background collection (Readings for a Sensor; Plug State Transitions and Data Captures for a Plug) without changing Tracking Mode or losing device credentials/history. Distinct from Refresh, which is a one-off manual pull on demand — Auto-Update is an ongoing on/off state, for silencing a flaky or temporarily-irrelevant device (e.g. unplugged for the season) without deregistering it. Default on. Sending a Plug a Command while it's paused resumes Auto-Update as a side effect — see Command, ADR 0014.
 
 **Plugin**:
-An independent process that owns one vendor/protocol integration end-to-end (credentials, polling or listening cadence, protocol quirks) and talks to the rest of HerpMonitor only by reading and writing JSON files — never touching the database directly. Replaces "collector" as the term going forward; a Govee or Tuya Plugin today, but the shape admits any future vendor, in any language, without changing core code. See Ingest, Inbox, Registry, Plugin Event, and ADR 0013 for observation; Outbox, Command, and ADR 0014 for the one Plugin (`tuya_lan`) that also accepts control.
+An independent process that owns one vendor/protocol integration end-to-end (credentials, polling or listening cadence, protocol quirks) and talks to the rest of Husbandry Tracker only by reading and writing JSON files — never touching the database directly. Replaces "collector" as the term going forward; a Govee or Tuya Plugin today, but the shape admits any future vendor, in any language, without changing core code. See Ingest, Inbox, Registry, Plugin Event, and ADR 0013 for observation; Outbox, Command, and ADR 0014 for the one Plugin (`tuya_lan`) that also accepts control.
 _Avoid_: Collector, integration, driver
 
 **Ingest**:
-The core process that scans the Inbox every **Ingest Interval** (an app-wide, Admin-editable setting, default 5s), validates each Plugin Event against schema, resolves it to the Sensor/Plug row it belongs to, and writes the resulting Reading/Plug State Transition/Data Capture — then evaluates Alert Conditions, the same role `collectors/alerts.py` played inline before ADR 0013. Deliberately not named "Monitor" to avoid colliding with the app's own name. Contains no vendor-specific code; adding a Plugin never touches it. Since a Plug's Plugin reports its state on every poll rather than only on change, a slow Ingest Interval only delays when a change is *seen* — it never loses one, unlike a slow BLE registry-refresh interval, which can genuinely miss an irregular broadcast.
+The core process that scans the Inbox every **Ingest Interval** (an app-wide, Admin-editable setting, default 5s), validates each Plugin Event against schema, resolves it to the Sensor/Plug row it belongs to, and writes the resulting Reading/Plug State Transition/Data Capture — then evaluates Alert Conditions, the same role `collectors/alerts.py` played inline before ADR 0013. Deliberately not named "Monitor" — a leftover naming choice from when the app itself was called HerpMonitor; kept post-rename since "Ingest" is still the more accurate term for what this process does. Contains no vendor-specific code; adding a Plugin never touches it. Since a Plug's Plugin reports its state on every poll rather than only on change, a slow Ingest Interval only delays when a change is *seen* — it never loses one, unlike a slow BLE registry-refresh interval, which can genuinely miss an irregular broadcast.
 
 **Plugin Event**:
 The JSON file a Plugin writes to the Inbox for one observation, validated against `schemas/plugin_event.schema.json` — envelope shape `{schema_version, plugin, kind, external_id, observed_at, payload}`, where `kind` (`sensor_reading`, `plug_state`, `plug_telemetry`) determines the payload's shape. A Plugin never expects to read one back; Ingest consumes and removes each one it processes.
@@ -126,15 +127,15 @@ A Command sent to a Plug that has a *determined setting* — a Controller Kind o
 **Supervisor**:
 The tray-icon process that starts, stops, restarts, and watches the Website/Ingest/Govee
 Plugin/Tuya Plugin processes (`tray/supervisor.py`), replacing `start.bat`'s four visible console
-windows as the normal way to run HerpMonitor — see ADR 0015. Not a Plugin and not part of the
+windows as the normal way to run Husbandry Tracker — see ADR 0015. Not a Plugin and not part of the
 Inbox/Registry/Outbox contract; it manages OS processes and their log files and never opens the
 database itself, with one exception — see Backup, Restore. Its tray menu opens the dashboard, shows
 each of the four's status with its own Start/Stop/Restart, offers a "Start with Windows" toggle, and
 triggers Backup/Restore.
 
 **Backup**:
-A point-in-time copy of `data/herpmonitor.db` — the single file holding every durable piece of
-HerpMonitor's state, including Device Registration's Plugin Config (Tuya/Govee credentials), so
+A point-in-time copy of `data/husbandrytracker.db` — the single file holding every durable piece of
+Husbandry Tracker's state, including Device Registration's Plugin Config (Tuya/Govee credentials), so
 restoring one Backup fully recovers a working system, not just readings — written to
 `data/backups/` by Ingest (see CONTEXT.md: Ingest; ADR 0019) via SQLite's Online Backup API, which
 safely snapshots a database other processes are actively reading/writing. Happens automatically

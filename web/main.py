@@ -1,4 +1,4 @@
-"""HerpMonitor dashboard — FastAPI app, served by uvicorn on localhost:22255 (see docker-compose.yml).
+"""Husbandry Tracker dashboard — FastAPI app, served by uvicorn on localhost:22255 (see docker-compose.yml).
 
 Phase 2, v1 scope only (see CONTEXT.md decisions): dashboard + logbook, no charts, no auth,
 no alerting. The dashboard is mostly a glance-only view — Schedules and Care logging live on the
@@ -34,7 +34,7 @@ from web.status import care_interval_status, target_range_status
 BASE_DIR = APP_ROOT / "web"
 USER_GUIDE_PATH = APP_ROOT / "docs" / "USER_GUIDE.md"
 
-app = FastAPI(title="HerpMonitor")
+app = FastAPI(title="Husbandry Tracker")
 app.include_router(admin_router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")

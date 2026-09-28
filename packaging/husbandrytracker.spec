@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for HerpMonitor (see ADR 0018) — freezes all five entry points that
+"""PyInstaller spec for Husbandry Tracker (see ADR 0018) — freezes all five entry points that
 tray/supervisor.py manages (Supervisor itself, Website, Ingest, the Govee plugin, the Tuya plugin)
 into one shared onedir build: five .exe's in a single output folder, sharing one lib directory,
 rather than five independent bundles. MERGE() is what makes that sharing possible — see PyInstaller's
@@ -7,11 +7,11 @@ rather than five independent bundles. MERGE() is what makes that sharing possibl
 duplicated copy of Python + every dependency (fastapi, bleak, tinytuya, ...).
 
 Build with (from the repo root, using a venv that has `pip install -r requirements.txt pyinstaller`):
-    pyinstaller packaging/herpmonitor.spec --distpath dist --workpath build --noconfirm
+    pyinstaller packaging/husbandrytracker.spec --distpath dist --workpath build --noconfirm
 
-Output lands in dist/HerpMonitor/ — that whole folder is what packaging/herpmonitor.iss wraps into
-the Windows installer. tray/supervisor.py's COMPONENTS dict expects these exact five .exe names
-(HerpMonitorSupervisor.exe launches the other four as siblings in the same folder).
+Output lands in dist/HusbandryTracker/ — that whole folder is what packaging/husbandrytracker.iss
+wraps into the Windows installer. tray/supervisor.py's COMPONENTS dict expects these exact five
+.exe names (HusbandryTrackerSupervisor.exe launches the other four as siblings in the same folder).
 """
 from pathlib import Path
 
@@ -74,11 +74,11 @@ a_govee = _analysis("plugins/govee_ble/plugin.py")
 a_tuya = _analysis("plugins/tuya_lan/plugin.py")
 
 MERGE(
-    (a_supervisor, "supervisor", "HerpMonitorSupervisor"),
-    (a_web, "run_web", "HerpMonitorWeb"),
-    (a_ingest, "ingest", "HerpMonitorIngest"),
-    (a_govee, "plugin", "HerpMonitorGovee"),
-    (a_tuya, "plugin", "HerpMonitorTuya"),
+    (a_supervisor, "supervisor", "HusbandryTrackerSupervisor"),
+    (a_web, "run_web", "HusbandryTrackerWeb"),
+    (a_ingest, "ingest", "HusbandryTrackerIngest"),
+    (a_govee, "plugin", "HusbandryTrackerGovee"),
+    (a_tuya, "plugin", "HusbandryTrackerTuya"),
 )
 
 
@@ -104,11 +104,11 @@ def _exe(analysis: Analysis, name: str, console: bool) -> EXE:
 # Supervisor is windowless (launched via pythonw-equivalent, no console — see ADR 0015); the
 # other four keep a console=True subsystem even though Supervisor always launches them with
 # CREATE_NO_WINDOW, matching how they already run today via python.exe (not pythonw.exe).
-exe_supervisor = _exe(a_supervisor, "HerpMonitorSupervisor", console=False)
-exe_web = _exe(a_web, "HerpMonitorWeb", console=True)
-exe_ingest = _exe(a_ingest, "HerpMonitorIngest", console=True)
-exe_govee = _exe(a_govee, "HerpMonitorGovee", console=True)
-exe_tuya = _exe(a_tuya, "HerpMonitorTuya", console=True)
+exe_supervisor = _exe(a_supervisor, "HusbandryTrackerSupervisor", console=False)
+exe_web = _exe(a_web, "HusbandryTrackerWeb", console=True)
+exe_ingest = _exe(a_ingest, "HusbandryTrackerIngest", console=True)
+exe_govee = _exe(a_govee, "HusbandryTrackerGovee", console=True)
+exe_tuya = _exe(a_tuya, "HusbandryTrackerTuya", console=True)
 
 COLLECT(
     exe_supervisor, a_supervisor.binaries, a_supervisor.zipfiles, a_supervisor.datas,
@@ -118,5 +118,5 @@ COLLECT(
     exe_tuya, a_tuya.binaries, a_tuya.zipfiles, a_tuya.datas,
     strip=False,
     upx=False,
-    name="HerpMonitor",
+    name="HusbandryTracker",
 )

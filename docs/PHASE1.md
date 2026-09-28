@@ -7,7 +7,7 @@ Walk through these in order. Terms below match `CONTEXT.md`.
 ```
 .venv\Scripts\activate
 pip install -r requirements.txt
-python db\db.py          # creates data\herpmonitor.db with the schema
+python db\db.py          # creates data\husbandrytracker.db with the schema
 ```
 
 ## 1. Find your Govee sensors' MAC addresses
@@ -80,7 +80,7 @@ when piped/redirected rather than in a real terminal, even though file/DB writes
 either way.)
 
 Leave all three running (the Supervisor's tray icon does this for you, plus the web app — see
-`tray/install.py` and ADR 0015; `start.bat` is retired). Check `data\herpmonitor.db`
+`tray/install.py` and ADR 0015; `start.bat` is retired). Check `data\husbandrytracker.db`
 (e.g. with the `sqlite3` CLI or DB Browser for SQLite) — `sensor_reading` rows should accumulate
 continuously, and `plug_state_transition` rows should appear whenever a light/heat/cooling plug
 actually flips. Along the way you can also watch `data\inbox\` briefly fill with Plugin Event files

@@ -1,12 +1,12 @@
 # How To: Add a Gosund Smart Plug
 
 This covers Gosund WiFi smart plugs — the kind you plug a heat mat, basking bulb, fan, or light
-into so HerpMonitor can see whether it's on or off, automatically. These plugs run on Tuya's
+into so Husbandry Tracker can see whether it's on or off, automatically. These plugs run on Tuya's
 technology under the hood (same company behind the Tuya Smart app), but are set up through a
 different, older app: **Smart Life**.
 
 **Read this first:** unlike the Govee sensor or the Tuya Zigbee sensor, this device connects
-directly to your home WiFi — no Bluetooth, no gateway/hub needed. But getting HerpMonitor talking
+directly to your home WiFi — no Bluetooth, no gateway/hub needed. But getting Husbandry Tracker talking
 to it takes one extra, more technical step beyond just pairing it in the app (see [Get Tuya
 Developer Credentials](#3-get-tuya-developer-credentials) below) — that part genuinely benefits
 from an extra pair of hands the first time, so don't be surprised if it's the slow part.
@@ -16,7 +16,7 @@ from an extra pair of hands the first time, so don't be surprised if it's the sl
 2. [Add Tuya Device (Pairing the Plug in Smart Life)](#2-add-tuya-device-pairing-the-plug-in-smart-life)
 3. [Get Tuya Developer Credentials](#3-get-tuya-developer-credentials)
 4. [Confirming the On/Off Switch Key](#4-confirming-the-onoff-switch-key)
-5. [Adding It to HerpMonitor](#5-adding-it-to-herpmonitor)
+5. [Adding It to Husbandry Tracker](#5-adding-it-to-husbandry-tracker)
 6. [Using It Day to Day](#6-using-it-day-to-day)
 
 ---
@@ -25,14 +25,14 @@ from an extra pair of hands the first time, so don't be surprised if it's the sl
 
 - **The Gosund plug itself**, plugged into power.
 - **The Smart Life app** on your phone — free, from your phone's app store (search "Smart Life").
-  **Not Google Home** — Google Home has no way to hand HerpMonitor the credentials it needs, even
+  **Not Google Home** — Google Home has no way to hand Husbandry Tracker the credentials it needs, even
   though it can also control the same plug. Gosund plugs must be set up in Smart Life (or Tuya
   Smart — either works for this step) for the rest of this guide to work.
 - **Your phone connected to 2.4GHz WiFi during pairing** — most inexpensive smart plugs, this one
   included, can only join a 2.4GHz network, not 5GHz. If your router broadcasts both under the same
   name, this is the most common reason pairing silently fails — see the same callout in the [Tuya
   Zigbee sensor how-to](HOWTO_TUYA_TEMP_HUMIDITY_PROBE_SENSOR.md#1-what-you-need) for how to check.
-- **The HerpMonitor folder set up already** (section 2 of `docs/USER_GUIDE.md`) — step 3 below runs
+- **The Husbandry Tracker folder set up already** (section 2 of `docs/USER_GUIDE.md`) — step 3 below runs
   a command from inside it.
 
 ---
@@ -46,7 +46,7 @@ from an extra pair of hands the first time, so don't be surprised if it's the sl
    (see the callout above); you'll be asked for your WiFi password so the plug itself can join your
    network directly.
 4. Give it a name in the app — this is just for your own reference in Smart Life, separate from
-   whatever label you give it in HerpMonitor later.
+   whatever label you give it in Husbandry Tracker later.
 5. Confirm you can turn it on/off from the app before moving on.
 
 *(If any of these exact screens or button names don't match what you actually see, let me know — this
@@ -58,13 +58,13 @@ and I'd rather fix it than leave it wrong.)*
 ## 3. Get Tuya Developer Credentials
 
 Every Gosund plug has a **device ID** and **local key** — think of them like a name and password
-HerpMonitor needs to talk to the plug directly over your WiFi, without going through Tuya's cloud
+Husbandry Tracker needs to talk to the plug directly over your WiFi, without going through Tuya's cloud
 every time. Unlike a Govee sensor's ID, these can't be found with a simple scan; getting them
 requires linking a free Tuya developer account to the same account you just used in Smart Life. This
 is the one part of setup that's genuinely more technical — plan on doing it once with someone
 comfortable following a multi-step wizard, not per-plug.
 
-1. Open a Command Prompt in the HerpMonitor folder, and run:
+1. Open a Command Prompt in the Husbandry Tracker folder, and run:
    ```
    .venv\Scripts\activate
    python -m tinytuya wizard
@@ -80,7 +80,7 @@ comfortable following a multi-step wizard, not per-plug.
 3. Once finished, it prints (and saves into `devices.json`/`snapshot.json` in that same folder) every
    linked plug's **device ID**, **local key**, and last-known **IP address** on your network.
 
-**This step's website screens belong to Tuya, not HerpMonitor** — their exact wording/layout can
+**This step's website screens belong to Tuya, not Husbandry Tracker** — their exact wording/layout can
 change over time and isn't something this guide can promise pixel-for-pixel. If you get stuck partway
 through the wizard, tell me exactly what screen/prompt you're on and I'll help from there.
 
@@ -92,7 +92,7 @@ git (never uploaded/shared), but don't email or paste them anywhere either.
 ## 4. Confirming the On/Off Switch Key
 
 Most single-outlet plugs use the same internal switch key ("1"), but it's not guaranteed for every
-model — worth a quick check before registering it in HerpMonitor:
+model — worth a quick check before registering it in Husbandry Tracker:
 
 ```
 python tools\tuya_probe.py <device_id> <local_key> --ip <ip_from_wizard>
@@ -101,14 +101,14 @@ python tools\tuya_probe.py <device_id> <local_key> --ip <ip_from_wizard>
 While this is running, toggle the plug from the Smart Life app and confirm which key flips in the
 output. If it's not `1`, you'll enter that number instead in the next step.
 
-Leave the IP address blank later in HerpMonitor unless a plug keeps failing to connect — pinning its
+Leave the IP address blank later in Husbandry Tracker unless a plug keeps failing to connect — pinning its
 IP (from the wizard's output) can help.
 
 ---
 
-## 5. Adding It to HerpMonitor
+## 5. Adding It to Husbandry Tracker
 
-Unlike Sensors (added from the Enclosure/Room they belong to), Plugs are added from HerpMonitor's
+Unlike Sensors (added from the Enclosure/Room they belong to), Plugs are added from Husbandry Tracker's
 **main Admin page** (`/admin`), in its own **"Plugs"** card.
 
 1. Fill out the **"Add Plug"** form: **Tracking Mode: Smart**, a label (e.g. "UTH", "basking bulb"),
@@ -126,9 +126,9 @@ Unlike Sensors (added from the Enclosure/Room they belong to), Plugs are added f
 
 ## 6. Using It Day to Day
 
-Nothing to do — HerpMonitor polls this plug directly over your WiFi every few seconds and updates
+Nothing to do — Husbandry Tracker polls this plug directly over your WiFi every few seconds and updates
 its on/off status automatically, no app needed. The **Command** buttons on its pill (dashboard,
-Room, or Enclosure page) let you turn it on/off manually right from HerpMonitor — useful for reacting
-quickly to an alert. The **Schedules** card shows its inferred on-time once HerpMonitor has watched
+Room, or Enclosure page) let you turn it on/off manually right from Husbandry Tracker — useful for reacting
+quickly to an alert. The **Schedules** card shows its inferred on-time once Husbandry Tracker has watched
 it through at least one full on/off cycle; until then it'll say "no schedule data yet," which is
 expected, not an error.

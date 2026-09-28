@@ -102,7 +102,7 @@ def _advance(conn, table: str, id_column: str, id_value: int, condition_kind: st
             return
         if already_debounced:
             set_state("alerting")
-            _send_ntfy(conn, f"HerpMonitor Alert: {subject}", alert_message, "high")
+            _send_ntfy(conn, f"Husbandry Tracker Alert: {subject}", alert_message, "high")
         else:
             set_state("pending")
     elif state == "pending":
@@ -116,11 +116,11 @@ def _advance(conn, table: str, id_column: str, id_value: int, condition_kind: st
         ).fetchone()["m"]
         if minutes_in_state >= _debounce_minutes(conn):
             set_state("alerting")
-            _send_ntfy(conn, f"HerpMonitor Alert: {subject}", alert_message, "high")
+            _send_ntfy(conn, f"Husbandry Tracker Alert: {subject}", alert_message, "high")
     elif state == "alerting":
         if not is_bad:
             set_state("resolved")
-            _send_ntfy(conn, f"HerpMonitor Resolved: {subject}", resolved_message, "default")
+            _send_ntfy(conn, f"Husbandry Tracker Resolved: {subject}", resolved_message, "default")
 
 
 def evaluate_sensor_out_of_range(sensor_id: int) -> None:

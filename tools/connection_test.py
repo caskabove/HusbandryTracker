@@ -1,4 +1,4 @@
-"""HerpMonitor App Connection Test - a plain-language check for non-technical users.
+"""Husbandry Tracker App Connection Test - a plain-language check for non-technical users.
 
 Confirms the app can actually save and load the small text files (JSON) it uses to talk to
 Smart Sensors and Smart Plugs, in the real folders the running app uses (data/registry/,
@@ -125,7 +125,7 @@ def check_outbox() -> CheckResult:
 def _print_report(results: list[CheckResult]) -> bool:
     print()
     print("=" * 60)
-    print("  HerpMonitor App Connection Test")
+    print("  Husbandry Tracker App Connection Test")
     print("=" * 60)
     print()
     print("This checks whether the app can properly save and load the small")

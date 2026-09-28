@@ -1,4 +1,4 @@
-"""HerpMonitor Tuya Plug Report - a plain-language status check for non-technical users.
+"""Husbandry Tracker Tuya Plug Report - a plain-language status check for non-technical users.
 
 Covers three things about the tuya_lan Plugin (Gosund/Tuya smart plugs over the LAN - see
 CONTEXT.md: Plugin; plugins/tuya_lan/plugin.py):
@@ -172,14 +172,14 @@ def scan_for_new_devices(known_device_ids: set[str]) -> None:
     if not new_devices:
         if found:
             print(f"  Found {len(found)} Tuya device(s) on your network - all of them are already "
-                  f"added to HerpMonitor.")
+                  f"added to Husbandry Tracker.")
         else:
             print("  No Tuya devices responded to the scan. This is normal if your network/router")
             print("  blocks broadcast discovery - it doesn't necessarily mean anything is wrong.")
         print()
         return
 
-    print(f"  Found {len(new_devices)} device(s) on your network that aren't in HerpMonitor yet:")
+    print(f"  Found {len(new_devices)} device(s) on your network that aren't in Husbandry Tracker yet:")
     for device_id, ip in new_devices:
         print(f"    - {device_id}  (at {ip}) - add it from Admin > + Plug")
     print()
@@ -254,7 +254,7 @@ def print_file_health(results: list[tuple[str, bool, str]]) -> bool:
 def main() -> int:
     print()
     print("=" * 60)
-    print("  HerpMonitor Tuya Plug Report")
+    print("  Husbandry Tracker Tuya Plug Report")
     print("=" * 60)
     print()
 

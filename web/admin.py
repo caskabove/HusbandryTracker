@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from app_paths import APP_ROOT
 from schemas import enclosure_types as et
 from web import admin_queries as q
+from web.govee_refresh import refresh_sensors
 from web.plug_probe import probe_plug
 from web.queries import CARE_EVENT_KINDS, log_care_event
 from web.status import care_interval_status, schedule_drift_status, target_range_status
@@ -95,7 +96,7 @@ def admin_index(request: Request):
     return templates.TemplateResponse(
         request, "admin_index.html",
         {
-            "enclosures": enclosures, "rooms": rooms, "plugs": q.list_plugs(),
+            "enclosures": enclosures, "rooms": rooms, "sensors": q.list_sensors(), "plugs": q.list_plugs(),
             "plug_groups": q.list_plug_groups(),
             "rooms_by_id": {r["id"]: r["name"] for r in rooms},
             "enclosure_count_by_room": enclosure_count_by_room,
@@ -294,6 +295,33 @@ def admin_update_animal(
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
+@router.post("/sensors")
+def admin_create_sensor_global(
+    label: str = Form(...),
+    mac_address: str = Form(""),
+    parent_type: str = Form("enclosure"),
+    enclosure_id: str = Form(""),
+    room_id: str = Form(""),
+):
+    """The top-level Sensors section's own Add form (see admin_index.html) — Smart only. A Manual
+    Sensor needs a complete Target Range (min+max) at creation (_validate_sensor), which depends on
+    the parent's Enclosure Type and isn't known generically here; adding one still goes through the
+    existing per-Enclosure/Room Add Sensor form, which already offers the right fields for that
+    parent."""
+    try:
+        if parent_type == "room":
+            if not room_id:
+                raise ValueError("Pick a Room.")
+            q.create_room_sensor(int(room_id), label, "smart", mac_address or None, None, None, None, None)
+        else:
+            if not enclosure_id:
+                raise ValueError("Pick an Enclosure.")
+            q.create_sensor(int(enclosure_id), label, "smart", mac_address or None, {})
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
 @router.post("/enclosures/{enclosure_id}/sensors")
 def admin_create_sensor(
     enclosure_id: int,
@@ -353,6 +381,32 @@ def admin_set_sensor_dashboard_visibility(
 ):
     q.set_sensor_dashboard_visibility(sensor_id, show_on_dashboard)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+async def _refresh_one_sensor(sensor_id: int) -> str | None:
+    """Live BLE listen for exactly one Sensor's own MAC — the Edit Sensor page's "test this Sensor"
+    Refresh button (see admin_sensor_edit.html/admin_room_sensor_edit.html), same mechanism as
+    web/main.py's Enclosure/Room-level Refresh (_refresh_smart_sensors), just scoped to a single
+    device instead of every Smart Sensor a parent owns — the point here is testing one Sensor in
+    isolation, e.g. right after entering its MAC address. Returns a friendly error message on
+    timeout/misconfiguration, else None; a successful reading is already written to sensor_reading
+    by refresh_sensors() itself."""
+    sensor = q.get_sensor(sensor_id)
+    if sensor is None or sensor["tracking_mode"] != "smart" or not sensor["mac_address"]:
+        return "Refresh needs a Smart Sensor with a MAC address set."
+    timeout = q.get_settings()["ble_refresh_timeout_seconds"]
+    mac = sensor["mac_address"].upper()
+    results = await refresh_sensors({mac: sensor_id}, timeout)
+    if mac not in results:
+        return f"No fresh reading within {timeout}s — check the Sensor is powered and in range."
+    return None
+
+
+@router.post("/sensors/{sensor_id}/refresh")
+async def admin_refresh_sensor(sensor_id: int):
+    error = await _refresh_one_sensor(sensor_id)
+    url = f"/admin/sensors/{sensor_id}/edit"
+    return RedirectResponse(url=f"{url}?error={quote(error)}" if error else url, status_code=303)
 
 
 @router.get("/sensors/{sensor_id}/edit")
@@ -745,6 +799,13 @@ def admin_set_room_sensor_dashboard_visibility(
 ):
     q.set_sensor_dashboard_visibility(sensor_id, show_on_dashboard)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+@router.post("/room-sensors/{sensor_id}/refresh")
+async def admin_refresh_room_sensor(sensor_id: int):
+    error = await _refresh_one_sensor(sensor_id)
+    url = f"/admin/room-sensors/{sensor_id}/edit"
+    return RedirectResponse(url=f"{url}?error={quote(error)}" if error else url, status_code=303)
 
 
 @router.get("/room-sensors/{sensor_id}/edit")

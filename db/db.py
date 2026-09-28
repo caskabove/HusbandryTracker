@@ -1,4 +1,4 @@
-"""Shared SQLite access for every HerpMonitor process (collectors, tools, and later the web app).
+"""Shared SQLite access for every Husbandry Tracker process (collectors, tools, and later the web app).
 
 All processes point at the same file, so this is the one place connection settings live.
 """
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from app_paths import APP_ROOT
 
-DB_PATH = APP_ROOT / "data" / "herpmonitor.db"
+DB_PATH = APP_ROOT / "data" / "husbandrytracker.db"
 SCHEMA_PATH = APP_ROOT / "db" / "schema.sql"
 
 _OPEN_RETRIES = 3

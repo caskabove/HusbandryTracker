@@ -28,7 +28,7 @@ jobs:
           pip install -r requirements.txt -r packaging/requirements-build.txt
 
       - name: Freeze with PyInstaller
-        run: pyinstaller packaging/herpmonitor.spec --noconfirm
+        run: pyinstaller packaging/husbandrytracker.spec --noconfirm
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
@@ -40,10 +40,10 @@ jobs:
 
       - name: Compile installer
         shell: cmd
-        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\herpmonitor.iss /DMyAppVersion=${{ steps.version.outputs.version }}'
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\husbandrytracker.iss /DMyAppVersion=${{ steps.version.outputs.version }}'
 
       - name: Attach installer to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/installer/HerpMonitorSetup.exe
+          files: dist/installer/HusbandryTrackerSetup.exe
           generate_release_notes: true

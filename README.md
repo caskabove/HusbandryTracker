@@ -1,12 +1,13 @@
-# HerpMonitor
+# Husbandry Tracker
 
-A local-only monitoring and husbandry-tracking system for a reptile collection: environmental
-readings (temperature, humidity), device schedules (light, heat, cooling), and care events
-(feeding, watering, cleaning) — all in one private dashboard that runs on your own computer.
+A CaskAbove product. A local-only monitoring and husbandry-tracking system for a reptile
+collection: environmental readings (temperature, humidity), device schedules (light, heat,
+cooling), and care events (feeding, watering, cleaning) — all in one private dashboard that runs on
+your own computer.
 
-**[⬇ Download for Windows](https://github.com/kevinramsey2002/HerpMonitor/releases/latest)**
+**[⬇ Download for Windows](https://github.com/kevinramsey2002/HusbandryTracker/releases/latest)**
 
-No technical background needed — download `HerpMonitorSetup.exe` from the latest release above,
+No technical background needed — download `HusbandryTrackerSetup.exe` from the latest release above,
 run it, and follow the prompts. Windows may show a "Windows protected your PC" warning the first
 time, since this is a small open-source project without a paid code-signing certificate — click
 **More info → Run anyway** to continue. Full setup and day-to-day usage instructions (adding
@@ -25,13 +26,13 @@ See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the complete walkthrough.
 
 ## Building from source
 
-HerpMonitor is open source — clone the repo and run it directly with Python if you'd rather not
-use the installer, or if you're on a platform other than Windows (note: Bluetooth/Tuya support is
-currently only exercised on Windows).
+Husbandry Tracker is open source — clone the repo and run it directly with Python if you'd rather
+not use the installer, or if you're on a platform other than Windows (note: Bluetooth/Tuya support
+is currently only exercised on Windows).
 
 ```
-git clone https://github.com/kevinramsey2002/HerpMonitor.git
-cd HerpMonitor
+git clone https://github.com/kevinramsey2002/HusbandryTracker.git
+cd HusbandryTracker
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -43,7 +44,7 @@ component manually without the tray Supervisor.
 
 ## Architecture
 
-HerpMonitor's domain language and design decisions are documented as they're made:
+Husbandry Tracker's domain language and design decisions are documented as they're made:
 
 - [`CONTEXT.md`](CONTEXT.md) — glossary of domain terms (Enclosure, Sensor, Plug, ...)
 - [`docs/adr/`](docs/adr/) — architecture decision records, including why it's SQLite +
@@ -54,4 +55,4 @@ HerpMonitor's domain language and design decisions are documented as they're mad
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — © CaskAbove

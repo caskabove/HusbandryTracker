@@ -100,7 +100,7 @@
 - **Full product name:** CaskAbove Husbandry Tracker
 - **Short name (in-app):** Husbandry Tracker (e.g. "Husbandry Tracker Dashboard")
 - **Website/marketing line:** Cask Above brings you the "Husbandry Tracker"
-- **Retired:** "Herp Tracker" (collides with the existing competitor app HerpTracker) and "HerpMonitor" (current in-app label).
+- **Retired:** "Herp Tracker" (collides with the existing competitor app HerpTracker) and "HerpMonitor" (former in-app label, renamed 2026-09-27 — see ADR 0020).
 - **Open:** "CaskAbove" vs. "Cask Above" styling — pick one and use it everywhere.
 - **Jira:** RHA-10 (decision + usage rules), RHA-52 (rename in UI/docs/repo).
 

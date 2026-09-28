@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HerpMonitor Admin - {{ enclosure.name }}</title>
+    <title>Husbandry Tracker Admin - {{ enclosure.name }}</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
@@ -242,17 +242,21 @@
                         <td>
                             {# One pill per Target Range metric this Reading actually has a value
                                for (see CONTEXT.md: Reading, Target Range) — not just temp/
-                               humidity, so e.g. a Freshwater Enclosure's pH shows up here too. #}
+                               humidity, so e.g. a Freshwater Enclosure's pH shows up here too. Each
+                               on its own line — same per-metric-own-line shape as the Target Range
+                               column, so a Govee Sensor's Temp/Humidity read as two separate lines. #}
                             {% for metric in TARGET_RANGE_METRICS %}
                                 {% set value = reading[metric.reading_column] if reading else none %}
                                 {% if value is not none %}
                                     {% set status = target_range_status(value, s[metric.min_column], s[metric.max_column]) %}
                                     {% set shown = value|c_to_f if metric.converts_f_c else value %}
-                                    <span class="pill status-{{ status.value }}">
-                                        {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
-                                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
-                                        {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
-                                    </span>
+                                    <div>
+                                        <span class="pill status-{{ status.value }}">
+                                            {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
+                                            {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                                            {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
+                                        </span>
+                                    </div>
                                 {% endif %}
                             {% endfor %}
                             {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}

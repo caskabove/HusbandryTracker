@@ -41,22 +41,22 @@ is actually true:
   word "Zigbee" — if it's not there, the gateway requirement in this guide doesn't apply to your
   unit.
 
-Either way, none of this changes how the sensor gets added to HerpMonitor — it's a Manual Sensor
-either way (see [section 4](#4-adding-it-to-herpmonitor)).
+Either way, none of this changes how the sensor gets added to Husbandry Tracker — it's a Manual Sensor
+either way (see [section 4](#4-adding-it-to-husbandry-tracker)).
 
 **Read this next:** even once it's working perfectly in the Tuya Smart app, this is a different kind
-of device than the smart plugs HerpMonitor already tracks automatically. Right now, HerpMonitor
+of device than the smart plugs Husbandry Tracker already tracks automatically. Right now, Husbandry Tracker
 **cannot read this sensor's data on its own** — you'll still get full use of it in the Tuya Smart
-app, but inside HerpMonitor it has to be logged by hand. See [What HerpMonitor can and can't do with
-it](#what-herpmonitor-can-and-cant-do-with-it) below for exactly what that means day to day.
+app, but inside Husbandry Tracker it has to be logged by hand. See [What Husbandry Tracker can and can't do with
+it](#what-husbandry-tracker-can-and-cant-do-with-it) below for exactly what that means day to day.
 
 **Contents**
 1. [What You Need](#1-what-you-need)
 2. [Add Tuya Gateway Device (Once, Shared by All Your Zigbee Sensors)](#2-add-tuya-gateway-device-once-shared-by-all-your-zigbee-sensors)
 3. [Add Tuya Device (the Sensor Itself)](#3-add-tuya-device-the-sensor-itself)
-4. [Adding It to HerpMonitor](#4-adding-it-to-herpmonitor)
+4. [Adding It to Husbandry Tracker](#4-adding-it-to-husbandry-tracker)
 5. [Using It Day to Day](#5-using-it-day-to-day)
-6. [What HerpMonitor Can and Can't Do With It](#what-herpmonitor-can-and-cant-do-with-it)
+6. [What Husbandry Tracker Can and Can't Do With It](#what-husbandry-tracker-can-and-cant-do-with-it)
 
 ---
 
@@ -115,19 +115,19 @@ app — you only ever do this once, not per sensor.
 3. Follow the on-screen steps to finish pairing — the app finds the nearby gateway on its own and
    links the sensor to it; you don't pick the gateway by hand.
 4. Give it a name in the app (e.g. "Ball Python Tub — Tuya Probe") — this is just for your own
-   reference in Tuya Smart, separate from whatever label you give it in HerpMonitor later.
+   reference in Tuya Smart, separate from whatever label you give it in Husbandry Tracker later.
 5. Confirm you can see live temperature and humidity readings on the sensor's card in the app before
    moving on — if you can't, the pairing didn't fully finish; repeat from step 2.
 
 ---
 
-## 4. Adding It to HerpMonitor
+## 4. Adding It to Husbandry Tracker
 
-Since HerpMonitor can't read this sensor automatically (see below), you add it as a **Manual
+Since Husbandry Tracker can't read this sensor automatically (see below), you add it as a **Manual
 Sensor** — the same kind you'd use for a handheld thermometer or test strip, just one you happen to
 also be able to check remotely in the Tuya Smart app.
 
-1. On HerpMonitor's Admin page, go to the enclosure (or Room) this sensor is actually monitoring.
+1. On Husbandry Tracker's Admin page, go to the enclosure (or Room) this sensor is actually monitoring.
 2. In the **"Add Sensor"** form, set **Tracking Mode** to **Manual**.
 3. Give it a label (e.g. "Tuya probe — water" or "Tuya ambient — tub air", especially useful since
    this device reports two separate readings — see the note below).
@@ -137,7 +137,7 @@ also be able to check remotely in the Tuya Smart app.
 
 **About the two readings (ambient + probe):** this device reports its own ambient temperature/
 humidity *and* a separate temperature from the probe cable — two different physical locations (e.g.
-the air in the room vs. the water in a tank). HerpMonitor's Manual Sensor is one label with one
+the air in the room vs. the water in a tank). Husbandry Tracker's Manual Sensor is one label with one
 target range at a time, so if you want to track both, add it as **two separate Manual Sensors** (one
 labeled for the ambient reading, one for the probe), even though they both come from the same
 physical device.
@@ -146,28 +146,28 @@ physical device.
 
 ## 5. Using It Day to Day
 
-Whenever you check the sensor in the Tuya Smart app, open HerpMonitor's dashboard and use the
+Whenever you check the sensor in the Tuya Smart app, open Husbandry Tracker's dashboard and use the
 **"Log Reading"** form that appears under that Manual Sensor's row — type in what the Tuya app just
 showed you, and click it. There's a date/time box if you're logging a reading from a bit earlier
 rather than right now.
 
 This is the same as any other Manual Sensor — nothing updates by itself, so how current the reading
-is on HerpMonitor's dashboard depends entirely on how often you copy it over.
+is on Husbandry Tracker's dashboard depends entirely on how often you copy it over.
 
 ---
 
-## What HerpMonitor Can and Can't Do With It
+## What Husbandry Tracker Can and Can't Do With It
 
 | | Works today |
 |---|---|
-| Live readings, alerts, "weather function," Alexa | ✅ Yes — entirely inside the Tuya Smart app, independent of HerpMonitor |
-| Automatic readings on HerpMonitor's dashboard | ❌ Not yet — HerpMonitor has no plugin that understands this device's data, only Govee sensors and Gosund/Tuya *plugs* today |
+| Live readings, alerts, "weather function," Alexa | ✅ Yes — entirely inside the Tuya Smart app, independent of Husbandry Tracker |
+| Automatic readings on Husbandry Tracker's dashboard | ❌ Not yet — Husbandry Tracker has no plugin that understands this device's data, only Govee sensors and Gosund/Tuya *plugs* today |
 | Hand-logged readings, target-range coloring, care history alongside this enclosure's other data | ✅ Yes — via Manual Sensor, as above |
 | Send Alert push notifications if a reading goes out of range | ❌ Not yet — Send Alert only watches Smart (automatic) Sensors; a Manual Sensor has nothing automatic to watch |
 
 Automatic support for this device is a known, tracked gap — it's on the list, not forgotten — but
-worth being upfront that it's a harder one than it might sound. The Gosund plugs HerpMonitor already
-reads automatically talk directly over your home network, so HerpMonitor's software can just ask
+worth being upfront that it's a harder one than it might sound. The Gosund plugs Husbandry Tracker already
+reads automatically talk directly over your home network, so Husbandry Tracker's software can just ask
 them for their status. This sensor doesn't talk to your network at all — everything it reports has
 to pass through your Zigbee gateway first, and gateways generally don't expose that sub-device data
 on the local network the same simple way; getting it usually means going through Tuya's cloud

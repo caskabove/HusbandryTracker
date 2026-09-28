@@ -1,5 +1,5 @@
 """Supervisor — see CONTEXT.md: Supervisor; ADR 0015. A tray-icon process supervisor that starts,
-stops, restarts, and watches the four processes that make up a running HerpMonitor: Website
+stops, restarts, and watches the four processes that make up a running Husbandry Tracker: Website
 (uvicorn), Ingest, and the Govee/Tuya Plugins. Replaces start.bat as the normal way to run this day
 to day.
 
@@ -31,6 +31,11 @@ from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 
+# Run by path (e.g. "pythonw.exe tray\supervisor.py", which is how the Desktop/Startup shortcuts
+# invoke it — see install.py and enable_autostart() below), Python puts this file's own directory
+# on sys.path rather than the repo root, so the top-level app_paths module wouldn't otherwise be
+# importable. Add the repo root explicitly so this works the same run as a script or as -m tray.supervisor.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app_paths import APP_ROOT
 
 REPO_ROOT = APP_ROOT
@@ -42,7 +47,7 @@ DASHBOARD_OPEN_DELAY_SECONDS = 3  # give uvicorn a moment to come up first, same
 
 # Mirrors ingest.py's own DB_PATH/BACKUP_DIR/BACKUP_REQUEST_PATH constants rather than importing
 # them — see the module docstring above on why this process still never imports db.db.
-DB_PATH = REPO_ROOT / "data" / "herpmonitor.db"
+DB_PATH = REPO_ROOT / "data" / "husbandrytracker.db"
 BACKUP_DIR = REPO_ROOT / "data" / "backups"
 BACKUP_REQUEST_PATH = REPO_ROOT / "data" / "backup_requested"
 BACKUP_MENU_LIMIT = 20  # most recent backups shown in the Restore submenu
@@ -58,27 +63,27 @@ IS_FROZEN = getattr(sys, "frozen", False)
 
 # One entry per child process. "args" is what follows VENV_PYTHON on the command line when running
 # from source; "frozen_exe" is that same child's sibling .exe name in the onedir build (see
-# packaging/herpmonitor.spec) when running frozen.
+# packaging/husbandrytracker.spec) when running frozen.
 COMPONENTS = {
     "website": {
         "label": "Website",
         "args": ["-u", "-m", "uvicorn", "web.main:app", "--host", "127.0.0.1", "--port", "22255"],
-        "frozen_exe": "HerpMonitorWeb.exe",
+        "frozen_exe": "HusbandryTrackerWeb.exe",
     },
     "ingest": {
         "label": "Ingest",
         "args": ["-u", "ingest/ingest.py"],
-        "frozen_exe": "HerpMonitorIngest.exe",
+        "frozen_exe": "HusbandryTrackerIngest.exe",
     },
     "govee": {
         "label": "Sensor Plugin (Govee)",
         "args": ["-u", "plugins/govee_ble/plugin.py"],
-        "frozen_exe": "HerpMonitorGovee.exe",
+        "frozen_exe": "HusbandryTrackerGovee.exe",
     },
     "tuya": {
         "label": "Plug Plugin (Tuya)",
         "args": ["-u", "plugins/tuya_lan/plugin.py"],
-        "frozen_exe": "HerpMonitorTuya.exe",
+        "frozen_exe": "HusbandryTrackerTuya.exe",
     },
 }
 
@@ -245,7 +250,7 @@ def _startup_dir() -> Path:
 
 
 def _startup_shortcut_path() -> Path:
-    return _startup_dir() / "HerpMonitor.lnk"
+    return _startup_dir() / "HusbandryTracker.lnk"
 
 
 def is_autostart_enabled() -> bool:
@@ -273,7 +278,7 @@ $s = $ws.CreateShortcut("{shortcut}")
 $s.TargetPath = "{target}"
 $s.Arguments = '{args}'
 $s.WorkingDirectory = "{REPO_ROOT}"
-$s.Description = "HerpMonitor Supervisor"
+$s.Description = "Husbandry Tracker Supervisor"
 $s.Save()
 '''
     _run_powershell(script)
@@ -339,7 +344,7 @@ def _backup_now(icon=None, item=None) -> None:
 def _list_backups() -> list[Path]:
     if not BACKUP_DIR.is_dir():
         return []
-    return sorted(BACKUP_DIR.glob("herpmonitor-*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return sorted(BACKUP_DIR.glob("husbandrytracker-*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 _BACKUP_REASON_LABELS = {
@@ -350,7 +355,7 @@ _BACKUP_REASON_LABELS = {
 
 
 def _backup_label(path: Path) -> str:
-    parts = path.stem.split("-")  # ["herpmonitor", "YYYYMMDD", "HHMMSS", reason]
+    parts = path.stem.split("-")  # ["husbandrytracker", "YYYYMMDD", "HHMMSS", reason]
     try:
         when = datetime.strptime(parts[1] + parts[2], "%Y%m%d%H%M%S")
     except (IndexError, ValueError):
@@ -379,16 +384,16 @@ def _restore_backup(path: Path) -> None:
     file underneath it gets replaced, and only the Supervisor can guarantee that."""
     if not _confirm(
         f"Restore the database from the backup made {_backup_label(path)}?\n\n"
-        "This stops HerpMonitor, replaces the current database with this backup, and restarts it. "
+        "This stops Husbandry Tracker, replaces the current database with this backup, and restarts it. "
         "Your current data is saved as a new backup first, so this can be undone.",
-        "Restore HerpMonitor Backup",
+        "Restore Husbandry Tracker Backup",
     ):
         return
     stop_all()
     try:
         if DB_PATH.exists():
             BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-            safety_copy = BACKUP_DIR / f"{datetime.now().strftime('herpmonitor-%Y%m%d-%H%M%S')}-prerestore.db"
+            safety_copy = BACKUP_DIR / f"{datetime.now().strftime('husbandrytracker-%Y%m%d-%H%M%S')}-prerestore.db"
             shutil.copy2(DB_PATH, safety_copy)
         shutil.copy2(path, DB_PATH)
     finally:
@@ -496,7 +501,7 @@ def main() -> None:
     start_all()
     threading.Thread(target=_delayed_open_dashboard, daemon=True).start()
 
-    icon = pystray.Icon("herpmonitor", make_icon_image(STATUS_COLORS["starting"]), "HerpMonitor", menu=build_menu())
+    icon = pystray.Icon("husbandrytracker", make_icon_image(STATUS_COLORS["starting"]), "Husbandry Tracker", menu=build_menu())
     threading.Thread(target=_ui_refresh_loop, args=(icon,), daemon=True).start()
     icon.run()
 

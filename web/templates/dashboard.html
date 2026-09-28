@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HerpMonitor</title>
+    <title>Husbandry Tracker</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
-        <h1>HerpMonitor Dashboard</h1>
+        <h1>Husbandry Tracker Dashboard</h1>
         <nav>
             <a href="/admin">Admin</a>
             <a href="/guide">Guide</a>
@@ -25,19 +25,25 @@
        Sensor's Reading (used together with colored=false — see CONTEXT.md: Fallback Sensor —
        since a Room's Target Range reflects human comfort, not what's healthy for a specific
        animal), so nothing gets colored against a Room Sensor's own targets by accident. #}
-    {% macro reading_row(label, reading, sensor, colored, badge_text='') %}
+    {% macro reading_row(label, reading, sensor, colored, badge_text='', only_metric=none) %}
         {# Three aligned columns — Label, Type (the M/A tracking-mode badge), Status (every metric
            pill plus the "as of"/"no data yet" tail) — see .reading-row-grid in style.css. Columns 1
            and 2 are fixed-width so every Reading row in a card lines up regardless of label length
            or whether this particular Sensor has a badge; column 3 scrolls horizontally on its own
-           if a Sensor tracks enough metrics to overflow the card. #}
+           if a Sensor tracks enough metrics to overflow the card.
+
+           only_metric restricts the loop to one TARGET_RANGE_METRICS key — used to display a Govee
+           Sensor's single Reading row as two separate rows (Temp, Humidity), one physical Sensor
+           still, purely a display split (see the enclosure_panel/room-header callers below). #}
         <div class="reading-row reading-row-grid">
             <span class="reading-label">{{ label }}</span>
             <span class="reading-type">{% if badge_text %}<span class="badge badge-muted badge-tracking">{{ badge_text }}</span>{% endif %}</span>
             <span class="reading-status">
-                {% for metric in TARGET_RANGE_METRICS %}
+                {% set ns = namespace(shown=false) %}
+                {% for metric in TARGET_RANGE_METRICS if only_metric is none or metric.key == only_metric %}
                     {% set value = reading[metric.reading_column] if reading else none %}
                     {% if value is not none %}
+                        {% set ns.shown = true %}
                         {% set min_v = sensor[metric.min_column] if sensor else none %}
                         {% set max_v = sensor[metric.max_column] if sensor else none %}
                         {% set status = target_range_status(value, min_v, max_v) if colored else none %}
@@ -49,7 +55,7 @@
                         </span>
                     {% endif %}
                 {% endfor %}
-                {% if reading %}
+                {% if ns.shown %}
                 <span class="reading-meta">as of {{ reading.recorded_at }}</span>
                 {% else %}
                 <span class="pill status-unknown">no data yet</span>
@@ -136,11 +142,25 @@
                     <div class="collapsible-section-body">
                     {% if enclosure.sensors %}
                         {% for sensor in enclosure.sensors %}
-                            {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "M" if sensor.tracking_mode == "manual" else "A") }}
+                            {# A Govee Sensor is one physical device tracking both Temp and Humidity
+                               in a single Reading row — displayed here as two separate rows for
+                               readability, purely a display split (see CONTEXT.md: Reading; still
+                               one Sensor to create/edit/delete). #}
+                            {% if sensor.plugin == "govee_ble" %}
+                                {{ reading_row(sensor.label ~ " Temp", sensor.latest_reading, sensor, true, "A", only_metric="temperature") }}
+                                {{ reading_row(sensor.label ~ " Humidity", sensor.latest_reading, sensor, true, "A", only_metric="humidity") }}
+                            {% else %}
+                                {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "M" if sensor.tracking_mode == "manual" else "A") }}
+                            {% endif %}
                             {{ reading_log_form(sensor) }}
                         {% endfor %}
                     {% elif enclosure.fallback_sensor %}
-                        {{ reading_row(enclosure.fallback_sensor.label, enclosure.fallback_reading, none, false, "room") }}
+                        {% if enclosure.fallback_sensor.plugin == "govee_ble" %}
+                            {{ reading_row(enclosure.fallback_sensor.label ~ " Temp", enclosure.fallback_reading, none, false, "room", only_metric="temperature") }}
+                            {{ reading_row(enclosure.fallback_sensor.label ~ " Humidity", enclosure.fallback_reading, none, false, "room", only_metric="humidity") }}
+                        {% else %}
+                            {{ reading_row(enclosure.fallback_sensor.label, enclosure.fallback_reading, none, false, "room") }}
+                        {% endif %}
                     {% elif enclosure.sensor_count %}
                         <p class="empty">No sensors selected to display &mdash; pick some on the Enclosure page</p>
                     {% else %}
@@ -271,12 +291,27 @@
                                 {% set rs = sensor.latest_reading %}
                                 {% set ts = target_range_status(rs.temperature_c if rs else None, sensor.target_temp_min_c, sensor.target_temp_max_c) %}
                                 {% set hs = target_range_status(rs.humidity_pct if rs else None, sensor.target_humidity_min, sensor.target_humidity_max) %}
-                                <span class="room-ambient-item">
-                                    {{ sensor.label }}:
-                                    {% if rs and rs.temperature_c is not none %}<span class="pill status-{{ ts.value }}">{{ "%.1f"|format(rs.temperature_c|c_to_f) }}&deg;F</span>{% endif %}
-                                    {% if rs and rs.humidity_pct is not none %}<span class="pill status-{{ hs.value }}">{{ "%.0f"|format(rs.humidity_pct) }}%</span>{% endif %}
-                                    {% if not rs %}<span class="pill status-unknown">no data yet</span>{% endif %}
-                                </span>
+                                {# A Govee Sensor is one physical device tracking both Temp and
+                                   Humidity in a single Reading — shown here as two separate items
+                                   for readability, purely a display split (see CONTEXT.md: Reading;
+                                   still one Sensor to create/edit/delete). #}
+                                {% if sensor.plugin == "govee_ble" %}
+                                    <span class="room-ambient-item">
+                                        {{ sensor.label }} Temp:
+                                        {% if rs and rs.temperature_c is not none %}<span class="pill status-{{ ts.value }}">{{ "%.1f"|format(rs.temperature_c|c_to_f) }}&deg;F</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                    </span>
+                                    <span class="room-ambient-item">
+                                        {{ sensor.label }} Humidity:
+                                        {% if rs and rs.humidity_pct is not none %}<span class="pill status-{{ hs.value }}">{{ "%.0f"|format(rs.humidity_pct) }}%</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                    </span>
+                                {% else %}
+                                    <span class="room-ambient-item">
+                                        {{ sensor.label }}:
+                                        {% if rs and rs.temperature_c is not none %}<span class="pill status-{{ ts.value }}">{{ "%.1f"|format(rs.temperature_c|c_to_f) }}&deg;F</span>{% endif %}
+                                        {% if rs and rs.humidity_pct is not none %}<span class="pill status-{{ hs.value }}">{{ "%.0f"|format(rs.humidity_pct) }}%</span>{% endif %}
+                                        {% if not rs %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                    </span>
+                                {% endif %}
                             {% endfor %}
                         {% elif room.sensor_count %}
                             <span class="empty">No ambient sensor selected to display</span>

@@ -399,12 +399,37 @@ def _next_show_on_dashboard(conn, parent_column: str, parent_id: int) -> int:
     return 1 if shown_count < 3 else 0
 
 
+def _check_sensor_external_id_available(conn, plugin: str | None, external_id: str | None,
+                                         exclude_sensor_id: int | None = None) -> None:
+    """Raises a friendly ValueError instead of letting sensor's UNIQUE(plugin, external_id)
+    constraint fail as a raw sqlite3.IntegrityError (500 Internal Server Error) — same MAC address
+    can't back two Sensor rows at once (see CONTEXT.md: External ID). The common real trigger: a
+    Govee Sensor's Temp and Humidity display as two separate rows (see reading_row's only_metric in
+    dashboard.html), which can look like they need two Sensor records — they don't, one Sensor row
+    with this MAC already reports both."""
+    if plugin is None or external_id is None:
+        return
+    query = "SELECT id, label FROM sensor WHERE plugin = ? AND external_id = ?"
+    params: tuple = (plugin, external_id)
+    if exclude_sensor_id is not None:
+        query += " AND id != ?"
+        params += (exclude_sensor_id,)
+    existing = conn.execute(query, params).fetchone()
+    if existing is not None:
+        raise ValueError(
+            f"That MAC address is already registered as Sensor {existing['label']!r} (id {existing['id']}) — "
+            f"a Smart Sensor's Temp and Humidity show as two rows on the Dashboard automatically, no need "
+            f"for a second Sensor. Edit that existing Sensor instead of creating a new one for it."
+        )
+
+
 def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
                    target_ranges: TargetRanges) -> None:
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
     with get_connection() as conn:
+        _check_sensor_external_id_available(conn, plugin, external_id)
         show_on_dashboard = _next_show_on_dashboard(conn, "enclosure_id", enclosure_id)
         conn.execute(
             f"""INSERT INTO sensor (enclosure_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
@@ -422,7 +447,18 @@ def delete_sensor(sensor_id: int) -> None:
 def get_sensor(sensor_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM sensor WHERE id = ?", (sensor_id,)).fetchone()
-        return _decode_sensor(dict(row)) if row else None
+        if row is None:
+            return None
+        sensor = _decode_sensor(dict(row))
+        # For the Edit Sensor page's own "test this Sensor" Refresh button (see web/main.py's
+        # admin_refresh_sensor()) — SELECT * since a Reading can carry any Target Range metric, not
+        # just temp/humidity (see CONTEXT.md: Reading; schemas/enclosure_types.py's TARGET_RANGE_METRICS).
+        latest = conn.execute(
+            "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
+            (sensor_id,),
+        ).fetchone()
+        sensor["latest_reading"] = dict(latest) if latest else None
+        return sensor
 
 
 def set_sensor_dashboard_visibility(sensor_id: int, show_on_dashboard: bool) -> None:
@@ -446,6 +482,7 @@ def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: 
     columns, values = _target_range_sql(target_ranges)
     set_clause = ", ".join(f"{c} = ?" for c in columns)
     with get_connection() as conn:
+        _check_sensor_external_id_available(conn, plugin, external_id, exclude_sensor_id=sensor_id)
         conn.execute(
             f"""UPDATE sensor SET enclosure_id = ?, label = ?, tracking_mode = ?, plugin = ?, external_id = ?,
                                    auto_update_enabled = ?, {set_clause} WHERE id = ?""",
@@ -463,6 +500,7 @@ def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     with get_connection() as conn:
+        _check_sensor_external_id_available(conn, plugin, external_id)
         show_on_dashboard = _next_show_on_dashboard(conn, "room_id", room_id)
         conn.execute(
             """INSERT INTO sensor (room_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
@@ -480,6 +518,7 @@ def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: 
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     with get_connection() as conn:
+        _check_sensor_external_id_available(conn, plugin, external_id, exclude_sensor_id=sensor_id)
         conn.execute(
             """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, plugin = ?, external_id = ?,
                                   auto_update_enabled = ?,
@@ -779,6 +818,31 @@ def list_plugs() -> list[dict]:
             plug["detected_off_time"] = detected["off_time"]
             plug["last_command"] = _command_status(conn, plug)
         return plugs
+
+
+def list_sensors() -> list[dict]:
+    """For the top-level Sensors admin list — each row's parent_kind/parent_label describes where
+    it lives, Enclosure or Room (see CONTEXT.md: Sensor); a Sensor always belongs to exactly one,
+    never both or neither (db/schema.sql's own CHECK)."""
+    with get_connection() as conn:
+        sensors = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor ORDER BY label")]
+        enclosure_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM enclosure")}
+        room_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM room")}
+        for sensor in sensors:
+            if sensor["enclosure_id"]:
+                sensor["parent_kind"] = "enclosure"
+                sensor["parent_label"] = enclosure_names.get(sensor["enclosure_id"], "?")
+            else:
+                sensor["parent_kind"] = "room"
+                sensor["parent_label"] = room_names.get(sensor["room_id"], "?")
+            # SELECT * — a Reading can carry any Target Range metric, not just temp/humidity (see
+            # CONTEXT.md: Reading; schemas/enclosure_types.py's TARGET_RANGE_METRICS).
+            latest = conn.execute(
+                "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
+                (sensor["id"],),
+            ).fetchone()
+            sensor["latest_reading"] = dict(latest) if latest else None
+        return sensors
 
 
 def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, switch_dps_key: str,

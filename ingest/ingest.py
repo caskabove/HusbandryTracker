@@ -44,7 +44,7 @@ DEFAULT_SCAN_INTERVAL_SECONDS = 5
 BACKUP_DIR = APP_ROOT / "data" / "backups"
 BACKUP_REQUEST_PATH = APP_ROOT / "data" / "backup_requested"
 BACKUP_RETENTION_DAYS = 14
-_BACKUP_STEM_FMT = "herpmonitor-%Y%m%d-%H%M%S"
+_BACKUP_STEM_FMT = "husbandrytracker-%Y%m%d-%H%M%S"
 
 
 def _load_validator() -> jsonschema.Draft202012Validator:
@@ -237,7 +237,7 @@ def _perform_backup(reason: str) -> None:
 
 def _prune_old_backups() -> None:
     cutoff = time.time() - BACKUP_RETENTION_DAYS * 86400
-    for path in BACKUP_DIR.glob("herpmonitor-*.db"):
+    for path in BACKUP_DIR.glob("husbandrytracker-*.db"):
         if path.stat().st_mtime < cutoff:
             path.unlink(missing_ok=True)
 
@@ -250,7 +250,7 @@ def _run_backup_check() -> None:
     if manual_request:
         BACKUP_REQUEST_PATH.unlink(missing_ok=True)
 
-    today_prefix = f"herpmonitor-{datetime.now():%Y%m%d}-"
+    today_prefix = f"husbandrytracker-{datetime.now():%Y%m%d}-"
     has_todays_backup = BACKUP_DIR.is_dir() and any(
         p.name.startswith(today_prefix) for p in BACKUP_DIR.glob("*.db")
     )
