@@ -15,7 +15,7 @@ from plugins.govee_ble import identity as govee_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
 from web.outbox import write_command
-from web.queries import CARE_EVENT_KINDS, _normalize_datetime_local, days_since
+from web.queries import CARE_EVENT_KINDS, _latest_reading, _normalize_datetime_local, days_since
 
 
 def _decode_sensor(row_dict: dict) -> dict:
@@ -105,13 +105,8 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         # shows for this Enclosure's Sensors, and Room Sensors already get on their own Admin page
         # (get_room() below); this page just didn't fetch it before.
         for sensor in enclosure["sensors"]:
-            # SELECT * — a Reading can carry any Target Range metric, not just temp/humidity (see
-            # CONTEXT.md: Reading; schemas/enclosure_types.py's TARGET_RANGE_METRICS).
-            latest = conn.execute(
-                "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
-                (sensor["id"],),
-            ).fetchone()
-            sensor["latest_reading"] = dict(latest) if latest else None
+            # Each metric's own newest value — see web/queries.py's _latest_reading (CONTEXT.md: Reading).
+            sensor["latest_reading"] = _latest_reading(conn, sensor)
         enclosure["plugs"] = [_decode_plug(dict(r)) for r in conn.execute(
             """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
                WHERE pe.enclosure_id = ? ORDER BY p.label""",
@@ -451,13 +446,8 @@ def get_sensor(sensor_id: int) -> dict | None:
             return None
         sensor = _decode_sensor(dict(row))
         # For the Edit Sensor page's own "test this Sensor" Refresh button (see web/main.py's
-        # admin_refresh_sensor()) — SELECT * since a Reading can carry any Target Range metric, not
-        # just temp/humidity (see CONTEXT.md: Reading; schemas/enclosure_types.py's TARGET_RANGE_METRICS).
-        latest = conn.execute(
-            "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
-            (sensor_id,),
-        ).fetchone()
-        sensor["latest_reading"] = dict(latest) if latest else None
+        # admin_refresh_sensor()) — see web/queries.py's _latest_reading (CONTEXT.md: Reading).
+        sensor["latest_reading"] = _latest_reading(conn, sensor)
         return sensor
 
 
@@ -835,13 +825,8 @@ def list_sensors() -> list[dict]:
             else:
                 sensor["parent_kind"] = "room"
                 sensor["parent_label"] = room_names.get(sensor["room_id"], "?")
-            # SELECT * — a Reading can carry any Target Range metric, not just temp/humidity (see
-            # CONTEXT.md: Reading; schemas/enclosure_types.py's TARGET_RANGE_METRICS).
-            latest = conn.execute(
-                "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
-                (sensor["id"],),
-            ).fetchone()
-            sensor["latest_reading"] = dict(latest) if latest else None
+            # Each metric's own newest value — see web/queries.py's _latest_reading (CONTEXT.md: Reading).
+            sensor["latest_reading"] = _latest_reading(conn, sensor)
         return sensors
 
 
@@ -1154,14 +1139,9 @@ def get_room(room_id: int) -> dict | None:
         room = dict(row)
         room["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE room_id = ? ORDER BY label", (room_id,))]
         for sensor in room["sensors"]:
-            # SELECT * — see get_enclosure()'s identical comment above; a Room Sensor only ever
-            # tracks temp/humidity in practice (create_room_sensor() never writes the others), but
-            # reading this generically keeps the two Admin pages' fetch logic uniform.
-            latest = conn.execute(
-                "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
-                (sensor["id"],),
-            ).fetchone()
-            sensor["latest_reading"] = dict(latest) if latest else None
+            # Same helper as get_enclosure() above — a Room Sensor only ever tracks temp/humidity in
+            # practice (create_room_sensor() never writes the others), so this stays uniform with it.
+            sensor["latest_reading"] = _latest_reading(conn, sensor)
         room["plugs"] = [_decode_plug(dict(r)) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
         for plug in room["plugs"]:
             # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,

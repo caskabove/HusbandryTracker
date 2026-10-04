@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
+from schemas import enclosure_types as et
 
 CARE_EVENT_KINDS = ["feeding", "watering", "spot_clean", "deep_clean"]
 
@@ -32,15 +33,36 @@ def _normalize_datetime_local(value: str | None) -> str | None:
     return value.replace("T", " ") + ":00"
 
 
-def _latest_reading(conn, sensor_id: int) -> dict | None:
-    # SELECT * rather than naming columns: a Reading can carry any of the Target Range metrics
-    # (see CONTEXT.md: Reading; schemas/enclosure_types.py's TARGET_RANGE_METRICS), and the
-    # Dashboard's reading_row() macro looks up whichever ones are populated by column name.
-    row = conn.execute(
+def _latest_reading(conn, sensor: dict) -> dict | None:
+    """The Sensor's current Reading — each metric's own newest value, not the newest row's. A hand-
+    logged Reading only fills in the metrics entered in it, so a later temperature-only log used to
+    blank out this Sensor's SG/salinity/etc. pills until the next SG-bearing log. recorded_at stays
+    the newest row's time (the "as of" the page shows).
+
+    Only metrics this Sensor can actually show get their own lookup: temperature/humidity (the
+    dashboard always checks those) plus any metric with a Target Range set. Looking up every column
+    would scan a Sensor's entire history for each metric it never reports. Every metric column is
+    still present in the returned dict (None where skipped), since the dashboard's reading_row()
+    reads them by name."""
+    newest = conn.execute(
         "SELECT * FROM sensor_reading WHERE sensor_id = ? ORDER BY recorded_at DESC LIMIT 1",
-        (sensor_id,),
+        (sensor["id"],),
     ).fetchone()
-    return dict(row) if row else None
+    if newest is None:
+        return None
+    reading = dict(newest)
+    for metric in et.TARGET_RANGE_METRICS:
+        column = metric.reading_column
+        tracked = sensor.get(metric.min_column) is not None or sensor.get(metric.max_column) is not None
+        if not (tracked or column in ("temperature_c", "humidity_pct")):
+            continue
+        row = conn.execute(
+            f"SELECT {column} FROM sensor_reading WHERE sensor_id = ? AND {column} IS NOT NULL "
+            f"ORDER BY recorded_at DESC LIMIT 1",
+            (sensor["id"],),
+        ).fetchone()
+        reading[column] = row[column] if row else None
+    return reading
 
 
 def _current_plug_status(conn, plug: dict) -> dict:
@@ -98,7 +120,7 @@ def get_dashboard_data() -> dict:
             # apart from "registered but none picked to show here" (see CONTEXT.md: Sensor).
             sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ?", (eid,))]
             for sensor in sensors:
-                sensor["latest_reading"] = _latest_reading(conn, sensor["id"])
+                sensor["latest_reading"] = _latest_reading(conn, sensor)
             enclosure["sensor_count"] = len(sensors)
             enclosure["sensors"] = [s for s in sensors if s["show_on_dashboard"]]
 
@@ -110,7 +132,7 @@ def get_dashboard_data() -> dict:
                 fb_row = conn.execute("SELECT * FROM sensor WHERE id = ?", (enclosure["fallback_sensor_id"],)).fetchone()
                 if fb_row:
                     enclosure["fallback_sensor"] = dict(fb_row)
-                    enclosure["fallback_reading"] = _latest_reading(conn, fb_row["id"])
+                    enclosure["fallback_reading"] = _latest_reading(conn, dict(fb_row))
 
             # Schedules aren't rendered on the dashboard (glance-only — see web/main.py's module
             # docstring); that stays Admin-only, fetched there via web/admin_queries.py. A Plug's
@@ -141,7 +163,7 @@ def get_dashboard_data() -> dict:
         for room in rooms:
             room_sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE room_id = ?", (room["id"],))]
             for sensor in room_sensors:
-                sensor["latest_reading"] = _latest_reading(conn, sensor["id"])
+                sensor["latest_reading"] = _latest_reading(conn, sensor)
             room["sensor_count"] = len(room_sensors)  # unfiltered — see the Enclosure loop above
             room["sensors"] = [s for s in room_sensors if s["show_on_dashboard"]]
 
