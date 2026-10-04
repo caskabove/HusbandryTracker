@@ -228,7 +228,7 @@
         </section>
         {% endif %}
 
-        <section class="admin-card">
+        <section class="admin-card" id="sensors">
             <h2>Sensors</h2>
             <table class="admin-table">
                 <thead><tr><th>Label</th><th>Tracking</th><th>MAC</th><th>Reading</th><th>Target Range</th><th>On Dashboard</th><th></th></tr></thead>
@@ -260,6 +260,31 @@
                                 {% endif %}
                             {% endfor %}
                             {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                            {% if s.tracking_mode == "manual" %}
+                            {# Hand-logged Reading (see CONTEXT.md: Reading) — same form as the dashboard's
+                               Log button, posted back to this page. One input per Target Range metric this
+                               Sensor actually tracks; temperature is entered in Fahrenheit and converted
+                               server-side (web/admin.py's admin_create_reading). #}
+                            <details class="reading-form reading-log" ontoggle="onReadingLogToggle(this)">
+                                <summary>Log {{ s.label }}</summary>
+                                <form method="post" action="/admin/sensors/{{ s.id }}/readings" class="log-form">
+                                    <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
+                                    {% for metric in TARGET_RANGE_METRICS %}
+                                        {% if s[metric.min_column] is not none or s[metric.max_column] is not none %}
+                                            {% if metric.key == "temperature" %}
+                                            <input type="number" step="0.1" name="temperature_f" placeholder="&deg;F">
+                                            {% elif metric.key == "humidity" %}
+                                            <input type="number" step="1" name="humidity_pct" placeholder="%RH">
+                                            {% else %}
+                                            <input type="number" step="{{ metric.step }}" name="{{ metric.reading_column }}" placeholder="{{ metric.label }}{% if metric.unit %} ({{ metric.unit }}){% endif %}">
+                                            {% endif %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    <input type="datetime-local" name="recorded_at" title="When it was taken">
+                                    <button type="submit">Save</button>
+                                </form>
+                            </details>
+                            {% endif %}
                         </td>
                         <td>
                             {# Precision per metric.decimals (schemas/enclosure_types.py) — whole

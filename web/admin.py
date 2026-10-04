@@ -22,7 +22,7 @@ from schemas import enclosure_types as et
 from web import admin_queries as q
 from web.govee_refresh import refresh_sensors
 from web.plug_probe import probe_plug
-from web.queries import CARE_EVENT_KINDS, log_care_event
+from web.queries import CARE_EVENT_KINDS, log_care_event, log_reading
 from web.status import care_interval_status, schedule_drift_status, target_range_status
 
 _WEB_DIR = APP_ROOT / "web"
@@ -381,6 +381,52 @@ def admin_set_sensor_dashboard_visibility(
 ):
     q.set_sensor_dashboard_visibility(sensor_id, show_on_dashboard)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/sensors/{sensor_id}/readings")
+def admin_create_reading(
+    sensor_id: int,
+    enclosure_id: int = Form(...),
+    temperature_f: float | None = Form(default=None),
+    humidity_pct: float | None = Form(default=None),
+    uvb_index: float | None = Form(default=None),
+    ph: float | None = Form(default=None),
+    ammonia_ppm: float | None = Form(default=None),
+    nitrite_ppm: float | None = Form(default=None),
+    nitrate_ppm: float | None = Form(default=None),
+    specific_gravity: float | None = Form(default=None),
+    salinity_ppm: float | None = Form(default=None),
+    alkalinity_dkh: float | None = Form(default=None),
+    calcium_ppm: float | None = Form(default=None),
+    magnesium_ppm: float | None = Form(default=None),
+    phosphate_ppm: float | None = Form(default=None),
+    recorded_at: str = Form(default=""),
+):
+    # Same hand-logged Reading as the dashboard's Log form (web/main.py's create_reading) — posted
+    # from the Enclosure's own Sensors section instead, so it lands back on that page. Field names and
+    # the Fahrenheit->Celsius conversion match main.py exactly; see schemas/enclosure_types.py.
+    values = {
+        "temperature_c": _f_to_c(temperature_f),
+        "humidity_pct": humidity_pct,
+        "uvb_index": uvb_index,
+        "ph": ph,
+        "ammonia_ppm": ammonia_ppm,
+        "nitrite_ppm": nitrite_ppm,
+        "nitrate_ppm": nitrate_ppm,
+        "specific_gravity": specific_gravity,
+        "salinity_ppm": salinity_ppm,
+        "alkalinity_dkh": alkalinity_dkh,
+        "calcium_ppm": calcium_ppm,
+        "magnesium_ppm": magnesium_ppm,
+        "phosphate_ppm": phosphate_ppm,
+    }
+    try:
+        log_reading(sensor_id, values, recorded_at)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}#sensors", status_code=303
+        )
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#sensors", status_code=303)
 
 
 async def _refresh_one_sensor(sensor_id: int) -> str | None:
