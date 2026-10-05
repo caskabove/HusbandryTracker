@@ -41,18 +41,39 @@ def target_range_status(value: float | None, min_value: float | None, max_value:
     return Status.GREEN
 
 
+SCHEDULE_DRIFT_RED_MINUTES = 60  # drift beyond this is red; between the threshold and this is yellow
+
+
 def schedule_drift_status(target_time: str | None, detected_time: str | None, threshold_minutes: int) -> Status:
     """Timer Warning (see CONTEXT.md: Target Schedule, Detected Schedule, Timer Warning) — compares
     a Plug's Target Schedule against its Detected Schedule for one of its two times (on or off,
     called separately for each). Both "HH:MM" strings; wraparound-aware (23:50 vs 00:05 is a
-    15-minute gap, not a 23-hour one) since a schedule can straddle midnight."""
+    15-minute gap, not a 23-hour one) since a schedule can straddle midnight.
+
+    Green under threshold_minutes, yellow from threshold_minutes up to SCHEDULE_DRIFT_RED_MINUTES,
+    red beyond that."""
     if target_time is None or detected_time is None:
         return Status.UNKNOWN  # nothing to compare yet — not a violation
     target_minutes = int(target_time[:2]) * 60 + int(target_time[3:5])
     detected_minutes = int(detected_time[:2]) * 60 + int(detected_time[3:5])
     diff = abs(target_minutes - detected_minutes)
     diff = min(diff, 1440 - diff)
-    return Status.RED if diff > threshold_minutes else Status.GREEN
+    if diff > SCHEDULE_DRIFT_RED_MINUTES:
+        return Status.RED
+    if diff >= threshold_minutes:
+        return Status.YELLOW
+    return Status.GREEN
+
+
+def acknowledged_drift_status(target_time: str | None, detected_time: str | None,
+                              acknowledged_time: str | None, threshold_minutes: int) -> Status:
+    """schedule_drift_status() with the user's cleared warning applied (see CONTEXT.md: Timer
+    Warning). A drifting detected time the user already cleared — yellow or red — reads UNKNOWN —
+    not flagged, but not verified either — until the Detected Schedule moves to a different time."""
+    status = schedule_drift_status(target_time, detected_time, threshold_minutes)
+    if status in (Status.YELLOW, Status.RED) and detected_time == acknowledged_time:
+        return Status.UNKNOWN
+    return status
 
 
 def care_interval_status(days_since_last: int | None, interval_days: int) -> Status:

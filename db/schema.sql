@@ -262,6 +262,12 @@ CREATE TABLE IF NOT EXISTS plug (
     -- split as this table's other cross-column Plug rules: enforced in web/admin_queries.py, not
     -- a CHECK here.
     always_on           INTEGER NOT NULL DEFAULT 0,
+    -- Timer Warning acknowledgement (see CONTEXT.md: Timer Warning) — the Detected Schedule time the
+    -- user cleared the warning against, per on/off time. NULL = never cleared. update_plug() resets
+    -- both to NULL whenever the Target Schedule changes, since a cleared warning only means
+    -- something against the target it was cleared under.
+    timer_ack_on_time   TEXT,
+    timer_ack_off_time  TEXT,
     controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'thermostat', 'hydrostat')),  -- see CONTEXT.md: Controller Kind, ADR 0008 (supersedes ADR 0007's is_thermostat_controlled)
     target_temp_c       REAL,                           -- required together with controller_kind = 'thermostat'; enforced in web/admin_queries.py, not here
     target_humidity_pct REAL,                           -- required together with controller_kind = 'hydrostat'; enforced in web/admin_queries.py, not here

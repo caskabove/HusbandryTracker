@@ -23,7 +23,7 @@ from web import admin_queries as q
 from web.govee_refresh import refresh_sensors
 from web.plug_probe import probe_plug
 from web.queries import CARE_EVENT_KINDS, log_care_event, log_reading
-from web.status import care_interval_status, schedule_drift_status, target_range_status
+from web.status import acknowledged_drift_status, care_interval_status, schedule_drift_status, target_range_status
 
 _WEB_DIR = APP_ROOT / "web"
 router = APIRouter(prefix="/admin")
@@ -31,6 +31,7 @@ templates = Jinja2Templates(directory=_WEB_DIR / "templates")
 templates.env.globals["care_interval_status"] = care_interval_status
 templates.env.globals["target_range_status"] = target_range_status
 templates.env.globals["schedule_drift_status"] = schedule_drift_status
+templates.env.globals["acknowledged_drift_status"] = acknowledged_drift_status
 templates.env.globals["ENCLOSURE_TYPES"] = et.ENCLOSURE_TYPES
 templates.env.globals["ENCLOSURE_TYPE_LABELS"] = et.ENCLOSURE_TYPE_LABELS
 templates.env.globals["target_range_metrics_for"] = et.target_range_metrics_for
@@ -53,6 +54,31 @@ def _c_to_f(celsius: float | None) -> float | None:
 
 
 templates.env.filters["c_to_f"] = _c_to_f
+
+
+def _clock_12h(hhmm: str | None) -> str | None:
+    """Shows a stored 24-hour "HH:MM" time as "8:00 AM" for the Schedules pills. Anything that isn't
+    a parseable time (None, empty, a stray value) is returned unchanged so the template can still
+    fall back to its "—" placeholder."""
+    try:
+        when = datetime.strptime(hhmm, "%H:%M")
+    except (TypeError, ValueError):
+        return hhmm
+    return f"{when.hour % 12 or 12}:{when.minute:02d} {'AM' if when.hour < 12 else 'PM'}"
+
+
+templates.env.filters["clock_12h"] = _clock_12h
+
+
+def _utc_stamp_as_clock(recorded_at: str | None) -> str | None:
+    """A UTC "YYYY-MM-DD HH:MM:SS" stamp (command requests, plug readings — see plugins/common.py and
+    web/outbox.py) shown as the local 12-hour time, e.g. "6:05 PM"."""
+    if not recorded_at:
+        return recorded_at
+    return _clock_12h(q.utc_clock_to_local(recorded_at))
+
+
+templates.env.filters["utc_clock"] = _utc_stamp_as_clock
 
 
 def _sensor_target_ranges(
@@ -579,6 +605,15 @@ def admin_set_plug_group(plug_id: int, plug_group_id: str = Form("")):
     return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit", status_code=303)
 
 
+@router.post("/plugs/{plug_id}/clear-timer-warning")
+def admin_clear_timer_warning(plug_id: int):
+    """Called from the Timer Warning's "Clear warning" button on the Plug's Edit page (see
+    CONTEXT.md: Timer Warning). Sent as a formaction of that page's own form, so only this route's
+    side effect runs — the rest of the form's fields are ignored here."""
+    q.clear_timer_warning(plug_id)
+    return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit", status_code=303)
+
+
 @router.post("/plugs/{plug_id}/dashboard-visibility")
 def admin_set_plug_dashboard_visibility(
     plug_id: int, show_on_dashboard: bool = Form(False),
@@ -601,15 +636,18 @@ def admin_send_plug_command(
     plug_id: int,
     is_on: bool = Form(...),
     note: str = Form(""),
+    return_to: str = Form(""),
 ):
-    """The on/off control on a Plug's pill — see CONTEXT.md: Command, Interruption; ADR 0014. No
+    """The on/off control on a Plug's edit page — see CONTEXT.md: Command, Interruption; ADR 0014. No
     confirmation dialog by design (see ADR 0014's Considered Options) — the driving use case is
-    reacting quickly to an Alert, which a confirm dialog would work directly against."""
+    reacting quickly to an Alert, which a confirm dialog would work directly against. return_to is
+    a fixed choice rather than a URL, so this route can't be used to redirect anywhere else."""
+    back = f"/admin/plugs/{plug_id}/edit" if return_to == "plug" else "/admin/"
     try:
         q.send_plug_command(plug_id, is_on, note or None)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/", status_code=303)
+        return RedirectResponse(url=f"{back}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=back, status_code=303)
 
 
 def _render_plug_edit(request: Request, plug_id: int, error: str | None = None,

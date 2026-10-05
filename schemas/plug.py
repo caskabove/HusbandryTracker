@@ -40,6 +40,8 @@ class PlugBase(BaseModel):
     show_on_dashboard: bool = True    # see CONTEXT.md: Plug — set via set_plug_dashboard_visibility(), not create/update
     target_on_time: str | None = None   # "HH:MM" — see CONTEXT.md: Target Schedule
     target_off_time: str | None = None  # "HH:MM"
+    timer_ack_on_time: str | None = None   # "HH:MM" — Timer Warning cleared against this Detected on-time; see CONTEXT.md: Timer Warning
+    timer_ack_off_time: str | None = None  # "HH:MM" — same, for off-time
     always_on: bool = False  # mutually exclusive with target_on_time/target_off_time — see CONTEXT.md: Always On
     controller_kind: ControllerKind = ControllerKind.NONE
     target_temp_c: float | None = None        # paired with controller_kind = thermostat

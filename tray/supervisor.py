@@ -321,6 +321,11 @@ def _open_logs(icon=None, item=None) -> None:
     os.startfile(LOG_DIR)  # noqa: S606 — trusted, fixed, local path; not user input
 
 
+def _open_backups_folder(icon=None, item=None) -> None:
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    os.startfile(BACKUP_DIR)  # noqa: S606 — trusted, fixed, local path; not user input
+
+
 def _toggle_autostart(icon, item) -> None:
     if is_autostart_enabled():
         disable_autostart()
@@ -383,7 +388,7 @@ def _restore_backup(path: Path) -> None:
     than being a request file for Ingest to notice: nothing may hold the database open while the
     file underneath it gets replaced, and only the Supervisor can guarantee that."""
     if not _confirm(
-        f"Restore the database from the backup made {_backup_label(path)}?\n\n"
+        f"Restore the database from {_backup_label(path)}?\n\n"
         "This stops Husbandry Tracker, replaces the current database with this backup, and restarts it. "
         "Your current data is saved as a new backup first, so this can be undone.",
         "Restore Husbandry Tracker Backup",
@@ -407,15 +412,74 @@ def _make_restore(path: Path):
     return action
 
 
+_SQLITE_HEADER = b"SQLite format 3\x00"
+
+
+def _show_message(message: str, title: str) -> None:
+    """An OK-only error dialog. The message can contain a user's file name, so it's escaped for a
+    PowerShell double-quoted string (backtick, double quote, dollar sign) before being embedded."""
+
+    def ps_escape(text: str) -> str:
+        return text.replace("`", "``").replace('"', '`"').replace("$", "`$")
+
+    script = f'''
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.MessageBox]::Show("{ps_escape(message)}", "{title}", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+'''
+    _run_powershell(script)
+
+
+def _pick_backup_file() -> Path | None:
+    """A native Windows file-open dialog, via the same PowerShell/.NET route _confirm() uses.
+    Returns None if the user cancels."""
+    script = '''
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = "Choose a Husbandry Tracker backup to restore"
+$dialog.Filter = "Husbandry Tracker backup (*.db)|*.db|All files (*.*)|*.*"
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.FileName }
+'''
+    chosen = _run_powershell(script, capture=True)
+    return Path(chosen) if chosen else None
+
+
+def _restore_from_file() -> None:
+    """Lets someone restore a backup kept anywhere (USB stick, older install) without first copying
+    it into BACKUP_DIR. Checks the SQLite file header before offering the restore, so a wrong file
+    is rejected here rather than copied over the live database."""
+    chosen = _pick_backup_file()
+    if chosen is None:
+        return
+    try:
+        with chosen.open("rb") as f:
+            is_sqlite = f.read(len(_SQLITE_HEADER)) == _SQLITE_HEADER
+    except OSError as exc:
+        _show_message(f"Couldn't read {chosen.name}:\n\n{exc}", "Restore Husbandry Tracker Backup")
+        return
+    if not is_sqlite:
+        _show_message(
+            f"{chosen.name} isn't a Husbandry Tracker database backup, so it wasn't restored.",
+            "Restore Husbandry Tracker Backup",
+        )
+        return
+    _restore_backup(chosen)
+
+
+def _restore_from_file_action(icon, item) -> None:
+    threading.Thread(target=_restore_from_file, daemon=True).start()
+
+
 def _restore_menu_items():
     """A callable, not a fixed item list — pystray re-evaluates this every time the submenu opens
     (see pystray.Menu's docs), so it always reflects whatever's currently in BACKUP_DIR."""
     backups = _list_backups()[:BACKUP_MENU_LIMIT]
-    if not backups:
+    if backups:
+        for path in backups:
+            yield pystray.MenuItem(_backup_label(path), _make_restore(path))
+    else:
         yield pystray.MenuItem("(no backups yet)", lambda icon, item: None, enabled=False)
-        return
-    for path in backups:
-        yield pystray.MenuItem(_backup_label(path), _make_restore(path))
+    yield pystray.Menu.SEPARATOR
+    yield pystray.MenuItem("Restore from File...", _restore_from_file_action)
 
 
 def _component_text(key: str):
@@ -466,6 +530,7 @@ def build_menu() -> pystray.Menu:
         pystray.MenuItem("Start All", lambda icon, item: start_all()),
         pystray.MenuItem("Stop All", lambda icon, item: stop_all()),
         pystray.MenuItem("View Logs", _open_logs),
+        pystray.MenuItem("Open Backups Folder", _open_backups_folder),
         pystray.MenuItem("Start with Windows", _toggle_autostart, checked=lambda item: is_autostart_enabled()),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Back Up Now", _backup_now),

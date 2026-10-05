@@ -101,6 +101,17 @@ body {
     letter-spacing: 0.04em;
 }
 .admin-table a { color: var(--primary-bright); }
+/* Enclosure page: the Plugs and Schedules tables share these column widths so their columns line
+   up when stacked in the same card column. table-layout: fixed makes the widths hold regardless of
+   each table's content. */
+.admin-table-aligned { table-layout: fixed; }
+.admin-table-aligned .col-label { width: 17%; }
+.admin-table-aligned .col-purpose { width: 13%; }
+.admin-table-aligned .col-tracking { width: 10%; }
+.admin-table-aligned .col-status { width: 14%; }
+.admin-table-aligned .col-schedule { width: 22%; }
+.admin-table-aligned .col-dashboard { width: 13%; }
+.admin-table-aligned .col-edit { width: 11%; }
 .admin-table-primary {
     font-weight: 700;
     font-size: 1.05em;
@@ -516,6 +527,7 @@ a.pill:hover { opacity: 0.85; }
    actually-observed half reads as the primary value at a glance. */
 .schedule-target { opacity: 0.7; }
 .status-red-text { color: var(--status-red); font-weight: 600; }
+.status-yellow-text { color: var(--status-yellow); font-weight: 600; }
 
 /* Plug on/off control — see CONTEXT.md: Command; ADR 0014. Reuses .admin-form's input/button
    styling (added alongside it on the same <form>) but lays out compactly/inline instead of

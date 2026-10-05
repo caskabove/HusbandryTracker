@@ -147,26 +147,26 @@
                 <div class="reading-row">
                     <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
                     {% if plug.controller_kind == "thermostat" %}
-                        <span class="pill status-unknown">Target: {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
+                        <span class="pill status-unknown">Target: {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</span>
                     {% elif plug.controller_kind == "hydrostat" %}
-                        <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
+                        <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %}</span>
                     {% elif plug.always_on %}
                         <span class="pill status-green">Always On</span>
                     {% elif plug.tracking_mode == "manual" %}
                         {% if plug.target_on_time and plug.target_off_time %}
-                        <span class="pill status-unknown">{{ plug.target_on_time }}&ndash;{{ plug.target_off_time }}</span>
+                        <span class="pill status-unknown">{{ plug.target_on_time|clock_12h }}&ndash;{{ plug.target_off_time|clock_12h }}</span>
                         {% else %}
                         <span class="pill status-unknown">no target schedule set</span>
                         {% endif %}
                     {% elif not plug.target_on_time and not plug.target_off_time and not plug.detected_on_time and not plug.detected_off_time %}
                         <span class="pill status-unknown">no schedule data yet</span>
                     {% else %}
-                        {% set on_drift = schedule_drift_status(plug.target_on_time, plug.detected_on_time, schedule_drift_threshold_minutes) %}
-                        {% set off_drift = schedule_drift_status(plug.target_off_time, plug.detected_off_time, schedule_drift_threshold_minutes) %}
-                        {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown") %}
+                        {% set on_drift = acknowledged_drift_status(plug.target_on_time, plug.detected_on_time, plug.timer_ack_on_time, schedule_drift_threshold_minutes) %}
+                        {% set off_drift = acknowledged_drift_status(plug.target_off_time, plug.detected_off_time, plug.timer_ack_off_time, schedule_drift_threshold_minutes) %}
+                        {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("yellow" if (on_drift.value == "yellow" or off_drift.value == "yellow") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown")) %}
                         <span class="pill status-{{ pill_status }}" title="target/detected">
-                            On <span class="schedule-target">{{ plug.target_on_time or "—" }}</span>/{{ plug.detected_on_time or "—" }}
-                            · Off <span class="schedule-target">{{ plug.target_off_time or "—" }}</span>/{{ plug.detected_off_time or "—" }}
+                            On <span class="schedule-target">{{ plug.target_on_time|clock_12h or "—" }}</span>/{{ plug.detected_on_time|clock_12h or "—" }}
+                            · Off <span class="schedule-target">{{ plug.target_off_time|clock_12h or "—" }}</span>/{{ plug.detected_off_time|clock_12h or "—" }}
                         </span>
                     {% endif %}
                     {# On/off Command control — see CONTEXT.md: Command, Interruption; ADR 0014.
@@ -176,13 +176,13 @@
                        either way, this is just a UI hint. #}
                     {% if plug.last_command %}
                         {% if plug.last_command.status == "confirming" %}
-                        <span class="pill status-unknown">Commanded {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }} — confirming…{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
+                        <span class="pill status-unknown">Commanded {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at|utc_clock }} — confirming…{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
                         {% elif plug.last_command.status == "failed" %}
                         <span class="pill status-red">Command failed — no response{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
                         {% elif plug.tracking_mode == "manual" %}
-                        <span class="pill status-unknown">Logged {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }}{% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
+                        <span class="pill status-unknown">Logged {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at|utc_clock }}{% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
                         {% else %}
-                        <span class="pill status-green">{{ "ON" if plug.last_command.is_on else "OFF" }} (commanded {{ plug.last_command.requested_at[11:16] }}){% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
+                        <span class="pill status-green">{{ "ON" if plug.last_command.is_on else "OFF" }} (commanded {{ plug.last_command.requested_at|utc_clock }}){% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
                         {% endif %}
                     {% endif %}
                     <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">

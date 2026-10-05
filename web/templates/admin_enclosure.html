@@ -361,8 +361,12 @@
 
         <section class="admin-card">
             <h2>Plugs</h2>
-            <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Status</th><th>On Dashboard</th><th></th></tr></thead>
+            <table class="admin-table admin-table-aligned">
+                <colgroup>
+                    <col class="col-label"><col class="col-purpose"><col class="col-tracking">
+                    <col class="col-status"><col class="col-schedule"><col class="col-dashboard"><col class="col-edit">
+                </colgroup>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Status</th><th>Schedule</th><th>On Dashboard</th><th></th></tr></thead>
                 <tbody>
                 {% for p in enclosure.plugs %}
                     {% set cs = p.current_status %}
@@ -372,8 +376,8 @@
                         <td>{{ p.tracking_mode|capitalize }}</td>
                         <td>
                             {# Current Status — what's actually on/off right now (or Unreachable),
-                               as opposed to the Schedules section's own target/detected and
-                               last-Command pills below. See CONTEXT.md: Unreachable, Command. #}
+                               as opposed to the Schedule column's target times.
+                               See CONTEXT.md: Unreachable, Command. #}
                             {% if cs.unreachable %}
                             <span class="pill status-red">Unreachable</span>
                             {% elif cs.is_on is none %}
@@ -383,6 +387,30 @@
                             {% else %}
                             <span class="pill status-unknown">Off</span>
                             {% endif %}
+                        </td>
+                        <td>
+                    {% if p.controller_kind == "thermostat" %}
+                        <span class="pill status-unknown">Target: {% if p.target_temp_c is not none %}{{ "%.0f"|format(p.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</span>
+                    {% elif p.controller_kind == "hydrostat" %}
+                        <span class="pill status-unknown">Target: {% if p.target_humidity_pct is not none %}{{ "%.0f"|format(p.target_humidity_pct) }}%{% else %}not set{% endif %}</span>
+                    {% elif p.always_on %}
+                        <span class="pill status-green">Always On</span>
+                    {% elif p.tracking_mode == "manual" %}
+                        {% if p.target_on_time and p.target_off_time %}
+                        <span class="pill status-unknown">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                        {% else %}
+                        <span class="pill status-unknown">no target schedule set</span>
+                        {% endif %}
+                    {% else %}
+                        {% set on_drift = acknowledged_drift_status(p.target_on_time, p.detected_on_time, p.timer_ack_on_time, schedule_drift_threshold_minutes) %}
+                        {% set off_drift = acknowledged_drift_status(p.target_off_time, p.detected_off_time, p.timer_ack_off_time, schedule_drift_threshold_minutes) %}
+                        {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("yellow" if (on_drift.value == "yellow" or off_drift.value == "yellow") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown")) %}
+                        {% if p.target_on_time and p.target_off_time %}
+                        <span class="pill status-{{ pill_status }}">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                        {% else %}
+                        <span class="pill status-unknown">no target schedule set</span>
+                        {% endif %}
+                    {% endif %}
                         </td>
                         <td>
                             {# Show on Dashboard (see CONTEXT.md: Plug) — auto-submits on change,
@@ -395,67 +423,10 @@
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
+                    <tr><td colspan="7" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
-        </section>
-
-        <section class="admin-card">
-            <h2>Schedules</h2>
-            {% for plug in enclosure.plugs %}
-                <div class="reading-row">
-                    <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
-                    {% if plug.controller_kind == "thermostat" %}
-                        <span class="pill status-unknown">Target: {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
-                    {% elif plug.controller_kind == "hydrostat" %}
-                        <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
-                    {% elif plug.always_on %}
-                        <span class="pill status-green">Always On</span>
-                    {% elif plug.tracking_mode == "manual" %}
-                        {% if plug.target_on_time and plug.target_off_time %}
-                        <span class="pill status-unknown">{{ plug.target_on_time }}&ndash;{{ plug.target_off_time }}</span>
-                        {% else %}
-                        <span class="pill status-unknown">no target schedule set</span>
-                        {% endif %}
-                    {% elif not plug.target_on_time and not plug.target_off_time and not plug.detected_on_time and not plug.detected_off_time %}
-                        <span class="pill status-unknown">no schedule data yet</span>
-                    {% else %}
-                        {% set on_drift = schedule_drift_status(plug.target_on_time, plug.detected_on_time, schedule_drift_threshold_minutes) %}
-                        {% set off_drift = schedule_drift_status(plug.target_off_time, plug.detected_off_time, schedule_drift_threshold_minutes) %}
-                        {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown") %}
-                        <span class="pill status-{{ pill_status }}" title="target/detected">
-                            On <span class="schedule-target">{{ plug.target_on_time or "—" }}</span>/{{ plug.detected_on_time or "—" }}
-                            · Off <span class="schedule-target">{{ plug.target_off_time or "—" }}</span>/{{ plug.detected_off_time or "—" }}
-                        </span>
-                    {% endif %}
-                    {# On/off Command control — see CONTEXT.md: Command, Interruption; ADR 0014.
-                       No confirmation dialog by design (see ADR 0014's Considered Options); the
-                       note field only appears when the Plug has a determined setting, since only
-                       that case is an Interruption — the server recomputes this independently
-                       either way, this is just a UI hint. #}
-                    {% if plug.last_command %}
-                        {% if plug.last_command.status == "confirming" %}
-                        <span class="pill status-unknown">Commanded {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }} — confirming…{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
-                        {% elif plug.last_command.status == "failed" %}
-                        <span class="pill status-red">Command failed — no response{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
-                        {% elif plug.tracking_mode == "manual" %}
-                        <span class="pill status-unknown">Logged {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }}{% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
-                        {% else %}
-                        <span class="pill status-green">{{ "ON" if plug.last_command.is_on else "OFF" }} (commanded {{ plug.last_command.requested_at[11:16] }}){% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
-                        {% endif %}
-                    {% endif %}
-                    <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">
-                        <button type="submit" name="is_on" value="true">Turn On</button>
-                        <button type="submit" name="is_on" value="false">Turn Off</button>
-                        {% if plug.controller_kind != "none" or plug.always_on or (plug.target_on_time and plug.target_off_time) %}
-                        <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
-                        {% endif %}
-                    </form>
-                </div>
-            {% else %}
-                <p class="empty">No plugs registered</p>
-            {% endfor %}
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>

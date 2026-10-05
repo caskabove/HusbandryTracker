@@ -676,11 +676,19 @@ def _latest_plug_reading(conn, plug_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def utc_clock_to_local(recorded_at: str) -> str:
+    """plug_state_transition.recorded_at is written in UTC (see plugins/common.py's
+    now_observed_at()), so its time-of-day has to be converted to this machine's local time before
+    it's compared with a Target Schedule or shown next to one. Returns "HH:MM"."""
+    utc = datetime.strptime(recorded_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    return utc.astimezone().strftime("%H:%M")
+
+
 def _detect_schedule(conn, plug_id: int) -> dict:
     """Detected Schedule (see CONTEXT.md) — the time-of-day of the most recent transition to on,
-    and separately to off, for a Smart Plug. Not an average across days, just the latest observed
-    instance of each (see ADR 0012). Either/both come back None if that kind of transition has never
-    been seen. Computed on demand from plug_state_transition, not stored."""
+    and separately to off, for a Smart Plug, in local time. Not an average across days, just the
+    latest observed instance of each (see ADR 0012). Either/both come back None if that kind of
+    transition has never been seen. Computed on demand from plug_state_transition, not stored."""
     on_row = conn.execute(
         """SELECT recorded_at FROM plug_state_transition WHERE plug_id = ? AND is_on = 1
            ORDER BY recorded_at DESC LIMIT 1""",
@@ -692,8 +700,8 @@ def _detect_schedule(conn, plug_id: int) -> dict:
         (plug_id,),
     ).fetchone()
     return {
-        "on_time": on_row["recorded_at"][11:16] if on_row else None,
-        "off_time": off_row["recorded_at"][11:16] if off_row else None,
+        "on_time": utc_clock_to_local(on_row["recorded_at"]) if on_row else None,
+        "off_time": utc_clock_to_local(off_row["recorded_at"]) if off_row else None,
     }
 
 
@@ -855,19 +863,43 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
     )
     with get_connection() as conn:
         _check_external_id_available(conn, plugin, external_id, exclude_plug_id=plug_id)
+        current = conn.execute(
+            "SELECT target_on_time, target_off_time, timer_ack_on_time, timer_ack_off_time FROM plug WHERE id = ?",
+            (plug_id,),
+        ).fetchone()
+        new_targets = (target_on_time or None, target_off_time or None)
+        # A cleared Timer Warning only holds against the Target Schedule it was cleared under — see
+        # CONTEXT.md: Timer Warning — so changing the target re-arms it.
+        if current is not None and (current["target_on_time"], current["target_off_time"]) != new_targets:
+            ack_on, ack_off = None, None
+        else:
+            ack_on, ack_off = (current["timer_ack_on_time"], current["timer_ack_off_time"]) if current else (None, None)
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?,
                                 plugin = ?, external_id = ?, plugin_config = ?,
                                 target_on_time = ?, target_off_time = ?, always_on = ?, auto_update_enabled = ?,
-                                controller_kind = ?, target_temp_c = ?, target_humidity_pct = ? WHERE id = ?""",
+                                controller_kind = ?, target_temp_c = ?, target_humidity_pct = ?,
+                                timer_ack_on_time = ?, timer_ack_off_time = ? WHERE id = ?""",
             (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-             target_on_time or None, target_off_time or None, int(always_on),
+             new_targets[0], new_targets[1], int(always_on),
              int(auto_update_enabled), controller_kind, target_temp_c, target_humidity_pct,
-             plug_id),
+             ack_on, ack_off, plug_id),
         )
         conn.execute("DELETE FROM plug_enclosure WHERE plug_id = ?", (plug_id,))
         for eid in enclosure_ids:
             conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (plug_id, eid))
+
+
+def clear_timer_warning(plug_id: int) -> None:
+    """Clears the Timer Warning (see CONTEXT.md: Timer Warning) for whatever Detected Schedule the
+    Plug has right now — stores both detected times as acknowledged. The warning stays hidden until
+    a different time gets detected, or the Target Schedule changes (update_plug() resets this)."""
+    with get_connection() as conn:
+        detected = _detect_schedule(conn, plug_id)
+        conn.execute(
+            "UPDATE plug SET timer_ack_on_time = ?, timer_ack_off_time = ? WHERE id = ?",
+            (detected["on_time"], detected["off_time"], plug_id),
+        )
 
 
 def list_plug_groups() -> list[dict]:
