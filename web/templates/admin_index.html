@@ -3,17 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Husbandry Tracker Admin</title>
+    <title>Husbandry Tracker Control Panel</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
-        <h1>Husbandry Tracker Admin</h1>
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="/guide">Guide</a>
-        </nav>
+        <h1>Husbandry Tracker Control Panel</h1>
+        {% set nav_current = "control" %}{% include "_nav.html" %}
     </header>
 
     <main class="admin-main">
@@ -42,53 +39,6 @@
                 Alert Debounce is how long a Sensor/Plug problem must persist before a Send Alert notification fires (see CONTEXT.md: Alert).
                 Leave the ntfy fields blank to disable push delivery — Alerts still track state, they just print to the console instead.
                 Schedule Drift Threshold is how far a Smart Plug's Target and Detected Schedule can disagree before a Timer Warning shows (see CONTEXT.md: Timer Warning).</p>
-        </section>
-
-        <section class="admin-card">
-            <h2>Enclosures</h2>
-            <table class="admin-table">
-                <thead><tr><th>Name</th><th>Type</th><th>Room</th><th>Bioactive</th><th>Feed</th><th>Water</th><th>Spot</th><th>Deep</th><th></th></tr></thead>
-                <tbody>
-                {% for e in enclosures %}
-                    <tr>
-                        <td class="admin-table-primary"><a href="/admin/enclosures/{{ e.id }}">{{ e.name }}</a></td>
-                        <td>{{ ENCLOSURE_TYPE_LABELS[e.enclosure_type] }}</td>
-                        <td>{% if e.room_id %}<a href="/admin/rooms/{{ e.room_id }}">{{ rooms_by_id[e.room_id] }}</a>{% else %}—{% endif %}</td>
-                        <td>{{ "yes" if e.bioactive else "no" }}</td>
-                        <td>{{ e.feeding_interval_days }}d</td>
-                        <td>{{ e.watering_interval_days }}d</td>
-                        <td>{{ e.spot_clean_interval_days }}d</td>
-                        <td>{{ e.deep_clean_interval_days }}d</td>
-                        <td><a href="/admin/enclosures/{{ e.id }}">edit</a></td>
-                    </tr>
-                {% else %}
-                    <tr><td colspan="9" class="empty">No enclosures yet — add one below.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </section>
-
-        <section class="admin-card">
-            <details>
-                <summary>+ Add Enclosure</summary>
-                <form method="post" action="/admin/enclosures" class="admin-form">
-                    <label>Name <input type="text" name="name" required></label>
-                    <label>Enclosure Type
-                        <select name="enclosure_type">
-                            {% for t in ENCLOSURE_TYPES %}
-                            <option value="{{ t }}" {% if t == "basic" %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
-                    <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
-                    <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
-                    <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="7" min="1"></label>
-                    <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="30" min="1"></label>
-                    <button type="submit">Create</button>
-                </form>
-                <p class="empty">Room assignment happens on the Enclosure's own page after it's created.</p>
-            </details>
         </section>
 
         <section class="admin-card">

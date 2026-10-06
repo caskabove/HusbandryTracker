@@ -10,10 +10,7 @@
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>User Guide</h1>
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="/admin">Admin</a>
-        </nav>
+        {% set nav_current = "guide" %}{% include "_nav.html" %}
     </header>
 
     <main class="guide-main">

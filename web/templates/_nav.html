@@ -1,0 +1,6 @@
+<nav>
+    <a href="/" {% if nav_current == "dashboard" %}aria-current="page"{% endif %}>Dashboard</a>
+    <a href="/admin/enclosures" {% if nav_current == "enclosures" %}aria-current="page"{% endif %}>All Enclosures</a>
+    <a href="/admin" {% if nav_current == "control" %}aria-current="page"{% endif %}>Control Panel</a>
+    <a href="/guide" {% if nav_current == "guide" %}aria-current="page"{% endif %}>Guide</a>
+</nav>

@@ -147,6 +147,20 @@ def admin_update_settings(
     return RedirectResponse(url="/admin/", status_code=303)
 
 
+@router.get("/enclosures")
+def admin_enclosures(request: Request):
+    """The All Enclosures page — the Enclosures card that used to sit on the Control Panel (see
+    admin_index). The same /admin/enclosures path also takes the POST that creates one."""
+    rooms = q.list_rooms()
+    return templates.TemplateResponse(
+        request, "admin_enclosures.html",
+        {
+            "enclosures": q.list_enclosures(), "rooms_by_id": {r["id"]: r["name"] for r in rooms},
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
 @router.post("/enclosures")
 def admin_create_enclosure(
     name: str = Form(...),
@@ -164,7 +178,7 @@ def admin_create_enclosure(
         enclosure_id = q.create_enclosure(name, enclosure_type, bioactive, feeding_interval,
                                            watering_interval, spot_clean_interval, deep_clean_interval)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/enclosures?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -172,7 +186,7 @@ def admin_create_enclosure(
 def admin_enclosure_detail(request: Request, enclosure_id: int):
     enclosure = q.get_enclosure(enclosure_id)
     if enclosure is None:
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
     # Fallback Sensor dropdown is scoped to the Enclosure's *current* Room's Sensors, and only
     # matters when it has none of its own — see CONTEXT.md: Fallback Sensor.
     room_sensors = []
@@ -241,7 +255,7 @@ def admin_update_enclosure(
 @router.post("/enclosures/{enclosure_id}/delete")
 def admin_delete_enclosure(enclosure_id: int):
     q.delete_enclosure(enclosure_id)
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/enclosures", status_code=303)
 
 
 @router.post("/enclosures/{enclosure_id}/animals")

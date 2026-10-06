@@ -60,6 +60,7 @@ body {
     opacity: 0.85;
 }
 .page-header nav a:hover { opacity: 1; text-decoration: underline; }
+.page-header nav a[aria-current="page"] { opacity: 1; font-weight: 700; }
 
 .admin-main {
     max-width: 900px;

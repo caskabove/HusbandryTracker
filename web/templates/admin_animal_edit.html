@@ -3,18 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Husbandry Tracker Admin - Edit Animal</title>
+    <title>Husbandry Tracker Control Panel - Edit Animal</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>Edit Animal</h1>
-        <nav>
-            <a href="/admin">All Enclosures</a>
-            <a href="/">Dashboard</a>
-            <a href="/guide">Guide</a>
-        </nav>
+        {% set nav_current = "control" %}{% include "_nav.html" %}
     </header>
 
     <main class="admin-main">
