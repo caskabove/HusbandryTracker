@@ -94,6 +94,23 @@ CREATE TABLE IF NOT EXISTS animal (
     show_on_dashboard   INTEGER NOT NULL DEFAULT 1
 );
 
+-- A manually-logged, backdatable Animal Log entry (see CONTEXT.md: Animal Log) — Weight/Length/
+-- Count/Condition are self-reported and independent of each other: a given entry normally fills in
+-- just one of them (one metric, one occurrence), so all four stay nullable on one shared row rather
+-- than splitting into four tables, same "many nullable metric columns, one row" shape as
+-- sensor_reading. note is free text, usable on its own or alongside a Condition pick.
+CREATE TABLE IF NOT EXISTS animal_log (
+    id           INTEGER PRIMARY KEY,
+    animal_id    INTEGER NOT NULL REFERENCES animal(id) ON DELETE CASCADE,
+    weight_g     REAL,
+    length_cm    REAL,
+    count        INTEGER,
+    condition    TEXT CHECK (condition IN ('poor', 'ok', 'good', 'really_good')),
+    note         TEXT,
+    occurred_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_animal_log_animal_time ON animal_log (animal_id, occurred_at);
+
 -- A Sensor assigned to either an Enclosure or a Room, never both. See CONTEXT.md: Sensor,
 -- Tracking Mode, Target Range, Room, Plugin, External ID, Plugin Config; ADR 0013.
 --

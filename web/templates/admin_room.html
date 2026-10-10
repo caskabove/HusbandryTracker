@@ -45,7 +45,21 @@
                         <td>
                             {% if reading and reading.temperature_c is not none %}<div><span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span></div>{% endif %}
                             {% if reading and reading.humidity_pct is not none %}<div><span class="pill status-{{ humidity_status.value }}">{{ "%.0f"|format(reading.humidity_pct) }}%</span></div>{% endif %}
-                            {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                            {% if not reading %}
+                            <span class="pill status-unknown">no data yet</span>
+                            {% else %}
+                            <span class="reading-meta">as of {{ reading.recorded_at }}</span>
+                            {# A Sparkline per metric (see CONTEXT.md: Sparkline; ADR 0023) — last
+                               month, stacked under the as-of line rather than beside each pill. #}
+                            <div class="sparkline-group">
+                            {% for metric in TARGET_RANGE_METRICS %}
+                                {% set points = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else [] %}
+                                {% if points %}
+                                <canvas class="sparkline" width="220" height="48" data-points="{{ points|tojson }}" data-decimals="{{ metric.decimals }}" title="{{ metric.label }} - last 30 days"></canvas>
+                                {% endif %}
+                            {% endfor %}
+                            </div>
+                            {% endif %}
                         </td>
                         <td>{% if s.target_temp_min_c %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}-{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</td>
                         <td>{% if s.target_humidity_min %}{{ s.target_humidity_min|int }}-{{ s.target_humidity_max|int }}%{% else %}not set{% endif %}</td>
@@ -210,6 +224,11 @@
                 </tbody>
             </table>
         </section>
+
+        <p>
+            <a href="/admin/rooms/{{ room.id }}/data" class="button-link">View Data</a>
+            <a href="/admin/rooms/{{ room.id }}/graphs" class="button-link">Graphs</a>
+        </p>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>

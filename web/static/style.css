@@ -176,6 +176,7 @@ body {
 .admin-form button:hover { background: var(--primary-bright); color: #0d1913; }
 
 .danger-form { margin-top: 0.75rem; }
+.animal-log-form + .animal-log-form { margin-top: 0.75rem; }
 button.danger {
     background: var(--status-red);
     border-color: var(--status-red);
@@ -324,7 +325,11 @@ button.danger {
     font-size: 0.85rem;
     color: var(--text-muted);
 }
-.room-ambient-item { display: flex; align-items: center; gap: 0.3rem; }
+/* Stacks the label/pill row above the as-of line and its Sparkline(s) — see CONTEXT.md: Sparkline;
+   ADR 0023 — rather than the single inline row this used to be, since the chart needs its own
+   line now. Still one wrapping item within .room-summary's flex row. */
+.room-ambient-item { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+.room-ambient-pill-row { display: flex; align-items: center; gap: 0.3rem; }
 
 /* Groups the Room header's Refresh button with a Log Reading control per Manual Sensor (see
    dashboard.html) — wrapping them lets .room-header's own justify-content: space-between treat
@@ -630,3 +635,86 @@ a.pill:hover { opacity: 0.85; }
     border-radius: 8px;
     font-weight: 600;
 }
+
+/* View Data (see CONTEXT.md: View Data; ADR 0021) — a day-columned grid, so its own table needs
+   horizontal scroll and a sticky first (row-label) column instead of the plain .admin-table's
+   full-width layout. */
+a.button-link {
+    display: inline-block;
+    background: var(--primary);
+    color: var(--text);
+    border: 1px solid var(--primary-bright);
+    border-radius: 6px;
+    padding: 0.4rem 0.9rem;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+a.button-link:hover { background: var(--primary-bright); color: #0d1913; }
+span.button-link.disabled {
+    display: inline-block;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+}
+.view-data-range-form { align-items: center; }
+.view-data-window { color: var(--text-muted); font-size: 0.85rem; }
+.view-data-scroll { overflow-x: auto; }
+.view-data-table { table-layout: fixed; white-space: nowrap; }
+.view-data-table th, .view-data-table td { min-width: 4.5rem; }
+.view-data-row-label {
+    position: sticky;
+    left: 0;
+    background: var(--bg);
+    min-width: 11rem !important;
+    z-index: 1;
+}
+.view-data-cell { font-size: 0.85rem; }
+.view-data-edit summary {
+    cursor: pointer;
+    color: var(--primary-bright);
+    list-style: none;
+}
+.view-data-edit summary::-webkit-details-marker { display: none; }
+.view-data-edit[open] summary { margin-bottom: 0.3rem; }
+.view-data-edit .log-form { margin-left: 0; }
+.view-data-edit .log-form input[type="number"], .view-data-edit .log-form input[type="text"] { width: 5rem; }
+
+/* Graphs (see CONTEXT.md: Graphs, Overlay; ADR 0022) — one chart per row, grouped the same way
+   View Data groups its table rows, plus an Overlay picker/chart reusing the same card shell. */
+.help-text { color: var(--text-muted); font-size: 0.85rem; margin: 0.2rem 0 0.8rem; }
+.graphs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    gap: 1rem;
+}
+.graph-card h3 { font-size: 0.95rem; margin: 0 0 0.4rem; }
+.graph-card-wrap { position: relative; height: 14rem; }
+.graph-card-wrap-overlay { height: 20rem; }
+.graph-canvas { width: 100% !important; height: 100% !important; }
+.overlay-picker { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; }
+.overlay-picker fieldset {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+}
+.overlay-picker legend { font-size: 0.8rem; color: var(--text-muted); padding: 0 0.3rem; }
+.overlay-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    padding: 0.15rem 0;
+    white-space: nowrap;
+}
+
+/* Sparkline (see CONTEXT.md: Sparkline; ADR 0023) — a small monthly trend chart under a Reading's
+   "as of" line, wherever one already appears. .sparkline-group wraps one canvas per metric a
+   Sensor tracks, side by side with wrapping/scroll rather than stacked, since a multi-metric
+   Sensor (temp + humidity, say) still gets one chart per metric. .sparkline-group-row additionally
+   spans the full width of .reading-row-grid (dashboard.html's reading_row macro), since that grid
+   otherwise only has the 3 explicit columns the pill/as-of row already fills. */
+.sparkline-group { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
+.sparkline-group-row { grid-column: 1 / -1; overflow-x: auto; }
+canvas.sparkline { display: block; }

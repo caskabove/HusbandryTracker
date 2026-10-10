@@ -241,9 +241,11 @@
                                humidity, so e.g. a Freshwater Enclosure's pH shows up here too. Each
                                on its own line — same per-metric-own-line shape as the Target Range
                                column, so a Govee Sensor's Temp/Humidity read as two separate lines. #}
+                            {% set ns = namespace(shown=false) %}
                             {% for metric in TARGET_RANGE_METRICS %}
                                 {% set value = reading[metric.reading_column] if reading else none %}
                                 {% if value is not none %}
+                                    {% set ns.shown = true %}
                                     {% set status = target_range_status(value, s[metric.min_column], s[metric.max_column]) %}
                                     {% set shown = value|c_to_f if metric.converts_f_c else value %}
                                     <div>
@@ -255,7 +257,22 @@
                                     </div>
                                 {% endif %}
                             {% endfor %}
-                            {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                            {% if ns.shown %}
+                            <span class="reading-meta">as of {{ reading.recorded_at }}</span>
+                            {# A Sparkline per metric (see CONTEXT.md: Sparkline; ADR 0023) — last
+                               month, stacked under the shared as-of line rather than beside each
+                               pill above. #}
+                            <div class="sparkline-group">
+                            {% for metric in TARGET_RANGE_METRICS %}
+                                {% set points = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else [] %}
+                                {% if points %}
+                                <canvas class="sparkline" width="220" height="48" data-points="{{ points|tojson }}" data-decimals="{{ metric.decimals }}" title="{{ metric.label }} - last 30 days"></canvas>
+                                {% endif %}
+                            {% endfor %}
+                            </div>
+                            {% else %}
+                            <span class="pill status-unknown">no data yet</span>
+                            {% endif %}
                             {% if s.tracking_mode == "manual" %}
                             {# Hand-logged Reading (see CONTEXT.md: Reading) — same form as the dashboard's
                                Log button, posted back to this page. One input per Target Range metric this
@@ -424,7 +441,14 @@
                 </tbody>
             </table>
         </section>
+
+        <p>
+            <a href="/admin/enclosures/{{ enclosure.id }}/data" class="button-link">View Data</a>
+            <a href="/admin/enclosures/{{ enclosure.id }}/graphs" class="button-link">Graphs</a>
+        </p>
     </main>
+    <script src="/static/chart.min.js?v={{ asset_version }}"></script>
+    <script src="/static/graphs.js?v={{ asset_version }}"></script>
     <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

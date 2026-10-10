@@ -128,10 +128,17 @@ def target_range_metrics_for(enclosure_type: str) -> tuple[TargetRangeMetric, ..
 
 def is_metric_applicable(enclosure_type: str, metric_key: str) -> bool:
     _check_enclosure_type(enclosure_type)
-    metric = _METRICS_BY_KEY.get(metric_key)
-    if metric is None:
-        raise ValueError(f"Unknown Target Range metric: {metric_key!r}")
+    metric = metric_by_key(metric_key)
     return enclosure_type in metric.enclosure_types
+
+
+def metric_by_key(key: str) -> TargetRangeMetric:
+    """The TargetRangeMetric for a given key (see TARGET_RANGE_METRICS) — e.g. for a caller (like
+    web/view_data_queries.py) that only has the key string, not the whole tuple, in hand."""
+    metric = _METRICS_BY_KEY.get(key)
+    if metric is None:
+        raise ValueError(f"Unknown Target Range metric: {key!r}")
+    return metric
 
 
 def allowed_controller_kinds(enclosure_type: str) -> tuple[str, ...]:

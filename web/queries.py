@@ -6,7 +6,7 @@ behavior simple instead of holding a long-lived handle open across a bind-mounte
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,6 +15,13 @@ from db.db import get_connection
 from schemas import enclosure_types as et
 
 CARE_EVENT_KINDS = ["feeding", "watering", "spot_clean", "deep_clean"]
+
+# animal_log.condition's allowed values — see CONTEXT.md: Animal Log. Must match the CHECK
+# constraint in db/schema.sql.
+ANIMAL_CONDITIONS = ["poor", "ok", "good", "really_good"]
+ANIMAL_CONDITION_LABELS = {
+    "poor": "Poor", "ok": "OK", "good": "Good", "really_good": "Really Good",
+}
 
 
 def days_since(occurred_at: str | None) -> int | None:
@@ -63,6 +70,68 @@ def _latest_reading(conn, sensor: dict) -> dict | None:
         ).fetchone()
         reading[column] = row[column] if row else None
     return reading
+
+
+_SPARKLINE_DAYS = 30
+
+
+def _sparkline_c_to_f(celsius: float | None) -> float | None:
+    return None if celsius is None else celsius * 9 / 5 + 32
+
+
+def _sparkline_epoch_ms(ts: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> int:
+    return int(datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def _sparkline(conn, sensor: dict, column: str) -> list[list]:
+    """A Sparkline's points for one metric, covering the last month (see CONTEXT.md: Sparkline;
+    ADR 0023). A Smart Sensor's dedupe window is only 5 seconds (see plugins/govee_ble/plugin.py),
+    so it can write a new sensor_reading row every 5-30 seconds continuously — a month of that raw
+    would be tens of thousands of points for a chart this small, repeated on every Dashboard load.
+    Its Sparkline instead aggregates into daily min/avg/max buckets, as [epoch_ms, min, avg, max]
+    rows, oldest first. A Manual Sensor's Readings are hand-logged and sparse (at most one a day),
+    so bucketing them would be a no-op — its Sparkline stays raw, as [epoch_ms, value] pairs,
+    matching how Graphs already draws this same Smart/Manual split (ADR 0022). sensor_reading.
+    recorded_at is true UTC with no backdating path (see view_data_queries.py's module docstring) —
+    converted here so epoch_ms lines up with the viewer's actual wall-clock, same as every other
+    chart in this app."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_SPARKLINE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    if sensor["tracking_mode"] == "manual":
+        rows = conn.execute(
+            f"SELECT recorded_at, {column} AS value FROM sensor_reading "
+            f"WHERE sensor_id = ? AND {column} IS NOT NULL AND recorded_at >= ? ORDER BY recorded_at ASC",
+            (sensor["id"], cutoff),
+        ).fetchall()
+        points = [[_sparkline_epoch_ms(row["recorded_at"]), row["value"]] for row in rows]
+    else:
+        rows = conn.execute(
+            f"SELECT strftime('%Y-%m-%d', recorded_at) AS bucket, "
+            f"MIN({column}) AS lo, AVG({column}) AS avg, MAX({column}) AS hi FROM sensor_reading "
+            f"WHERE sensor_id = ? AND {column} IS NOT NULL AND recorded_at >= ? "
+            f"GROUP BY bucket ORDER BY bucket ASC",
+            (sensor["id"], cutoff),
+        ).fetchall()
+        points = [
+            [_sparkline_epoch_ms(row["bucket"], "%Y-%m-%d"), row["lo"], row["avg"], row["hi"]]
+            for row in rows
+        ]
+    metric = next(m for m in et.TARGET_RANGE_METRICS if m.reading_column == column)
+    if metric.converts_f_c:
+        points = [[p[0]] + [_sparkline_c_to_f(v) for v in p[1:]] for p in points]
+    return points
+
+
+def _sparklines(conn, sensor: dict, reading: dict | None) -> dict[str, list]:
+    """Only fetches a Sparkline for a metric this Sensor's Reading pill is actually showing right
+    now (reading[column] is not None) — same restriction _latest_reading already applies to which
+    metrics it looks up at all, so this never scans a column this Sensor has never reported."""
+    if reading is None:
+        return {}
+    return {
+        metric.reading_column: _sparkline(conn, sensor, metric.reading_column)
+        for metric in et.TARGET_RANGE_METRICS
+        if reading.get(metric.reading_column) is not None
+    }
 
 
 def _current_plug_status(conn, plug: dict) -> dict:
@@ -121,6 +190,7 @@ def get_dashboard_data() -> dict:
             sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ?", (eid,))]
             for sensor in sensors:
                 sensor["latest_reading"] = _latest_reading(conn, sensor)
+                sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
             enclosure["sensor_count"] = len(sensors)
             enclosure["sensors"] = [s for s in sensors if s["show_on_dashboard"]]
 
@@ -128,11 +198,13 @@ def get_dashboard_data() -> dict:
             # own; its Reading is never colored (no Target Range comparison), see ADR 0004.
             enclosure["fallback_sensor"] = None
             enclosure["fallback_reading"] = None
+            enclosure["fallback_sparklines"] = {}
             if not sensors and enclosure["fallback_sensor_id"]:
                 fb_row = conn.execute("SELECT * FROM sensor WHERE id = ?", (enclosure["fallback_sensor_id"],)).fetchone()
                 if fb_row:
                     enclosure["fallback_sensor"] = dict(fb_row)
                     enclosure["fallback_reading"] = _latest_reading(conn, dict(fb_row))
+                    enclosure["fallback_sparklines"] = _sparklines(conn, fb_row, enclosure["fallback_reading"])
 
             # Schedules aren't rendered on the dashboard (glance-only — see web/main.py's module
             # docstring); that stays Admin-only, fetched there via web/admin_queries.py. A Plug's
@@ -164,6 +236,7 @@ def get_dashboard_data() -> dict:
             room_sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE room_id = ?", (room["id"],))]
             for sensor in room_sensors:
                 sensor["latest_reading"] = _latest_reading(conn, sensor)
+                sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
             room["sensor_count"] = len(room_sensors)  # unfiltered — see the Enclosure loop above
             room["sensors"] = [s for s in room_sensors if s["show_on_dashboard"]]
 

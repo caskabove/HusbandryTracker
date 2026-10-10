@@ -1,15 +1,19 @@
 """Husbandry Tracker dashboard — FastAPI app, served by uvicorn on localhost:22255 (see docker-compose.yml).
 
-Phase 2, v1 scope only (see CONTEXT.md decisions): dashboard + logbook, no charts, no auth,
-no alerting. The dashboard is mostly a glance-only view — Schedules and Care logging live on the
-Enclosure's Admin page instead (see web/admin.py), with the dashboard's Care pill linking straight
-there. Three actions do live here directly rather than redirecting to Admin, because they're
-tightly bound to what's already on screen: Refresh (a live BLE read), a Manual Sensor's Log Reading
-form, and dragging an Enclosure panel onto a Room to reassign it (see CONTEXT.md: Room) — the drop
-handlers are in web/static/app.js, persisted via assign_enclosure_room below.
+Phase 2, v1 scope (see CONTEXT.md decisions): dashboard + logbook, no auth, no alerting. The
+dashboard is mostly a glance-only view — Schedules and Care logging live on the Enclosure's Admin
+page instead (see web/admin.py), with the dashboard's Care pill linking straight there. One
+deliberate exception to "glance-only": every Reading pill also carries a small Sparkline (see
+CONTEXT.md: Sparkline; ADR 0022) — the full Graphs page itself lives only on the Admin side (see
+web/admin.py), reached the same way as View Data. Three actions do live here directly rather than
+redirecting to Admin, because they're tightly bound to what's already on screen: Refresh (a live BLE
+read), a Manual Sensor's Log Reading form, and dragging an Enclosure panel onto a Room to reassign it
+(see CONTEXT.md: Room) — the drop handlers are in web/static/app.js, persisted via
+assign_enclosure_room below.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from urllib.parse import quote
@@ -69,6 +73,11 @@ def _f_to_c(fahrenheit: float | None) -> float | None:
 
 
 templates.env.filters["c_to_f"] = _c_to_f
+# Embeds a Sparkline's points as a <canvas data-points="..."> attribute (see CONTEXT.md: Sparkline;
+# ADR 0022) — Jinja2Templates has no built-in tojson (that's Flask-specific); plain json.dumps here
+# still comes out HTML-attribute-safe because Jinja's default autoescaping still applies to a
+# filter's string output, same as any other {{ }} expression.
+templates.env.filters["tojson"] = json.dumps
 
 
 @app.get("/")

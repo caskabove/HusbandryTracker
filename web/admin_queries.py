@@ -15,7 +15,9 @@ from plugins.govee_ble import identity as govee_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
 from web.outbox import write_command
-from web.queries import CARE_EVENT_KINDS, _latest_reading, _normalize_datetime_local, days_since
+from web.queries import (
+    ANIMAL_CONDITIONS, CARE_EVENT_KINDS, _latest_reading, _normalize_datetime_local, _sparklines, days_since,
+)
 
 
 def _decode_sensor(row_dict: dict) -> dict:
@@ -107,6 +109,7 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         for sensor in enclosure["sensors"]:
             # Each metric's own newest value — see web/queries.py's _latest_reading (CONTEXT.md: Reading).
             sensor["latest_reading"] = _latest_reading(conn, sensor)
+            sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
         enclosure["plugs"] = [_decode_plug(dict(r)) for r in conn.execute(
             """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
                WHERE pe.enclosure_id = ? ORDER BY p.label""",
@@ -330,6 +333,56 @@ def set_animal_dashboard_visibility(animal_id: int, show_on_dashboard: bool) -> 
             "UPDATE animal SET show_on_dashboard = ? WHERE id = ?",
             (1 if show_on_dashboard else 0, animal_id),
         )
+
+
+def list_animal_logs(animal_id: int, limit: int = 20) -> list[dict]:
+    """Most-recent-first Animal Log history (see CONTEXT.md: Animal Log) for the Animal's own Edit
+    page — mirrors get_enclosure()'s plant_health_log fetch (most recent N, not the full history)."""
+    with get_connection() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM animal_log WHERE animal_id = ? ORDER BY occurred_at DESC LIMIT ?",
+            (animal_id, limit),
+        )]
+
+
+def _insert_animal_log(animal_id: int, occurred_at: str | None, **fields) -> None:
+    occurred_at = _normalize_datetime_local(occurred_at)
+    columns = list(fields.keys())
+    values = list(fields.values())
+    if occurred_at:
+        columns.append("occurred_at")
+        values.append(occurred_at)
+    placeholders = ", ".join("?" for _ in columns)
+    with get_connection() as conn:
+        conn.execute(
+            f"INSERT INTO animal_log (animal_id, {', '.join(columns)}) VALUES (?, {placeholders})",
+            (animal_id, *values),
+        )
+
+
+def log_animal_weight(animal_id: int, weight_g: float, occurred_at: str | None = None) -> None:
+    if weight_g <= 0:
+        raise ValueError("Weight must be greater than zero.")
+    _insert_animal_log(animal_id, occurred_at, weight_g=weight_g)
+
+
+def log_animal_length(animal_id: int, length_cm: float, occurred_at: str | None = None) -> None:
+    if length_cm <= 0:
+        raise ValueError("Length must be greater than zero.")
+    _insert_animal_log(animal_id, occurred_at, length_cm=length_cm)
+
+
+def log_animal_count(animal_id: int, count: int, occurred_at: str | None = None) -> None:
+    if count < 0:
+        raise ValueError("Count can't be negative.")
+    _insert_animal_log(animal_id, occurred_at, count=count)
+
+
+def log_animal_condition(animal_id: int, condition: str, note: str | None = None,
+                          occurred_at: str | None = None) -> None:
+    if condition not in ANIMAL_CONDITIONS:
+        raise ValueError(f"Unknown Condition: {condition!r}")
+    _insert_animal_log(animal_id, occurred_at, condition=condition, note=note or None)
 
 
 TargetRanges = dict[str, tuple[float | None, float | None]]
@@ -1174,6 +1227,7 @@ def get_room(room_id: int) -> dict | None:
             # Same helper as get_enclosure() above — a Room Sensor only ever tracks temp/humidity in
             # practice (create_room_sensor() never writes the others), so this stays uniform with it.
             sensor["latest_reading"] = _latest_reading(conn, sensor)
+            sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
         room["plugs"] = [_decode_plug(dict(r)) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
         for plug in room["plugs"]:
             # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,

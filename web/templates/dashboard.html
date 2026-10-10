@@ -22,7 +22,7 @@
        Sensor's Reading (used together with colored=false — see CONTEXT.md: Fallback Sensor —
        since a Room's Target Range reflects human comfort, not what's healthy for a specific
        animal), so nothing gets colored against a Room Sensor's own targets by accident. #}
-    {% macro reading_row(label, reading, sensor, colored, badge_text='', only_metric=none) %}
+    {% macro reading_row(label, reading, sensor, colored, badge_text='', only_metric=none, sparklines=none) %}
         {# Three aligned columns — Label, Type (the M/A tracking-mode badge), Status (every metric
            pill plus the "as of"/"no data yet" tail) — see .reading-row-grid in style.css. Columns 1
            and 2 are fixed-width so every Reading row in a card lines up regardless of label length
@@ -58,6 +58,18 @@
                 <span class="pill status-unknown">no data yet</span>
                 {% endif %}
             </span>
+            {% if ns.shown %}
+            {# A Sparkline per metric (see CONTEXT.md: Sparkline; ADR 0023) — last month, on its
+               own line under the pill/as-of row above rather than beside each pill. #}
+            <span class="sparkline-group sparkline-group-row">
+            {% for metric in TARGET_RANGE_METRICS if only_metric is none or metric.key == only_metric %}
+                {% set points = sparklines[metric.reading_column] if sparklines and sparklines.get(metric.reading_column) else [] %}
+                {% if points %}
+                <canvas class="sparkline" width="220" height="48" data-points="{{ points|tojson }}" data-decimals="{{ metric.decimals }}" title="{{ metric.label }} - last 30 days"></canvas>
+                {% endif %}
+            {% endfor %}
+            </span>
+            {% endif %}
         </div>
     {% endmacro %}
 
@@ -144,19 +156,19 @@
                                readability, purely a display split (see CONTEXT.md: Reading; still
                                one Sensor to create/edit/delete). #}
                             {% if sensor.plugin == "govee_ble" %}
-                                {{ reading_row(sensor.label ~ " Temp", sensor.latest_reading, sensor, true, "A", only_metric="temperature") }}
-                                {{ reading_row(sensor.label ~ " Humidity", sensor.latest_reading, sensor, true, "A", only_metric="humidity") }}
+                                {{ reading_row(sensor.label ~ " Temp", sensor.latest_reading, sensor, true, "A", only_metric="temperature", sparklines=sensor.sparklines) }}
+                                {{ reading_row(sensor.label ~ " Humidity", sensor.latest_reading, sensor, true, "A", only_metric="humidity", sparklines=sensor.sparklines) }}
                             {% else %}
-                                {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "M" if sensor.tracking_mode == "manual" else "A") }}
+                                {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "M" if sensor.tracking_mode == "manual" else "A", sparklines=sensor.sparklines) }}
                             {% endif %}
                             {{ reading_log_form(sensor) }}
                         {% endfor %}
                     {% elif enclosure.fallback_sensor %}
                         {% if enclosure.fallback_sensor.plugin == "govee_ble" %}
-                            {{ reading_row(enclosure.fallback_sensor.label ~ " Temp", enclosure.fallback_reading, none, false, "room", only_metric="temperature") }}
-                            {{ reading_row(enclosure.fallback_sensor.label ~ " Humidity", enclosure.fallback_reading, none, false, "room", only_metric="humidity") }}
+                            {{ reading_row(enclosure.fallback_sensor.label ~ " Temp", enclosure.fallback_reading, none, false, "room", only_metric="temperature", sparklines=enclosure.fallback_sparklines) }}
+                            {{ reading_row(enclosure.fallback_sensor.label ~ " Humidity", enclosure.fallback_reading, none, false, "room", only_metric="humidity", sparklines=enclosure.fallback_sparklines) }}
                         {% else %}
-                            {{ reading_row(enclosure.fallback_sensor.label, enclosure.fallback_reading, none, false, "room") }}
+                            {{ reading_row(enclosure.fallback_sensor.label, enclosure.fallback_reading, none, false, "room", sparklines=enclosure.fallback_sparklines) }}
                         {% endif %}
                     {% elif enclosure.sensor_count %}
                         <p class="empty">No sensors selected to display &mdash; pick some on the Enclosure page</p>
@@ -292,21 +304,64 @@
                                    Humidity in a single Reading — shown here as two separate items
                                    for readability, purely a display split (see CONTEXT.md: Reading;
                                    still one Sensor to create/edit/delete). #}
+                                {% set temp_points = sensor.sparklines.temperature_c if sensor.sparklines and sensor.sparklines.get("temperature_c") else [] %}
+                                {% set humidity_points = sensor.sparklines.humidity_pct if sensor.sparklines and sensor.sparklines.get("humidity_pct") else [] %}
                                 {% if sensor.plugin == "govee_ble" %}
                                     <span class="room-ambient-item">
-                                        {{ sensor.label }} Temp:
-                                        {% if rs and rs.temperature_c is not none %}<span class="pill status-{{ ts.value }}">{{ "%.1f"|format(rs.temperature_c|c_to_f) }}&deg;F</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                        <span class="room-ambient-pill-row">
+                                            {{ sensor.label }} Temp:
+                                            {% if rs and rs.temperature_c is not none %}<span class="pill status-{{ ts.value }}">{{ "%.1f"|format(rs.temperature_c|c_to_f) }}&deg;F</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                        </span>
+                                        {% if rs and rs.temperature_c is not none %}
+                                        <span class="reading-meta">as of {{ rs.recorded_at }}</span>
+                                        {% if temp_points %}<canvas class="sparkline" width="220" height="48" data-points="{{ temp_points|tojson }}" data-decimals="1" title="Temperature - last 30 days"></canvas>{% endif %}
+                                        {% endif %}
                                     </span>
                                     <span class="room-ambient-item">
-                                        {{ sensor.label }} Humidity:
-                                        {% if rs and rs.humidity_pct is not none %}<span class="pill status-{{ hs.value }}">{{ "%.0f"|format(rs.humidity_pct) }}%</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                        <span class="room-ambient-pill-row">
+                                            {{ sensor.label }} Humidity:
+                                            {% if rs and rs.humidity_pct is not none %}<span class="pill status-{{ hs.value }}">{{ "%.0f"|format(rs.humidity_pct) }}%</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                        </span>
+                                        {% if rs and rs.humidity_pct is not none %}
+                                        <span class="reading-meta">as of {{ rs.recorded_at }}</span>
+                                        {% if humidity_points %}<canvas class="sparkline" width="220" height="48" data-points="{{ humidity_points|tojson }}" data-decimals="1" title="Humidity - last 30 days"></canvas>{% endif %}
+                                        {% endif %}
                                     </span>
                                 {% else %}
+                                    {# Non-Govee Room Sensor — loops every Target Range metric this
+                                       Reading actually has a value for (see CONTEXT.md: Reading,
+                                       Target Range), not just Temp/Humidity, so e.g. a manually-
+                                       logged pH probe placed in a Room shows up here too. #}
                                     <span class="room-ambient-item">
-                                        {{ sensor.label }}:
-                                        {% if rs and rs.temperature_c is not none %}<span class="pill status-{{ ts.value }}">{{ "%.1f"|format(rs.temperature_c|c_to_f) }}&deg;F</span>{% endif %}
-                                        {% if rs and rs.humidity_pct is not none %}<span class="pill status-{{ hs.value }}">{{ "%.0f"|format(rs.humidity_pct) }}%</span>{% endif %}
-                                        {% if not rs %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                        <span class="room-ambient-pill-row">
+                                            {{ sensor.label }}:
+                                            {% set ns = namespace(any=false) %}
+                                            {% for metric in TARGET_RANGE_METRICS %}
+                                                {% set value = rs[metric.reading_column] if rs else none %}
+                                                {% if value is not none %}
+                                                    {% set ns.any = true %}
+                                                    {% set status = target_range_status(value, sensor[metric.min_column], sensor[metric.max_column]) %}
+                                                    {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                                                    <span class="pill status-{{ status.value }}">
+                                                        {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
+                                                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                                                        {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
+                                                    </span>
+                                                {% endif %}
+                                            {% endfor %}
+                                            {% if not ns.any %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                                        </span>
+                                        {% if ns.any %}
+                                        <span class="reading-meta">as of {{ rs.recorded_at }}</span>
+                                        <span class="sparkline-group">
+                                        {% for metric in TARGET_RANGE_METRICS %}
+                                            {% set points = sensor.sparklines[metric.reading_column] if sensor.sparklines and sensor.sparklines.get(metric.reading_column) else [] %}
+                                            {% if points %}
+                                            <canvas class="sparkline" width="220" height="48" data-points="{{ points|tojson }}" data-decimals="{{ metric.decimals }}" title="{{ metric.label }} - last 30 days"></canvas>
+                                            {% endif %}
+                                        {% endfor %}
+                                        </span>
+                                        {% endif %}
                                     </span>
                                 {% endif %}
                             {% endfor %}
@@ -383,6 +438,8 @@
         <p class="empty">No enclosures registered yet — use tools/register_device.py.</p>
         {% endif %}
     </main>
+    <script src="/static/chart.min.js?v={{ asset_version }}"></script>
+    <script src="/static/graphs.js?v={{ asset_version }}"></script>
     <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@
     </header>
 
     <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>{{ animal.name }}</h2>
             <form method="post" action="/admin/animals/{{ animal.id }}/update" class="admin-form">
@@ -29,6 +30,55 @@
                 <label>Scientific name <input type="text" name="scientific" value="{{ animal.species_scientific or '' }}"></label>
                 <label>DOB <input type="text" name="dob" value="{{ animal.dob or '' }}" placeholder="YYYY-MM-DD or YYYY-MM"></label>
                 <button type="submit">Save</button>
+            </form>
+        </section>
+
+        <section class="admin-card" id="animal-log">
+            <h2>Growth &amp; Condition Log</h2>
+            <table class="admin-table">
+                <thead><tr><th>When</th><th>Weight</th><th>Length</th><th>Count</th><th>Condition</th><th>Note</th></tr></thead>
+                <tbody>
+                {% for entry in logs %}
+                    <tr>
+                        <td>{{ entry.occurred_at }}</td>
+                        <td>{{ "%.1f"|format(entry.weight_g) ~ " g" if entry.weight_g is not none else "" }}</td>
+                        <td>{{ "%.1f"|format(entry.length_cm) ~ " cm" if entry.length_cm is not none else "" }}</td>
+                        <td>{{ entry.count if entry.count is not none else "" }}</td>
+                        <td>{{ animal_condition_labels[entry.condition] if entry.condition else "" }}</td>
+                        <td>{{ entry.note or "" }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="empty">No Growth/Condition entries logged yet</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+            <form method="post" action="/admin/animals/{{ animal.id }}/log-weight" class="admin-form animal-log-form">
+                <label>Weight (g) <input type="number" name="weight_g" step="0.1" min="0" required></label>
+                <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+                <button type="submit">Log Weight</button>
+            </form>
+            <form method="post" action="/admin/animals/{{ animal.id }}/log-length" class="admin-form animal-log-form">
+                <label>Length (cm) <input type="number" name="length_cm" step="0.1" min="0" required></label>
+                <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+                <button type="submit">Log Length</button>
+            </form>
+            <form method="post" action="/admin/animals/{{ animal.id }}/log-count" class="admin-form animal-log-form">
+                <label>Count <input type="number" name="count" step="1" min="0" required></label>
+                <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+                <button type="submit">Log Count</button>
+            </form>
+            <form method="post" action="/admin/animals/{{ animal.id }}/log-condition" class="admin-form animal-log-form">
+                <label>Condition
+                    <select name="condition">
+                        {% for c in animal_conditions %}
+                        <option value="{{ c }}">{{ animal_condition_labels[c] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Note <input type="text" name="note" placeholder="optional"></label>
+                <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+                <button type="submit">Log Condition</button>
             </form>
         </section>
     </main>

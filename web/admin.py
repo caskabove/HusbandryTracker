@@ -6,6 +6,7 @@ Celsius (the Govee sensors' native unit — see plugins/govee_ble/protocol.py).
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,9 +21,11 @@ from fastapi.templating import Jinja2Templates
 from app_paths import APP_ROOT
 from schemas import enclosure_types as et
 from web import admin_queries as q
+from web import graphs_queries as gq
+from web import view_data_queries as vd
 from web.govee_refresh import refresh_sensors
 from web.plug_probe import probe_plug
-from web.queries import CARE_EVENT_KINDS, log_care_event, log_reading
+from web.queries import ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, log_care_event, log_reading
 from web.status import acknowledged_drift_status, care_interval_status, schedule_drift_status, target_range_status
 
 _WEB_DIR = APP_ROOT / "web"
@@ -43,6 +46,8 @@ templates.env.globals["TARGET_RANGE_METRICS"] = et.TARGET_RANGE_METRICS
 templates.env.globals["asset_version"] = str(int(
     max(f.stat().st_mtime for f in (_WEB_DIR / "static").iterdir() if f.is_file())
 ))
+# See web/main.py's identical filter + comment — Graphs (graphs.html) needs this too.
+templates.env.filters["tojson"] = json.dumps
 
 
 def _f_to_c(fahrenheit: float | None) -> float | None:
@@ -318,7 +323,13 @@ def admin_edit_animal(request: Request, animal_id: int):
     if animal is None:
         return RedirectResponse(url="/admin", status_code=303)
     return templates.TemplateResponse(
-        request, "admin_animal_edit.html", {"animal": animal, "enclosures": q.list_enclosures()}
+        request, "admin_animal_edit.html",
+        {
+            "animal": animal, "enclosures": q.list_enclosures(),
+            "logs": q.list_animal_logs(animal_id),
+            "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "error": request.query_params.get("error"),
+        }
     )
 
 
@@ -333,6 +344,44 @@ def admin_update_animal(
 ):
     q.update_animal(animal_id, enclosure_id, name, common, scientific, dob)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-weight")
+def admin_log_animal_weight(animal_id: int, weight_g: float = Form(...), occurred_at: str = Form("")):
+    try:
+        q.log_animal_weight(animal_id, weight_g, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-length")
+def admin_log_animal_length(animal_id: int, length_cm: float = Form(...), occurred_at: str = Form("")):
+    try:
+        q.log_animal_length(animal_id, length_cm, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-count")
+def admin_log_animal_count(animal_id: int, count: int = Form(...), occurred_at: str = Form("")):
+    try:
+        q.log_animal_count(animal_id, count, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-condition")
+def admin_log_animal_condition(
+    animal_id: int, condition: str = Form(...), note: str = Form(""), occurred_at: str = Form(""),
+):
+    try:
+        q.log_animal_condition(animal_id, condition, note, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
 
 
 @router.post("/sensors")
@@ -939,3 +988,245 @@ def admin_update_room_sensor(
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/room-sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+def _view_data_window(range: str, end: str) -> dict:
+    """Shared GET-side window/navigation bits for View Data (see CONTEXT.md: View Data; ADR 0021) —
+    identical between the Room and Enclosure pages, only the rows shown differ."""
+    start, end_date, days = vd.compute_window(range, end)
+    today = datetime.now().date()
+    next_end = end_date + timedelta(days=days)
+    return {
+        "dates": vd.date_list(start, end_date),
+        "range": range if range in {key for key, _, _ in vd.RANGE_OPTIONS} else vd.DEFAULT_RANGE_KEY,
+        "end": end_date.isoformat(),
+        "range_options": vd.RANGE_OPTIONS,
+        "prev_end": (start - timedelta(days=1)).isoformat(),
+        "next_end": None if end_date >= today else min(next_end, today).isoformat(),
+    }
+
+
+@router.get("/rooms/{room_id}/data")
+def admin_room_data(request: Request, room_id: int, range: str = "month", end: str = ""):
+    room = q.get_room(room_id)
+    if room is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    window = _view_data_window(range, end)
+    return templates.TemplateResponse(
+        request, "view_data.html",
+        {
+            "owner_label": room["name"],
+            "owner_kind": "room",
+            "back_url": f"/admin/rooms/{room_id}",
+            "sections": vd.build_room_sections(room_id, window["dates"]),
+            "animals": [],
+            "error": request.query_params.get("error"),
+            **window,
+        }
+    )
+
+
+@router.get("/enclosures/{enclosure_id}/data")
+def admin_enclosure_data(request: Request, enclosure_id: int, range: str = "month", end: str = ""):
+    enclosure = q.get_enclosure(enclosure_id)
+    if enclosure is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    window = _view_data_window(range, end)
+    return templates.TemplateResponse(
+        request, "view_data.html",
+        {
+            "owner_label": enclosure["name"],
+            "owner_kind": "enclosure",
+            "back_url": f"/admin/enclosures/{enclosure_id}",
+            "sections": vd.build_enclosure_sections(enclosure_id, window["dates"]),
+            "animals": enclosure["animals"],
+            "animal_conditions": ANIMAL_CONDITIONS,
+            "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "error": request.query_params.get("error"),
+            **window,
+        }
+    )
+
+
+@router.get("/rooms/{room_id}/graphs")
+def admin_room_graphs(request: Request, room_id: int, range: str = "month", end: str = ""):
+    """Graphs (see CONTEXT.md: Graphs, Overlay; ADR 0022) — same rows as View Data, charted instead
+    of tabled. Strictly read-only: no POST route exists here, unlike View Data's cell-edit routes."""
+    room = q.get_room(room_id)
+    if room is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    window = _view_data_window(range, end)
+    dates = window["dates"]
+    sections = gq.build_room_graph_sections(room_id, dates[0], dates[-1], len(dates))
+    selected = request.query_params.getlist("rows")
+    return templates.TemplateResponse(
+        request, "graphs.html",
+        {
+            "owner_label": room["name"],
+            "owner_kind": "room",
+            "back_url": f"/admin/rooms/{room_id}",
+            "sections": sections,
+            "overlay_rows": gq.rows_by_key(sections, selected),
+            "selected_keys": set(selected),
+            "error": request.query_params.get("error"),
+            **window,
+        }
+    )
+
+
+@router.get("/enclosures/{enclosure_id}/graphs")
+def admin_enclosure_graphs(request: Request, enclosure_id: int, range: str = "month", end: str = ""):
+    """Graphs for an Enclosure — see admin_room_graphs above (same shape, different row set, same
+    as View Data's own Room/Enclosure split)."""
+    enclosure = q.get_enclosure(enclosure_id)
+    if enclosure is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    window = _view_data_window(range, end)
+    dates = window["dates"]
+    sections = gq.build_enclosure_graph_sections(enclosure_id, dates[0], dates[-1], len(dates))
+    selected = request.query_params.getlist("rows")
+    return templates.TemplateResponse(
+        request, "graphs.html",
+        {
+            "owner_label": enclosure["name"],
+            "owner_kind": "enclosure",
+            "back_url": f"/admin/enclosures/{enclosure_id}",
+            "sections": sections,
+            "overlay_rows": gq.rows_by_key(sections, selected),
+            "selected_keys": set(selected),
+            "error": request.query_params.get("error"),
+            **window,
+        }
+    )
+
+
+@router.post("/sensors/{sensor_id}/readings/cell")
+def admin_set_reading_cell(
+    sensor_id: int,
+    metric_key: str = Form(...),
+    date: str = Form(...),
+    action: str = Form("save"),
+    value: str = Form(""),
+    range: str = Form("month"),
+    end: str = Form(""),
+):
+    """One cell of View Data's Sensor Readings section (see CONTEXT.md: View Data; ADR 0021) — only
+    ever reachable for a Manual Sensor; set_reading_cell() itself rejects a Smart one."""
+    sensor = q.get_sensor(sensor_id)
+    error = None
+    if sensor is None:
+        error = "Sensor not found."
+    else:
+        try:
+            if action == "clear":
+                vd.set_reading_cell(sensor_id, metric_key, date, None)
+            else:
+                metric = et.metric_by_key(metric_key)
+                try:
+                    parsed = float(value) if value.strip() else None
+                except ValueError:
+                    raise ValueError(f"{value!r} isn't a valid number.")
+                if parsed is not None and metric.converts_f_c:
+                    parsed = _f_to_c(parsed)
+                vd.set_reading_cell(sensor_id, metric_key, date, parsed)
+        except ValueError as exc:
+            error = str(exc)
+    owner_path = (
+        f"/admin/rooms/{sensor['room_id']}/data" if sensor and sensor["room_id"]
+        else f"/admin/enclosures/{sensor['enclosure_id']}/data" if sensor
+        else "/admin"
+    )
+    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
+    anchor = "" if error else f"#row-reading-{sensor_id}-{metric_key}"
+    return RedirectResponse(url=f"{owner_path}{qs}{anchor}", status_code=303)
+
+
+@router.post("/enclosures/{enclosure_id}/care-events/{kind}/cell")
+def admin_set_care_event_cell(
+    enclosure_id: int,
+    kind: str,
+    date: str = Form(...),
+    action: str = Form("save"),
+    time: str = Form(""),
+    note: str = Form(""),
+    animal_id: str = Form(""),
+    range: str = Form("month"),
+    end: str = Form(""),
+):
+    """One cell of View Data's Care Events section (see CONTEXT.md: View Data; ADR 0021)."""
+    error = None
+    try:
+        if action == "clear":
+            vd.delete_care_event_cell(enclosure_id, kind, date)
+        else:
+            vd.set_care_event_cell(enclosure_id, kind, date, time or None, note or None,
+                                    int(animal_id) if animal_id else None)
+    except ValueError as exc:
+        error = str(exc)
+    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
+    anchor = "" if error else f"#row-care-{enclosure_id}-{kind}"
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}/data{qs}{anchor}", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log/cell")
+def admin_set_animal_metric_cell(
+    animal_id: int,
+    field: str = Form(...),
+    date: str = Form(...),
+    action: str = Form("save"),
+    value: str = Form(""),
+    range: str = Form("month"),
+    end: str = Form(""),
+):
+    """One Weight/Length/Count cell of View Data's Animal Log section (see CONTEXT.md: Animal Log,
+    View Data; ADR 0021)."""
+    animal = q.get_animal(animal_id)
+    error = None
+    if animal is None:
+        error = "Animal not found."
+    else:
+        try:
+            if action == "clear":
+                vd.set_animal_metric_cell(animal_id, field, date, None)
+            else:
+                try:
+                    parsed = (int(value) if field == "count" else float(value)) if value.strip() else None
+                except ValueError:
+                    raise ValueError(f"{value!r} isn't a valid number.")
+                vd.set_animal_metric_cell(animal_id, field, date, parsed)
+        except ValueError as exc:
+            error = str(exc)
+    owner_path = f"/admin/enclosures/{animal['enclosure_id']}/data" if animal else "/admin"
+    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
+    anchor = "" if error else f"#row-animal-{animal_id}-{field}"
+    return RedirectResponse(url=f"{owner_path}{qs}{anchor}", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log/condition/cell")
+def admin_set_animal_condition_cell(
+    animal_id: int,
+    date: str = Form(...),
+    action: str = Form("save"),
+    condition: str = Form(""),
+    note: str = Form(""),
+    range: str = Form("month"),
+    end: str = Form(""),
+):
+    """One Condition cell of View Data's Animal Log section — picking the blank option acts as a
+    clear, same as leaving the cell empty (see CONTEXT.md: Animal Log, View Data; ADR 0021)."""
+    animal = q.get_animal(animal_id)
+    error = None
+    if animal is None:
+        error = "Animal not found."
+    else:
+        try:
+            if action == "clear" or not condition:
+                vd.delete_animal_condition_cell(animal_id, date)
+            else:
+                vd.set_animal_condition_cell(animal_id, date, condition, note or None)
+        except ValueError as exc:
+            error = str(exc)
+    owner_path = f"/admin/enclosures/{animal['enclosure_id']}/data" if animal else "/admin"
+    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
+    anchor = "" if error else f"#row-animal-{animal_id}-condition"
+    return RedirectResponse(url=f"{owner_path}{qs}{anchor}", status_code=303)
