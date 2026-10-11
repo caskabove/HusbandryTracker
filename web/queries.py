@@ -73,6 +73,11 @@ def _latest_reading(conn, sensor: dict) -> dict | None:
 
 
 _SPARKLINE_DAYS = 30
+# Trailing buckets averaged into each smoothed point (see CONTEXT.md: Sparkline; ADR 0024) — a
+# Smart Sensor's daily min/avg/max buckets get this before drawing, so a Sparkline reads as a trend
+# rather than a day-to-day zigzag. Index-based, not calendar-based: a bucket only exists for a day
+# that actually had a Reading, so this is "the last 3 buckets", not "the last 3 calendar days".
+_SPARKLINE_SMOOTHING_WINDOW = 3
 
 
 def _sparkline_c_to_f(celsius: float | None) -> float | None:
@@ -83,18 +88,37 @@ def _sparkline_epoch_ms(ts: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> int:
     return int(datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def _sparkline(conn, sensor: dict, column: str) -> list[list]:
-    """A Sparkline's points for one metric, covering the last month (see CONTEXT.md: Sparkline;
-    ADR 0023). A Smart Sensor's dedupe window is only 5 seconds (see plugins/govee_ble/plugin.py),
-    so it can write a new sensor_reading row every 5-30 seconds continuously — a month of that raw
-    would be tens of thousands of points for a chart this small, repeated on every Dashboard load.
-    Its Sparkline instead aggregates into daily min/avg/max buckets, as [epoch_ms, min, avg, max]
-    rows, oldest first. A Manual Sensor's Readings are hand-logged and sparse (at most one a day),
-    so bucketing them would be a no-op — its Sparkline stays raw, as [epoch_ms, value] pairs,
-    matching how Graphs already draws this same Smart/Manual split (ADR 0022). sensor_reading.
-    recorded_at is true UTC with no backdating path (see view_data_queries.py's module docstring) —
-    converted here so epoch_ms lines up with the viewer's actual wall-clock, same as every other
-    chart in this app."""
+def _sparkline_smoothed(points: list[list]) -> list[list]:
+    """A trailing _SPARKLINE_SMOOTHING_WINDOW-bucket moving average over every numeric column but
+    the leading epoch_ms one, applied to a Smart Sensor's bucketed [epoch_ms, min, avg, max] rows
+    (see CONTEXT.md: Sparkline; ADR 0024) — min/avg/max all get the same treatment so the band's
+    edges stay consistent with the line drawn inside it."""
+    smoothed = []
+    for i, point in enumerate(points):
+        window = points[max(0, i - _SPARKLINE_SMOOTHING_WINDOW + 1):i + 1]
+        smoothed.append([point[0]] + [sum(p[c] for p in window) / len(window) for c in range(1, len(point))])
+    return smoothed
+
+
+def _sparkline(conn, sensor: dict, metric) -> dict:
+    """A Sparkline's points for one metric, covering the last month, plus the Sensor's own Target
+    Range for that metric (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024) — {"points": [...],
+    "target_min": float | None, "target_max": float | None}, all already in the metric's display
+    unit (Fahrenheit for Temperature, same as every pill), since the Target Range is stored in the
+    same unit as the Reading it judges (Celsius for Temperature).
+
+    A Smart Sensor's dedupe window is only 5 seconds (see plugins/govee_ble/plugin.py), so it can
+    write a new sensor_reading row every 5-30 seconds continuously — a month of that raw would be
+    tens of thousands of points for a chart this small, repeated on every Dashboard load. Its
+    Sparkline instead aggregates into daily min/avg/max buckets, then smooths those with a trailing
+    moving average (_sparkline_smoothed) so the line reads as a trend rather than a zigzag — both
+    as [epoch_ms, min, avg, max] rows, oldest first. A Manual Sensor's Readings are hand-logged and
+    sparse (at most one a day), so bucketing and smoothing them would misrepresent what was
+    actually recorded — its Sparkline stays raw and unsmoothed, as [epoch_ms, value] pairs.
+    sensor_reading.recorded_at is true UTC with no backdating path (see view_data_queries.py's
+    module docstring) — converted here so epoch_ms lines up with the viewer's actual wall-clock,
+    same as every other chart in this app."""
+    column = metric.reading_column
     cutoff = (datetime.now(timezone.utc) - timedelta(days=_SPARKLINE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     if sensor["tracking_mode"] == "manual":
         rows = conn.execute(
@@ -115,20 +139,24 @@ def _sparkline(conn, sensor: dict, column: str) -> list[list]:
             [_sparkline_epoch_ms(row["bucket"], "%Y-%m-%d"), row["lo"], row["avg"], row["hi"]]
             for row in rows
         ]
-    metric = next(m for m in et.TARGET_RANGE_METRICS if m.reading_column == column)
+        points = _sparkline_smoothed(points)
+    target_min = sensor[metric.min_column]
+    target_max = sensor[metric.max_column]
     if metric.converts_f_c:
         points = [[p[0]] + [_sparkline_c_to_f(v) for v in p[1:]] for p in points]
-    return points
+        target_min = _sparkline_c_to_f(target_min)
+        target_max = _sparkline_c_to_f(target_max)
+    return {"points": points, "target_min": target_min, "target_max": target_max}
 
 
-def _sparklines(conn, sensor: dict, reading: dict | None) -> dict[str, list]:
+def _sparklines(conn, sensor: dict, reading: dict | None) -> dict[str, dict]:
     """Only fetches a Sparkline for a metric this Sensor's Reading pill is actually showing right
     now (reading[column] is not None) — same restriction _latest_reading already applies to which
     metrics it looks up at all, so this never scans a column this Sensor has never reported."""
     if reading is None:
         return {}
     return {
-        metric.reading_column: _sparkline(conn, sensor, metric.reading_column)
+        metric.reading_column: _sparkline(conn, sensor, metric)
         for metric in et.TARGET_RANGE_METRICS
         if reading.get(metric.reading_column) is not None
     }

@@ -13,9 +13,11 @@ those two to server-side aggregated buckets (min/avg/max per bucket — hourly t
 for Year). A Manual Sensor's Readings, Care Events, and Animal Log entries are never high-volume
 enough to need this and always plot raw, regardless of range.
 
-Each row is a dict: {key, label, chart_type, unit, series, shape (line rows only)}.
+Each row is a dict: {key, label, chart_type, unit, series, shape/decimals (line rows only)}.
 - chart_type "line": a numeric series. shape "raw" -> series is [[epoch_ms, value], ...];
-  shape "band" -> series is [[epoch_ms, min, avg, max], ...].
+  shape "band" -> series is [[epoch_ms, min, avg, max], ...]. decimals is the tooltip's display
+  precision — a Sensor Reading row uses its own TargetRangeMetric.decimals (Specific Gravity needs
+  all 3 to mean anything; a flat 2 everywhere used to clip it), everything else defaults to 2.
 - chart_type "marker": series is [[epoch_ms, label_text], ...] — a Care Event, a Plug Status
   change, or an Animal Log Condition has a moment but no Y-value of its own (see CONTEXT.md: Graphs).
 
@@ -145,6 +147,7 @@ def _reading_line_row(conn: sqlite3.Connection, sensor: dict, metric: et.TargetR
         "shape": shape,
         "unit": unit,
         "series": series,
+        "decimals": metric.decimals,
     }
 
 
@@ -163,6 +166,7 @@ def _plug_telemetry_line_row(conn: sqlite3.Connection, plug: dict, field: str, u
         "shape": shape,
         "unit": unit,
         "series": series,
+        "decimals": 2,
     }
 
 
@@ -236,6 +240,7 @@ def _animal_metric_line_row(conn: sqlite3.Connection, animal: dict, field: str, 
         "shape": "raw",
         "unit": unit,
         "series": series,
+        "decimals": 2,
     }
 
 

@@ -20,6 +20,10 @@ bucket's date and min/avg/max — but stays otherwise axis-less, legend-less, an
 chart is still drawn per metric, unchanged; a multi-metric Sensor (a Govee Temp+Humidity pair) gets
 two Sparklines, not one combined Overlay-style chart.
 
+*(The axis-less/non-clickable part is superseded by ADR 0024: Sparkline gained a minimal axis, a
+Target Range band, smoothing, and a click-through to Graphs. This paragraph describes the original
+shape only.)*
+
 **Why**: A Sparkline, unlike a Graphs chart, renders repeatedly on every single Dashboard load rather
 than once per on-demand page visit — so the row-volume concern ADR 0022 raised for Graphs' 90+ day
 ranges bites much sooner here, at a single month, for a chart that's only ever drawn at a few dozen

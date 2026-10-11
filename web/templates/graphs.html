@@ -75,7 +75,11 @@
             <h2>{{ section.title }}</h2>
             <div class="graphs-grid">
                 {% for row in section.rows %}
-                <div class="graph-card">
+                {# id lets a Sparkline's click-through (see CONTEXT.md: Sparkline; ADR 0024) jump
+                   straight to this exact row — row.key already matches the anchor each Sparkline
+                   builds, since both sides come from the same f"reading-{sensor_id}-{metric_key}"
+                   shape (graphs_queries.py). #}
+                <div class="graph-card" id="{{ row.key }}">
                     <h3>{{ row.label }}</h3>
                     {% if row.series %}
                     <div class="graph-card-wrap">

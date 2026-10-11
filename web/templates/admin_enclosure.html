@@ -259,14 +259,22 @@
                             {% endfor %}
                             {% if ns.shown %}
                             <span class="reading-meta">as of {{ reading.recorded_at }}</span>
-                            {# A Sparkline per metric (see CONTEXT.md: Sparkline; ADR 0023) — last
-                               month, stacked under the shared as-of line rather than beside each
-                               pill above. #}
+                            {# A Sparkline per metric, stacked under the shared as-of line (see
+                               CONTEXT.md: Sparkline; ADR 0023, ADR 0024) — clicking one opens the
+                               full Graphs chart for that exact Sensor+metric, anchored to the row
+                               key graphs_queries.py already builds for it. #}
                             <div class="sparkline-group">
                             {% for metric in TARGET_RANGE_METRICS %}
-                                {% set points = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else [] %}
-                                {% if points %}
-                                <canvas class="sparkline" width="220" height="48" data-points="{{ points|tojson }}" data-decimals="{{ metric.decimals }}" title="{{ metric.label }} - last 30 days"></canvas>
+                                {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
+                                {% if spark and spark.points %}
+                                <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                    <canvas class="sparkline" width="260" height="84"
+                                            data-points="{{ spark.points|tojson }}"
+                                            data-decimals="{{ metric.decimals }}"
+                                            data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                            data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                            title="{{ metric.label }} - last 30 days"></canvas>
+                                </a>
                                 {% endif %}
                             {% endfor %}
                             </div>

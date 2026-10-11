@@ -305,12 +305,14 @@ button.danger {
     justify-content: space-between;
     gap: 0.75rem;
 }
+/* Wraps the "edit this Room" link and room-summary as siblings (see dashboard.html's comment on
+   this, next to ADR 0024) — takes over the flex:1 role .room-header-link used to carry alone, back
+   when it wrapped room-summary too. */
+.room-header-main { flex: 1; min-width: 0; }
 .room-header-link {
     display: block;
     color: inherit;
     text-decoration: none;
-    flex: 1;
-    min-width: 0;
 }
 .room-header-link:hover { opacity: 0.85; }
 .room-header h2 {
@@ -690,6 +692,9 @@ span.button-link.disabled {
     gap: 1rem;
 }
 .graph-card h3 { font-size: 0.95rem; margin: 0 0 0.4rem; }
+/* Highlights whichever card a Sparkline's click-through (ADR 0024) landed on — the anchor jump
+   alone is easy to miss on a page with many rows. */
+.graph-card:target { outline: 2px solid var(--primary-bright); border-radius: 8px; }
 .graph-card-wrap { position: relative; height: 14rem; }
 .graph-card-wrap-overlay { height: 20rem; }
 .graph-canvas { width: 100% !important; height: 100% !important; }
@@ -709,12 +714,17 @@ span.button-link.disabled {
     white-space: nowrap;
 }
 
-/* Sparkline (see CONTEXT.md: Sparkline; ADR 0023) — a small monthly trend chart under a Reading's
-   "as of" line, wherever one already appears. .sparkline-group wraps one canvas per metric a
-   Sensor tracks, side by side with wrapping/scroll rather than stacked, since a multi-metric
-   Sensor (temp + humidity, say) still gets one chart per metric. .sparkline-group-row additionally
-   spans the full width of .reading-row-grid (dashboard.html's reading_row macro), since that grid
-   otherwise only has the 3 explicit columns the pill/as-of row already fills. */
-.sparkline-group { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
-.sparkline-group-row { grid-column: 1 / -1; overflow-x: auto; }
+/* Sparkline (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024) — a compact preview chart under a
+   Reading's "as of" line, wherever one already appears. .sparkline-group wraps one canvas per
+   metric a Sensor tracks, stacked vertically (a multi-metric Sensor like temp + humidity still
+   gets one chart per metric, just no longer side by side — each chart is wide enough to carry its
+   own axis labels now, from ADR 0024). .sparkline-group-row additionally spans the full width of
+   .reading-row-grid (dashboard.html's reading_row macro), since that grid otherwise only has the 3
+   explicit columns the pill/as-of row already fills. */
+.sparkline-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.3rem; }
+.sparkline-group-row { grid-column: 1 / -1; }
+/* The whole chart is a real link to its full Graphs chart (ADR 0024) — block so the canvas sizes
+   normally inside it, with a quiet hover affordance since nothing else here signals "clickable". */
+.sparkline-link { display: inline-block; border-radius: 6px; transition: background-color 0.15s; }
+.sparkline-link:hover { background-color: var(--border); }
 canvas.sparkline { display: block; }
