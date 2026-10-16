@@ -53,8 +53,8 @@ These four constraints should be treated as acceptance criteria for every future
 - **Note:** Docker is currently sidelined for local dev (ADR 0002) because the Govee BLE Plugin needs host Bluetooth access. The Tuya Plugin, Ingest and web all containerize fine; the Govee Plugin is the one host-process exception. This doesn't change the packaging *targets* above, but the Pi-image path is the cleaner fit given the BLE constraint.
 - Full detail: see §4.4 and §9.7 (hardware).
 
-### 2.6 Licensing (recommended, not yet confirmed — build should not assume final)
-- Recommendation on record: AGPLv3 for the core app, open-core structure (AGPL/MIT core + closed relay/mobile-push component sold as the subscription).
+### 2.6 Licensing (decided 2026-10-16: AGPLv3 core)
+- Decided: AGPLv3 for the core app (`LICENSE`), open-core structure (AGPL/MIT core + closed relay/mobile-push component sold as the subscription).
 - **Build implication:** code that will live in the closed relay component vs. the open core should be modularized as separably as possible from day one, regardless of final license choice — see §4.2.
 - No `LICENSE` file exists yet — consistent with "not confirmed." See §9.2.
 
@@ -189,12 +189,12 @@ A snapshot of what is actually implemented, so the requirements above can be rea
 - Full research: `Pricing_Strategy_for_an_Open-Source_Reptile_Husbandry_App...md` (project file). Cash-flow model: see §6.
 - **Next touch:** revisit only if conversion/cost thresholds in the pricing doc get triggered post-launch, or if a second pricing tier is modeled.
 
-### 9.2 Licensing — 🟡 Recommended, not confirmed
-- **Recommendation on record:** AGPLv3 for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product.
+### 9.2 Licensing — ✅ Decided 2026-10-16 (AGPLv3 core; Jira RHA-8)
+- **Decision:** AGPLv3 for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product.
 - **Structure:** open-core — AGPL/MIT core + a small closed relay/mobile-push service sold as the subscription (same shape as Nabu Casa ↔ Home Assistant).
-- **Needs decision:** AGPLv3 vs. MIT vs. Apache 2.0 vs. other open-core split; whether to require a CLA.
+- **Still open:** the license and boundary of the closed relay component, and whether to require a CLA.
 - **Considerations when picked up:** contributor friction (AGPL can scare off some contributors), how it interacts legally with the closed relay component, the CLA question.
-- **Blocks:** no `LICENSE` file and no public repo until this is signed off (§4.2 modularization can and should begin regardless).
+- **Done:** `LICENSE` (AGPLv3) committed and repo public at caskabove/HusbandryTracker.
 - **Next touch:** dedicated session — needs sign-off before any public repo goes up.
 
 ### 9.3 Remote Access — Architecture & Security — ⚪ Open
