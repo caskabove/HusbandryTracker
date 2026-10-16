@@ -45,7 +45,7 @@ macOS/Linux. Cross-platform packaging is out of scope here, not just deferred.
 **Consequences**: new `packaging/` (or similar) directory for the PyInstaller spec and the `.iss`
 script; new `.github/workflows/release.yml`; `tray/install.py` and its Desktop-shortcut logic are
 superseded by the installer for end users (still useful for someone running from source); a
-top-level `README.md` and `LICENSE` (MIT) were added alongside this, since a repo with no README
+top-level `README.md` and `LICENSE` (initially MIT; relicensed to AGPL-3.0-or-later on 2026-10-16) were added alongside this, since a repo with no README
 was a dead end for the exact non-technical audience this packaging targets; first tagged release is
 `v1.0.0`. Not addressed here: code signing, auto-update, and any non-Windows target — each would be
 its own future decision.

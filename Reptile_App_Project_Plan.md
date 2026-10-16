@@ -29,11 +29,10 @@
 
 ---
 
-## 2. Licensing — 🟡 Recommended, not confirmed
-- **Recommendation on record:** AGPLv3 for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product.
-- **Structure:** open-core — AGPL/MIT core + a small closed relay/mobile-push service sold as the subscription (same shape as Nabu Casa ↔ Home Assistant).
-- **Needs decision:** AGPLv3 vs. MIT vs. Apache 2.0 vs. other open-core split.
-- **Considerations to weigh when we pick this up:** contributor friction (AGPL can scare off some contributors), how it interacts with the "closed relay" component legally, whether you want a CLA.
+## 2. Licensing — ✅ Decided: AGPL-3.0-or-later
+- **Decision (2026-10-16):** AGPL-3.0-or-later for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product. Earlier releases shipped under MIT and stay MIT for anyone who already has them.
+- **Structure:** open-core — AGPL core + a small closed relay/mobile-push service sold as the subscription (same shape as Nabu Casa ↔ Home Assistant).
+- **Still open:** whether to require a CLA; a short legal review of how the closed relay interacts with the AGPL core.
 
 **Next touch:** dedicated session — needs your sign-off before any public repo goes up.
 
