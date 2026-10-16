@@ -9,7 +9,8 @@
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
-        <h1>Husbandry Tracker Dashboard</h1>
+        <h1> Dashboard</h1>
+
         {% set nav_current = "dashboard" %}{% include "_nav.html" %}
     </header>
 
@@ -22,7 +23,7 @@
        Sensor's Reading (used together with colored=false — see CONTEXT.md: Fallback Sensor —
        since a Room's Target Range reflects human comfort, not what's healthy for a specific
        animal), so nothing gets colored against a Room Sensor's own targets by accident. #}
-    {% macro reading_row(label, reading, sensor, colored, badge_text='', only_metric=none, sparklines=none) %}
+    {% macro reading_row(label, reading, sensor, colored, badge_text='', only_metric=none, sparklines=none, graph_link=none, sensor_id=none) %}
         {# Three aligned columns — Label, Type (the M/A tracking-mode badge), Status (every metric
            pill plus the "as of"/"no data yet" tail) — see .reading-row-grid in style.css. Columns 1
            and 2 are fixed-width so every Reading row in a card lines up regardless of label length
@@ -31,7 +32,13 @@
 
            only_metric restricts the loop to one TARGET_RANGE_METRICS key — used to display a Govee
            Sensor's single Reading row as two separate rows (Temp, Humidity), one physical Sensor
-           still, purely a display split (see the enclosure_panel/room-header callers below). #}
+           still, purely a display split (see the enclosure_panel/room-header callers below).
+
+           graph_link/sensor_id build each Sparkline's click-through to the full Graphs chart (see
+           CONTEXT.md: Sparkline; ADR 0024) — passed in rather than derived from `sensor`, since a
+           Fallback Sensor's Reading row passes sensor=none (it's never colored against a Room's
+           own Target Range — see CONTEXT.md: Fallback Sensor) but still needs to link to its real
+           owning Room's Graphs page, not the Enclosure panel it's displayed on. #}
         <div class="reading-row reading-row-grid">
             <span class="reading-label">{{ label }}</span>
             <span class="reading-type">{% if badge_text %}<span class="badge badge-muted badge-tracking">{{ badge_text }}</span>{% endif %}</span>
@@ -59,13 +66,21 @@
                 {% endif %}
             </span>
             {% if ns.shown %}
-            {# A Sparkline per metric (see CONTEXT.md: Sparkline; ADR 0023) — last month, on its
-               own line under the pill/as-of row above rather than beside each pill. #}
+            {# A Sparkline per metric, on its own line under the pill/as-of row above (see
+               CONTEXT.md: Sparkline; ADR 0023, ADR 0024) — clicking one opens the full Graphs
+               chart for that exact Sensor+metric. #}
             <span class="sparkline-group sparkline-group-row">
             {% for metric in TARGET_RANGE_METRICS if only_metric is none or metric.key == only_metric %}
-                {% set points = sparklines[metric.reading_column] if sparklines and sparklines.get(metric.reading_column) else [] %}
-                {% if points %}
-                <canvas class="sparkline" width="220" height="48" data-points="{{ points|tojson }}" data-decimals="{{ metric.decimals }}" title="{{ metric.label }} - last 30 days"></canvas>
+                {% set spark = sparklines[metric.reading_column] if sparklines and sparklines.get(metric.reading_column) else none %}
+                {% if spark and spark.points %}
+                <a class="sparkline-link" href="{{ graph_link }}#reading-{{ sensor_id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                    <canvas class="sparkline" width="260" height="84"
+                            data-points="{{ spark.points|tojson }}"
+                            data-decimals="{{ metric.decimals }}"
+                            data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                            data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                            title="{{ metric.label }} - last 30 days"></canvas>
+                </a>
                 {% endif %}
             {% endfor %}
             </span>
@@ -156,19 +171,19 @@
                                readability, purely a display split (see CONTEXT.md: Reading; still
                                one Sensor to create/edit/delete). #}
                             {% if sensor.plugin == "govee_ble" %}
-                                {{ reading_row(sensor.label ~ " Temp", sensor.latest_reading, sensor, true, "A", only_metric="temperature", sparklines=sensor.sparklines) }}
-                                {{ reading_row(sensor.label ~ " Humidity", sensor.latest_reading, sensor, true, "A", only_metric="humidity", sparklines=sensor.sparklines) }}
+                                {{ reading_row(sensor.label ~ " Temp", sensor.latest_reading, sensor, true, "A", only_metric="temperature", sparklines=sensor.sparklines, graph_link="/admin/enclosures/" ~ enclosure.id ~ "/graphs", sensor_id=sensor.id) }}
+                                {{ reading_row(sensor.label ~ " Humidity", sensor.latest_reading, sensor, true, "A", only_metric="humidity", sparklines=sensor.sparklines, graph_link="/admin/enclosures/" ~ enclosure.id ~ "/graphs", sensor_id=sensor.id) }}
                             {% else %}
-                                {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "M" if sensor.tracking_mode == "manual" else "A", sparklines=sensor.sparklines) }}
+                                {{ reading_row(sensor.label, sensor.latest_reading, sensor, true, "M" if sensor.tracking_mode == "manual" else "A", sparklines=sensor.sparklines, graph_link="/admin/enclosures/" ~ enclosure.id ~ "/graphs", sensor_id=sensor.id) }}
                             {% endif %}
                             {{ reading_log_form(sensor) }}
                         {% endfor %}
                     {% elif enclosure.fallback_sensor %}
                         {% if enclosure.fallback_sensor.plugin == "govee_ble" %}
-                            {{ reading_row(enclosure.fallback_sensor.label ~ " Temp", enclosure.fallback_reading, none, false, "room", only_metric="temperature", sparklines=enclosure.fallback_sparklines) }}
-                            {{ reading_row(enclosure.fallback_sensor.label ~ " Humidity", enclosure.fallback_reading, none, false, "room", only_metric="humidity", sparklines=enclosure.fallback_sparklines) }}
+                            {{ reading_row(enclosure.fallback_sensor.label ~ " Temp", enclosure.fallback_reading, none, false, "room", only_metric="temperature", sparklines=enclosure.fallback_sparklines, graph_link="/admin/rooms/" ~ enclosure.fallback_sensor.room_id ~ "/graphs", sensor_id=enclosure.fallback_sensor.id) }}
+                            {{ reading_row(enclosure.fallback_sensor.label ~ " Humidity", enclosure.fallback_reading, none, false, "room", only_metric="humidity", sparklines=enclosure.fallback_sparklines, graph_link="/admin/rooms/" ~ enclosure.fallback_sensor.room_id ~ "/graphs", sensor_id=enclosure.fallback_sensor.id) }}
                         {% else %}
-                            {{ reading_row(enclosure.fallback_sensor.label, enclosure.fallback_reading, none, false, "room", sparklines=enclosure.fallback_sparklines) }}
+                            {{ reading_row(enclosure.fallback_sensor.label, enclosure.fallback_reading, none, false, "room", sparklines=enclosure.fallback_sparklines, graph_link="/admin/rooms/" ~ enclosure.fallback_sensor.room_id ~ "/graphs", sensor_id=enclosure.fallback_sensor.id) }}
                         {% endif %}
                     {% elif enclosure.sensor_count %}
                         <p class="empty">No sensors selected to display &mdash; pick some on the Enclosure page</p>
@@ -292,8 +307,14 @@
                  ondragover="onRoomDragOver(event)" ondragleave="onRoomDragLeave(event)" ondrop="onRoomDrop(event)">
             <header class="room-header">
                 <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
+                <div class="room-header-main">
+                {# The Sparkline click-through (ADR 0024) makes room-summary's own charts into real
+                   <a> links — nested <a> elements are invalid HTML, so the "edit this Room" link
+                   below can no longer wrap room-summary the way it used to; it now only wraps the
+                   room name itself, with room-summary pulled out as a sibling. #}
                 <a href="/admin/rooms/{{ room.id }}" class="room-header-link" title="Edit {{ room.name }}">
                     <h2>{{ room.name }}</h2>
+                </a>
                     <div class="room-summary">
                         {% if room.sensors %}
                             {% for sensor in room.sensors %}
@@ -304,8 +325,8 @@
                                    Humidity in a single Reading — shown here as two separate items
                                    for readability, purely a display split (see CONTEXT.md: Reading;
                                    still one Sensor to create/edit/delete). #}
-                                {% set temp_points = sensor.sparklines.temperature_c if sensor.sparklines and sensor.sparklines.get("temperature_c") else [] %}
-                                {% set humidity_points = sensor.sparklines.humidity_pct if sensor.sparklines and sensor.sparklines.get("humidity_pct") else [] %}
+                                {% set temp_spark = sensor.sparklines.temperature_c if sensor.sparklines and sensor.sparklines.get("temperature_c") else none %}
+                                {% set humidity_spark = sensor.sparklines.humidity_pct if sensor.sparklines and sensor.sparklines.get("humidity_pct") else none %}
                                 {% if sensor.plugin == "govee_ble" %}
                                     <span class="room-ambient-item">
                                         <span class="room-ambient-pill-row">
@@ -314,7 +335,16 @@
                                         </span>
                                         {% if rs and rs.temperature_c is not none %}
                                         <span class="reading-meta">as of {{ rs.recorded_at }}</span>
-                                        {% if temp_points %}<canvas class="sparkline" width="220" height="48" data-points="{{ temp_points|tojson }}" data-decimals="1" title="Temperature - last 30 days"></canvas>{% endif %}
+                                        {% if temp_spark and temp_spark.points %}
+                                        <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-temperature" title="View full Temperature chart">
+                                            <canvas class="sparkline" width="260" height="84"
+                                                    data-points="{{ temp_spark.points|tojson }}"
+                                                    data-decimals="1"
+                                                    data-target-min="{{ '' if temp_spark.target_min is none else temp_spark.target_min }}"
+                                                    data-target-max="{{ '' if temp_spark.target_max is none else temp_spark.target_max }}"
+                                                    title="Temperature - last 30 days"></canvas>
+                                        </a>
+                                        {% endif %}
                                         {% endif %}
                                     </span>
                                     <span class="room-ambient-item">
@@ -324,7 +354,16 @@
                                         </span>
                                         {% if rs and rs.humidity_pct is not none %}
                                         <span class="reading-meta">as of {{ rs.recorded_at }}</span>
-                                        {% if humidity_points %}<canvas class="sparkline" width="220" height="48" data-points="{{ humidity_points|tojson }}" data-decimals="1" title="Humidity - last 30 days"></canvas>{% endif %}
+                                        {% if humidity_spark and humidity_spark.points %}
+                                        <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-humidity" title="View full Humidity chart">
+                                            <canvas class="sparkline" width="260" height="84"
+                                                    data-points="{{ humidity_spark.points|tojson }}"
+                                                    data-decimals="1"
+                                                    data-target-min="{{ '' if humidity_spark.target_min is none else humidity_spark.target_min }}"
+                                                    data-target-max="{{ '' if humidity_spark.target_max is none else humidity_spark.target_max }}"
+                                                    title="Humidity - last 30 days"></canvas>
+                                        </a>
+                                        {% endif %}
                                         {% endif %}
                                     </span>
                                 {% else %}
@@ -355,9 +394,16 @@
                                         <span class="reading-meta">as of {{ rs.recorded_at }}</span>
                                         <span class="sparkline-group">
                                         {% for metric in TARGET_RANGE_METRICS %}
-                                            {% set points = sensor.sparklines[metric.reading_column] if sensor.sparklines and sensor.sparklines.get(metric.reading_column) else [] %}
-                                            {% if points %}
-                                            <canvas class="sparkline" width="220" height="48" data-points="{{ points|tojson }}" data-decimals="{{ metric.decimals }}" title="{{ metric.label }} - last 30 days"></canvas>
+                                            {% set spark = sensor.sparklines[metric.reading_column] if sensor.sparklines and sensor.sparklines.get(metric.reading_column) else none %}
+                                            {% if spark and spark.points %}
+                                            <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                                <canvas class="sparkline" width="260" height="84"
+                                                        data-points="{{ spark.points|tojson }}"
+                                                        data-decimals="{{ metric.decimals }}"
+                                                        data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                                        data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                                        title="{{ metric.label }} - last 30 days"></canvas>
+                                            </a>
                                             {% endif %}
                                         {% endfor %}
                                         </span>
@@ -392,7 +438,7 @@
                             {% if room.light_notes %}&mdash; {{ room.light_notes }}{% endif %}
                         </span>
                     </div>
-                </a>
+                </div>
                 <div class="room-header-actions">
                     {% if room.sensors | selectattr("tracking_mode", "equalto", "smart") | list %}
                     <form method="post" action="/rooms/{{ room.id }}/refresh" class="entity-refresh-form">

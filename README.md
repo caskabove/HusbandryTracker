@@ -5,7 +5,9 @@ collection: environmental readings (temperature, humidity), device schedules (li
 cooling), and care events (feeding, watering, cleaning) — all in one private dashboard that runs on
 your own computer.
 
-**[⬇ Download for Windows](https://github.com/kevinramsey2002/HusbandryTracker/releases/latest)**
+**[⬇ Download for Windows](https://github.com/caskabove/HusbandryTracker/releases/latest)**
+
+_The first installer release hasn't been published yet — until it is, use **Building from source** below._
 
 No technical background needed — download `HusbandryTrackerSetup.exe` from the latest release above,
 run it, and follow the prompts. Windows may show a "Windows protected your PC" warning the first
@@ -20,7 +22,9 @@ sensors and plugs, reading the dashboard, troubleshooting) are in
   Bluetooth — the closer, the more reliable).
 - Govee **H5074** or **H5102** Bluetooth temp/humidity sensors, already set up in the Govee Home
   app.
-- Optionally, Gosund smart plugs (light/heat/cooling control) set up through the Smart Life app.
+- Optionally, Gosund smart plugs (for your lights, heat and cooling) set up through the Smart Life
+  app. Husbandry Tracker monitors them — on/off state and schedules — but does not switch
+  them on or off in this version.
 
 See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the complete walkthrough.
 
@@ -31,7 +35,7 @@ not use the installer, or if you're on a platform other than Windows (note: Blue
 is currently only exercised on Windows).
 
 ```
-git clone https://github.com/kevinramsey2002/HusbandryTracker.git
+git clone https://github.com/caskabove/HusbandryTracker.git
 cd HusbandryTracker
 python -m venv .venv
 .venv\Scripts\activate
@@ -51,7 +55,9 @@ Husbandry Tracker's domain language and design decisions are documented as they'
   local-only ([ADR 0001](docs/adr/0001-three-service-sqlite-architecture.md)), why Docker was
   dropped for local dev ([ADR 0002](docs/adr/0002-drop-docker-for-local-dev.md)), and how the
   Windows installer is packaged
-  ([ADR 0018](docs/adr/0018-pyinstaller-innosetup-packaging.md)).
+  ([ADR 0018](docs/adr/0018-pyinstaller-innosetup-packaging.md)). The Windows installer is the supported install;
+  `docker-compose.yml` remains as an optional, advanced way to run the web, ingest and Tuya
+  processes (the Govee Bluetooth collector always runs on the host).
 
 ## License
 

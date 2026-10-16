@@ -1,8 +1,14 @@
-# Reptile Husbandry App — Project Plan & Decision Tracker
+# Reptile Husbandry App — Project Plan (moved)
 
-*Living document. Updated each session — items get added, removed, resolved, or revisited here as decisions firm up.*
+This file used to hold the project plan and decision tracker. It drifted out of date, so it is now
+a pointer only.
 
-**Last updated:** 2026-09-22 (Session 5)
+- **Business plan and decision tracker** (pricing, licensing, go-to-market, legal): kept in the
+  CaskAbove project workspace, outside this repo.
+- **Task tracking**: Jira project RHA.
+- **Technical decisions**: [`docs/adr/`](docs/adr/) and
+  [`Reptile_App_Technical_Requirements.md`](Reptile_App_Technical_Requirements.md).
+- **Domain glossary**: [`CONTEXT.md`](CONTEXT.md).
 
 **North star (confirmed):** Not optimizing for max revenue. Free, fully-functional, unlimited local self-hosted core for everyone; one small optional paid tier to cover hosting costs. Model: Home Assistant / Nabu Casa.
 
