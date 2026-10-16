@@ -61,5 +61,13 @@ Husbandry Tracker's domain language and design decisions are documented as they'
 
 ## License
 
-Husbandry Tracker is free software, licensed under the GNU Affero General Public License v3.0 —
-see [`LICENSE`](LICENSE). © CaskAbove.
+Husbandry Tracker is free and open source under the
+[GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later) — © 2026 CaskAbove.
+
+In plain terms: you can use, change, and share it for free. If you modify it and share it with
+others — including running a modified version that other people use over a network — you must
+make your changes available under the same license.
+
+Versions of the code published before 2026-10-16 were under the MIT License, and copies of those
+versions keep that license. Third-party code bundled with the app (for example, Chart.js in
+`web/static/`) keeps its own license.
