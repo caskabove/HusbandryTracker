@@ -55,4 +55,4 @@ Husbandry Tracker's domain language and design decisions are documented as they'
 
 ## License
 
-[MIT](LICENSE) — © CaskAbove
+(LICENSE) — © CaskAbove
