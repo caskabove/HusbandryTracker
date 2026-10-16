@@ -42,7 +42,7 @@ RANGE_OPTIONS: tuple[tuple[str, str, int], ...] = (
     ("180d", "180 Days", 180),
     ("year", "Year", 365),
 )
-DEFAULT_RANGE_KEY = "month"
+DEFAULT_RANGE_KEY = "week"
 _RANGE_DAYS = {key: days for key, _, days in RANGE_OPTIONS}
 
 _PLUG_TELEMETRY_FIELDS = (("watts", "W"), ("volts", "V"), ("amps", "A"))

@@ -1,14 +1,24 @@
 :root {
-    --bg: #0d1913;
-    --panel-bg: #16261e;
-    --panel-header-bg: #1c3327;
-    --room-bg: #0a140f;      /* a shade darker than --bg itself — the Room "frame" around its Enclosures */
-    --room-header-bg: #14241b; /* darker than --panel-header-bg, so a Room's header reads apart from an Enclosure's */
-    --primary: #2f6b4f;
-    --primary-bright: #4f9d76;
-    --text: #e8f0ec;
-    --text-muted: #93a89c;
-    --border: #24402f;
+    /*--bg: #0d1913;*/
+    /*--panel-bg: #16261e;*/
+    /*--panel-header-bg: #1c3327;*/
+    /*--room-bg: #0a140f;      !* a shade darker than --bg itself — the Room "frame" around its Enclosures *!*/
+    /*--room-header-bg: #14241b; !* darker than --panel-header-bg, so a Room's header reads apart from an Enclosure's *!*/
+    /*--primary: #2f6b4f;*/
+    /*--primary-bright: #4f9d76;*/
+    /*--text: #e8f0ec;*/
+    /*--text-muted: #93a89c;*/
+    /*--border: #24402f;*/
+    --bg: #0d161a;             /* Deep oceanic abyss */
+    --panel-bg: #162226;       /* Dark midnight blue */
+    --panel-header-bg: #1c2d33;/* Deep sea ridge */
+    --room-bg: #0a1114;        /* A shade darker than --bg — Trench dark */
+    --room-header-bg: #142024; /* Darker than panel header, distinct room frame */
+    --primary: #2f566b;        /* Classic ocean blue accent */
+    --primary-bright: #4f829d; /* Cresting wave / bright sea foam */
+    --text: #e8eef0;           /* Soft icy blue-white */
+    --text-muted: #93a2a8;     /* Muted sea spray gray */
+    --border: #243740;
 
     --status-green: #4caf72;
     --status-yellow: #dcb24c;
@@ -34,15 +44,20 @@ body {
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 1rem;
+    /*box-shadow: 2px 8px 20px rgba(0, 0, 0, 0.15);*/
+    padding-top: 50px;    /* Adds space inside the top of the header */
+    padding-bottom: 50px; /* Adds space inside the bottom of the header */
+    /*position: fixed;*/
+    /*top: 0;*/
 }
 .header-logo {
-    height: 44px;
+    height: 88px;
     width: auto;
     display: block;
 }
 .page-header h1 {
     margin: 0;
-    font-size: 1.4rem;
+    font-size: 2.4rem;
     letter-spacing: 0.02em;
     text-align: center;
 }

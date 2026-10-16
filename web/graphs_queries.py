@@ -126,6 +126,7 @@ def _reading_line_row(conn: sqlite3.Connection, sensor: dict, metric: et.TargetR
                        start: date, end: date, days: int) -> dict:
     """A Manual Sensor's Readings always plot raw (sparse by nature — see module docstring); a Smart
     Sensor's follow the Week/Month-raw, longer-aggregated split."""
+    print(f"HEY    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     column = metric.reading_column
     raw = sensor["tracking_mode"] == "manual" or _is_raw_tier(days)
     label_suffix = metric.label or metric.key.replace("_", " ").title()
@@ -134,11 +135,14 @@ def _reading_line_row(conn: sqlite3.Connection, sensor: dict, metric: et.TargetR
         series = _raw_numeric_series(conn, "sensor_reading", "sensor_id", sensor["id"], "recorded_at", column, start, end)
         if metric.converts_f_c:
             series = [[t, _c_to_f(v)] for t, v in series]
+        print(f"SERIES RAW----")
         shape = "raw"
     else:
         series = _bucketed_numeric_series(conn, "sensor_reading", "sensor_id", sensor["id"], "recorded_at", column, start, end, days)
         if metric.converts_f_c:
             series = [[t, _c_to_f(lo), _c_to_f(avg), _c_to_f(hi)] for t, lo, avg, hi in series]
+
+        print(f"SERIES BAND----")
         shape = "band"
     return {
         "key": f"reading-{sensor['id']}-{metric.key}",
