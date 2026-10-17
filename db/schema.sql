@@ -173,6 +173,23 @@ CREATE TABLE IF NOT EXISTS sensor (
     target_magnesium_ppm_max    REAL,
     target_phosphate_ppm_min    REAL,
     target_phosphate_ppm_max    REAL,
+    -- Volatility (see CONTEXT.md: Volatility; ADR 0025) — Manual Sensor only, one nullable
+    -- override per Target Range metric. NULL means "use that metric's own default_volatility"
+    -- (schemas/enclosure_types.py's TargetRangeMetric) rather than defaulting here, so a fresh
+    -- install's un-overridden Sensors still reflect a future code-level default change.
+    volatility_temperature      TEXT CHECK (volatility_temperature IS NULL OR volatility_temperature IN ('fast', 'slow')),
+    volatility_humidity         TEXT CHECK (volatility_humidity IS NULL OR volatility_humidity IN ('fast', 'slow')),
+    volatility_uvb              TEXT CHECK (volatility_uvb IS NULL OR volatility_uvb IN ('fast', 'slow')),
+    volatility_ph                TEXT CHECK (volatility_ph IS NULL OR volatility_ph IN ('fast', 'slow')),
+    volatility_ammonia          TEXT CHECK (volatility_ammonia IS NULL OR volatility_ammonia IN ('fast', 'slow')),
+    volatility_nitrite          TEXT CHECK (volatility_nitrite IS NULL OR volatility_nitrite IN ('fast', 'slow')),
+    volatility_nitrate          TEXT CHECK (volatility_nitrate IS NULL OR volatility_nitrate IN ('fast', 'slow')),
+    volatility_specific_gravity TEXT CHECK (volatility_specific_gravity IS NULL OR volatility_specific_gravity IN ('fast', 'slow')),
+    volatility_salinity         TEXT CHECK (volatility_salinity IS NULL OR volatility_salinity IN ('fast', 'slow')),
+    volatility_alkalinity       TEXT CHECK (volatility_alkalinity IS NULL OR volatility_alkalinity IN ('fast', 'slow')),
+    volatility_calcium          TEXT CHECK (volatility_calcium IS NULL OR volatility_calcium IN ('fast', 'slow')),
+    volatility_magnesium        TEXT CHECK (volatility_magnesium IS NULL OR volatility_magnesium IN ('fast', 'slow')),
+    volatility_phosphate        TEXT CHECK (volatility_phosphate IS NULL OR volatility_phosphate IN ('fast', 'slow')),
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (plugin, external_id),
     CHECK (

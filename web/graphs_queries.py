@@ -71,6 +71,22 @@ def _epoch_ms_local(ts: str) -> int:
     return int(local.timestamp() * 1000)
 
 
+# Period Slot anchor hours (see CONTEXT.md: Period Slot; ADR 0025) — a Care Event's marker snaps
+# to one of these at Week/Month range instead of its exact logged minute, which doesn't matter for
+# a hand-logged feeding/watering/cleaning the way it does for a Reading.
+_PERIOD_SLOT_ANCHORS = (("morning", 0, 11, 8), ("afternoon", 12, 17, 14), ("night", 18, 23, 20))
+
+
+def _period_slot_epoch_ms(ts: str) -> int:
+    """Snaps a local wall-clock Care Event timestamp to its Period Slot's anchor hour, same day
+    (see CONTEXT.md: Period Slot) -> epoch milliseconds, via _epoch_ms_local above."""
+    dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+    for _, lo, hi, anchor in _PERIOD_SLOT_ANCHORS:
+        if lo <= dt.hour <= hi:
+            return _epoch_ms_local(dt.replace(hour=anchor, minute=0, second=0).strftime("%Y-%m-%d %H:%M:%S"))
+    return _epoch_ms_local(ts)  # unreachable — the three ranges above cover every hour 0-23
+
+
 def _utc_bounds(start: date, end: date) -> tuple[str, str]:
     """A generously padded UTC range guaranteed to cover every row that could land, once converted
     to local time, within [start, end] — same one-day-padding precedent as
@@ -126,23 +142,20 @@ def _reading_line_row(conn: sqlite3.Connection, sensor: dict, metric: et.TargetR
                        start: date, end: date, days: int) -> dict:
     """A Manual Sensor's Readings always plot raw (sparse by nature — see module docstring); a Smart
     Sensor's follow the Week/Month-raw, longer-aggregated split."""
-    print(f"HEY    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     column = metric.reading_column
-    raw = sensor["tracking_mode"] == "manual" or _is_raw_tier(days)
+    manual = sensor["tracking_mode"] == "manual"
+    raw = manual or _is_raw_tier(days)
     label_suffix = metric.label or metric.key.replace("_", " ").title()
     unit = "°F" if metric.converts_f_c else metric.unit
     if raw:
         series = _raw_numeric_series(conn, "sensor_reading", "sensor_id", sensor["id"], "recorded_at", column, start, end)
         if metric.converts_f_c:
             series = [[t, _c_to_f(v)] for t, v in series]
-        print(f"SERIES RAW----")
         shape = "raw"
     else:
         series = _bucketed_numeric_series(conn, "sensor_reading", "sensor_id", sensor["id"], "recorded_at", column, start, end, days)
         if metric.converts_f_c:
             series = [[t, _c_to_f(lo), _c_to_f(avg), _c_to_f(hi)] for t, lo, avg, hi in series]
-
-        print(f"SERIES BAND----")
         shape = "band"
     return {
         "key": f"reading-{sensor['id']}-{metric.key}",
@@ -206,7 +219,12 @@ def _plug_rows(conn: sqlite3.Connection, plug: dict, start: date, end: date, day
     return rows
 
 
-def _care_event_marker_row(conn: sqlite3.Connection, enclosure_id: int, kind: str, start: date, end: date) -> dict:
+def _care_event_marker_row(conn: sqlite3.Connection, enclosure_id: int, kind: str, start: date, end: date,
+                            days: int) -> dict:
+    """At Week/Month range, each marker's x-position snaps to its Period Slot (Morning/Afternoon/
+    Night) rather than its exact logged minute — see CONTEXT.md: Period Slot; ADR 0025. At 90
+    Days+, where a whole day is already a thin x-axis sliver, the distinction wouldn't be visible
+    anyway, so the exact logged time is kept, unchanged from before."""
     start_s, end_s = start.isoformat(), end.isoformat()
     rows = conn.execute(
         """SELECT ce.occurred_at, ce.note, a.name AS animal_name
@@ -222,7 +240,8 @@ def _care_event_marker_row(conn: sqlite3.Connection, enclosure_id: int, kind: st
             text += f" — {row['animal_name']}"
         if row["note"]:
             text += f" ({row['note']})"
-        series.append([_epoch_ms_local(row["occurred_at"]), text])
+        epoch_ms = _period_slot_epoch_ms(row["occurred_at"]) if _is_raw_tier(days) else _epoch_ms_local(row["occurred_at"])
+        series.append([epoch_ms, text])
     return {
         "key": f"care-{enclosure_id}-{kind}",
         "label": kind.replace("_", " ").capitalize(),
@@ -319,7 +338,7 @@ def build_enclosure_graph_sections(enclosure_id: int, start: date, end: date, da
         ]
         # All four Care Event kinds always show, even with nothing logged yet — same precedent as
         # View Data's own Care Events section.
-        care_rows = [_care_event_marker_row(conn, enclosure_id, kind, start, end) for kind in CARE_EVENT_KINDS]
+        care_rows = [_care_event_marker_row(conn, enclosure_id, kind, start, end, days) for kind in CARE_EVENT_KINDS]
         plug_rows = [row for plug in plugs for row in _plug_rows(conn, plug, start, end, days)]
         animal_rows = [row for animal in animals for row in _animal_graph_rows(conn, animal, start, end)]
 

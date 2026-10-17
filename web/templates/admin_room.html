@@ -112,6 +112,20 @@
                     <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
                     <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
                     <label>Target humidity max (%) <input type="number" step="1" name="humidity_max"></label>
+                    <label>Temperature Volatility
+                        <select name="volatility_temperature">
+                            <option value="" selected>Default (Fast)</option>
+                            <option value="fast">Fast</option>
+                            <option value="slow">Slow</option>
+                        </select>
+                    </label>
+                    <label>Humidity Volatility
+                        <select name="volatility_humidity">
+                            <option value="" selected>Default (Fast)</option>
+                            <option value="fast">Fast</option>
+                            <option value="slow">Slow</option>
+                        </select>
+                    </label>
                     <button type="submit">Add Sensor</button>
                 </form>
             </details>

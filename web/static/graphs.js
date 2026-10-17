@@ -19,26 +19,6 @@ function formatSparklineDate(value) {
     return d.toLocaleDateString(undefined, {month: "short", day: "numeric"});
 }
 
-// Port of the Python tools' _friendly_age — timestamps are stored as naive UTC
-// "YYYY-MM-DD HH:MM:SS" strings, so splicing in a "T" and "Z" is what gets Date() to parse them
-// as UTC instead of local time.
-function friendlyAge(timestamp) {
-    if (!timestamp) return "never";
-    const then = new Date(timestamp.replace(" ", "T") + "Z");
-    const seconds = Math.max(0, (Date.now() - then.getTime()) / 1000);
-    if (seconds < 20) return "just now";
-    if (seconds < 60) return Math.floor(seconds) + " seconds ago";
-    const minutes = seconds / 60;
-    if (minutes < 60) return Math.floor(minutes) + " minute" + (minutes >= 2 ? "s" : "") + " ago";
-    // An hour or older: switch from relative counting to an absolute "Mon,D,YYYY: HH:MM" stamp
-    // (local time), e.g. "Oct,3,2026: 13:00" — at that age a relative count is less useful than
-    // knowing exactly when it happened.
-    const month = then.toLocaleString(undefined, {month: "short"});
-    const hh = String(then.getHours()).padStart(2, "0");
-    const mm = String(then.getMinutes()).padStart(2, "0");
-    return month + "," + then.getDate() + "," + then.getFullYear() + ": " + hh + ":" + mm;
-}
-
 function sparklineIsRealDataset(item) {
     return item.dataset.borderWidth !== 0;
 }
@@ -54,7 +34,6 @@ function sparklineIsRealDataset(item) {
 // since a canvas's own points are always one shape or the other.
 function initSparklines() {
     if (typeof Chart === "undefined") return;
-    console.info("initSparklines")
     document.querySelectorAll("canvas.sparkline").forEach(function (canvas) {
         let points;
         try {
@@ -69,7 +48,6 @@ function initSparklines() {
         // Defaults to 2 if the attribute's missing/invalid.
         const decimalsAttr = parseInt(canvas.dataset.decimals, 10);
         const precision = Number.isFinite(decimalsAttr) ? decimalsAttr : 2;
-        console.info("Spark Lines init ",canvas.dataset.targetMin)
         const targetMin = parseFloat(canvas.dataset.targetMin);
         const targetMax = parseFloat(canvas.dataset.targetMax);
         const hasTargetRange = Number.isFinite(targetMin) && Number.isFinite(targetMax);
@@ -109,21 +87,18 @@ function initSparklines() {
         // Out of Target Range Alert Condition exists to catch, is never clipped off-chart just to
         // keep the scale stable (see ADR 0024).
         const allValues = [];
-        console.info("Data set length", datasets.length)
-        points.forEach(function (p) { for (let i = 1; i < p.length; i++) allValues.push(p[i]); });
+        points.forEach(function (p) {
+            for (let i = 1; i < p.length; i++) allValues.push(p[i]);
+        });
         let yMin = Math.min.apply(null, allValues);
         let yMax = Math.max.apply(null, allValues);
         if (hasTargetRange) {
-            console.info("Y MIN = ", yMin)
             yMin = Math.min(yMin, targetMin);
             yMax = Math.max(yMax, targetMax);
         }
         const pad = (yMax - yMin) * 0.08 || Math.pow(10, -precision);
         yMin -= pad;
         yMax += pad;
-        console.info("PAD  Y MIN = ", yMin)
-        for (let dt in datasets)
-            console.info("Points = ", dt)
 
         new Chart(canvas, {
             type: "line",
@@ -160,15 +135,10 @@ function initSparklines() {
                             },
                             label: function (context) {
                                 const p = points[context.dataIndex];
-                                // context.parsed.x is the point's epoch-ms x value; friendlyAge wants a
-                                // "YYYY-MM-DD HH:MM:SS" UTC string, hence the reformat.
-                                const labelTimestamp = new Date(context.parsed.x).toISOString().slice(0, 19).replace("T", " ");
-                                console.log("WHERE AM I = ", friendlyAge(labelTimestamp))
                                 if (isBand) {
                                     return "avg " + p[2].toFixed(precision) +
                                         " (range " + p[1].toFixed(precision) + "–" + p[3].toFixed(precision) + ")";
                                 }
-
                                 return p[1].toFixed(precision);
                             },
                         },
@@ -205,11 +175,8 @@ function buildGraphChart(canvas, rows) {
         },
     };
     const datasets = [];
-    console.log("Row Count = ", rows.length)
     rows.forEach(function (row, index) {
         const color = GRAPH_PALETTE[index % GRAPH_PALETTE.length];
-        console.log("Row = ", row.series)
-        console.log("Index = ", index)
         if (row.chart_type === "line") {
             const axisId = axisIdForUnit(unitAxisIds, row.unit);
 
@@ -275,14 +242,14 @@ function buildGraphChart(canvas, rows) {
                 legend: {display: datasets.length > 1, labels: {filter: isRealDataset}},
                 tooltip: {
                     callbacks: {
-
+                        title: function (items) {
+                            return items.length ? formatGraphTick(items[0].parsed.x) : "";
+                        },
                         label: function (context) {
                             const raw = context.raw;
                             if (raw && raw.eventLabel !== undefined) return context.dataset.label + ": " + raw.eventLabel;
                             const decimals = Number.isFinite(context.dataset.decimals) ? context.dataset.decimals : 2;
-                            const labelTimestamp = new Date(context.parsed.x).toISOString().slice(0, 19).replace("T", " ");
-                            console.log("--TOOL TIP--", raw.y.toFixed(decimals))
-                            return friendlyAge(labelTimestamp) + ": " + raw.y.toFixed(decimals);
+                            return context.dataset.label + ": " + raw.y.toFixed(decimals);
                         },
                     },
                 },
@@ -297,7 +264,6 @@ function initGraphCharts() {
         let rows;
         try {
             rows = JSON.parse(canvas.dataset.chart || "[]");
-            console.log("Jason parse = ", rows.length )
         } catch (e) {
             return;
         }

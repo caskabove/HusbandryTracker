@@ -77,6 +77,19 @@
                 <label>Target {{ metric.label }} min {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_min" value="{{ sensor[metric.min_column] if sensor[metric.min_column] is not none else '' }}"></label>
                 <label>Target {{ metric.label }} max {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_max" value="{{ sensor[metric.max_column] if sensor[metric.max_column] is not none else '' }}"></label>
                 {% endif %}
+                {# Volatility (see CONTEXT.md: Volatility; ADR 0025) — Manual Sensor only in effect
+                   (a Smart Sensor's value here is stored but never read), so only shown when the
+                   Sensor is currently Manual; same "doesn't live-update on mode toggle" caveat as
+                   Enclosure Type above applies here too. #}
+                {% if sensor.tracking_mode == "manual" %}
+                <label>{{ metric.label or metric.key.replace("_", " ").title() }} Volatility
+                    <select name="volatility_{{ metric.key }}">
+                        <option value="" {% if not sensor[metric.volatility_column] %}selected{% endif %}>Default ({{ metric.default_volatility|capitalize }})</option>
+                        <option value="fast" {% if sensor[metric.volatility_column] == "fast" %}selected{% endif %}>Fast</option>
+                        <option value="slow" {% if sensor[metric.volatility_column] == "slow" %}selected{% endif %}>Slow</option>
+                    </select>
+                </label>
+                {% endif %}
                 {% endfor %}
                 <button type="submit">Save</button>
             </form>

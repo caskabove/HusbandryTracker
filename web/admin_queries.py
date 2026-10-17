@@ -417,6 +417,24 @@ def _validate_sensor(tracking_mode: str, mac_address: str | None, target_ranges:
         et.validate_target_ranges(enclosure_type, provided)
 
 
+Volatility = dict[str, str | None]  # metric key -> "fast" / "slow" / None (None = use metric default)
+
+
+def _volatility_sql(volatility: Volatility) -> tuple[list[str], list[str | None]]:
+    """Column names + values for every Target Range metric's Volatility override (see CONTEXT.md:
+    Volatility; ADR 0025), in schemas.enclosure_types' fixed order — same shape as
+    _target_range_sql() below, and for the same reason (a single source of truth for the column
+    list). A metric missing from volatility (every caller but admin_create_sensor/admin_update_sensor
+    only ever supplies temperature/humidity) is written as NULL, meaning "use that metric's own
+    default_volatility" rather than forcing a choice."""
+    columns: list[str] = []
+    values: list[str | None] = []
+    for metric in et.TARGET_RANGE_METRICS:
+        columns.append(metric.volatility_column)
+        values.append(volatility.get(metric.key) or None)
+    return columns, values
+
+
 def _target_range_sql(target_ranges: TargetRanges) -> tuple[list[str], list[float | None]]:
     """Column names + values for every Target Range metric, in schemas.enclosure_types' fixed
     order — the single source of truth for the column list, so it can't drift from db/schema.sql or
@@ -472,10 +490,12 @@ def _check_sensor_external_id_available(conn, plugin: str | None, external_id: s
 
 
 def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
-                   target_ranges: TargetRanges) -> None:
+                   target_ranges: TargetRanges, volatility: Volatility | None = None) -> None:
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
+    v_columns, v_values = _volatility_sql(volatility or {})
+    columns, values = columns + v_columns, values + v_values
     with get_connection() as conn:
         _check_sensor_external_id_available(conn, plugin, external_id)
         show_on_dashboard = _next_show_on_dashboard(conn, "enclosure_id", enclosure_id)
@@ -517,12 +537,15 @@ def set_sensor_dashboard_visibility(sensor_id: int, show_on_dashboard: bool) -> 
 
 
 def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
-                   target_ranges: TargetRanges, auto_update_enabled: bool = True) -> None:
+                   target_ranges: TargetRanges, auto_update_enabled: bool = True,
+                   volatility: Volatility | None = None) -> None:
     """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Sensor
     (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
+    v_columns, v_values = _volatility_sql(volatility or {})
+    columns, values = columns + v_columns, values + v_values
     set_clause = ", ".join(f"{c} = ?" for c in columns)
     with get_connection() as conn:
         _check_sensor_external_id_available(conn, plugin, external_id, exclude_sensor_id=sensor_id)
@@ -535,7 +558,8 @@ def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: 
 
 
 def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address: str | None, temp_min: float | None,
-                        temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
+                        temp_max: float | None, humidity_min: float | None, humidity_max: float | None,
+                        temp_volatility: str | None = None, humidity_volatility: str | None = None) -> None:
     """A Room's ambient Sensor — same Sensor concept, Room instead of Enclosure as parent. See
     CONTEXT.md: Room, Sensor. Room Sensors aren't gated by Enclosure Type (a Room has none) — only
     temperature/humidity are ever offered here, matching what ambient room comfort needs."""
@@ -547,16 +571,18 @@ def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address
         show_on_dashboard = _next_show_on_dashboard(conn, "room_id", room_id)
         conn.execute(
             """INSERT INTO sensor (room_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
-                                    target_temp_min_c, target_temp_max_c, target_humidity_min, target_humidity_max)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                    target_temp_min_c, target_temp_max_c, target_humidity_min, target_humidity_max,
+                                    volatility_temperature, volatility_humidity)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (room_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
-             temp_min, temp_max, humidity_min, humidity_max),
+             temp_min, temp_max, humidity_min, humidity_max, temp_volatility or None, humidity_volatility or None),
         )
 
 
 def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: str, mac_address: str | None,
                         temp_min: float | None, temp_max: float | None, humidity_min: float | None,
-                        humidity_max: float | None, auto_update_enabled: bool = True) -> None:
+                        humidity_max: float | None, auto_update_enabled: bool = True,
+                        temp_volatility: str | None = None, humidity_volatility: str | None = None) -> None:
     target_ranges: TargetRanges = {"temperature": (temp_min, temp_max), "humidity": (humidity_min, humidity_max)}
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
@@ -566,9 +592,11 @@ def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: 
             """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, plugin = ?, external_id = ?,
                                   auto_update_enabled = ?,
                                   target_temp_min_c = ?, target_temp_max_c = ?, target_humidity_min = ?,
-                                  target_humidity_max = ? WHERE id = ?""",
+                                  target_humidity_max = ?, volatility_temperature = ?, volatility_humidity = ?
+                                  WHERE id = ?""",
             (room_id, label, tracking_mode, plugin, external_id,
-             int(auto_update_enabled), temp_min, temp_max, humidity_min, humidity_max, sensor_id),
+             int(auto_update_enabled), temp_min, temp_max, humidity_min, humidity_max,
+             temp_volatility or None, humidity_volatility or None, sensor_id),
         )
 
 

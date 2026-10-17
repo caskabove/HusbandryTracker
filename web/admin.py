@@ -116,6 +116,32 @@ def _sensor_target_ranges(
     }
 
 
+def _sensor_volatility(
+    volatility_temperature: str, volatility_humidity: str, volatility_uvb: str, volatility_ph: str,
+    volatility_ammonia: str, volatility_nitrite: str, volatility_nitrate: str,
+    volatility_specific_gravity: str, volatility_salinity: str, volatility_alkalinity: str,
+    volatility_calcium: str, volatility_magnesium: str, volatility_phosphate: str,
+) -> q.Volatility:
+    """Assembles the schemas.enclosure_types-shaped Volatility dict (see CONTEXT.md: Volatility;
+    ADR 0025) from the Sensor form's per-metric <select> fields — "" (Default), "fast", or "slow".
+    Same one-param-per-metric shape as _sensor_target_ranges() above, for the same reason."""
+    return {
+        "temperature": volatility_temperature or None,
+        "humidity": volatility_humidity or None,
+        "uvb": volatility_uvb or None,
+        "ph": volatility_ph or None,
+        "ammonia": volatility_ammonia or None,
+        "nitrite": volatility_nitrite or None,
+        "nitrate": volatility_nitrate or None,
+        "specific_gravity": volatility_specific_gravity or None,
+        "salinity": volatility_salinity or None,
+        "alkalinity": volatility_alkalinity or None,
+        "calcium": volatility_calcium or None,
+        "magnesium": volatility_magnesium or None,
+        "phosphate": volatility_phosphate or None,
+    }
+
+
 @router.get("/")
 def admin_index(request: Request):
     enclosures = q.list_enclosures()
@@ -443,6 +469,19 @@ def admin_create_sensor(
     magnesium_max: float | None = Form(None),
     phosphate_min: float | None = Form(None),
     phosphate_max: float | None = Form(None),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
+    volatility_uvb: str = Form(""),
+    volatility_ph: str = Form(""),
+    volatility_ammonia: str = Form(""),
+    volatility_nitrite: str = Form(""),
+    volatility_nitrate: str = Form(""),
+    volatility_specific_gravity: str = Form(""),
+    volatility_salinity: str = Form(""),
+    volatility_alkalinity: str = Form(""),
+    volatility_calcium: str = Form(""),
+    volatility_magnesium: str = Form(""),
+    volatility_phosphate: str = Form(""),
 ):
     target_ranges = _sensor_target_ranges(
         temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max, ammonia_min, ammonia_max,
@@ -451,8 +490,14 @@ def admin_create_sensor(
         alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
         phosphate_min, phosphate_max,
     )
+    volatility = _sensor_volatility(
+        volatility_temperature, volatility_humidity, volatility_uvb, volatility_ph,
+        volatility_ammonia, volatility_nitrite, volatility_nitrate, volatility_specific_gravity,
+        volatility_salinity, volatility_alkalinity, volatility_calcium, volatility_magnesium,
+        volatility_phosphate,
+    )
     try:
-        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None, target_ranges)
+        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None, target_ranges, volatility)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
@@ -600,6 +645,19 @@ def admin_update_sensor(
     phosphate_min: float | None = Form(None),
     phosphate_max: float | None = Form(None),
     auto_update_enabled: bool = Form(False),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
+    volatility_uvb: str = Form(""),
+    volatility_ph: str = Form(""),
+    volatility_ammonia: str = Form(""),
+    volatility_nitrite: str = Form(""),
+    volatility_nitrate: str = Form(""),
+    volatility_specific_gravity: str = Form(""),
+    volatility_salinity: str = Form(""),
+    volatility_alkalinity: str = Form(""),
+    volatility_calcium: str = Form(""),
+    volatility_magnesium: str = Form(""),
+    volatility_phosphate: str = Form(""),
 ):
     target_ranges = _sensor_target_ranges(
         temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max, ammonia_min, ammonia_max,
@@ -608,9 +666,15 @@ def admin_update_sensor(
         alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
         phosphate_min, phosphate_max,
     )
+    volatility = _sensor_volatility(
+        volatility_temperature, volatility_humidity, volatility_uvb, volatility_ph,
+        volatility_ammonia, volatility_nitrite, volatility_nitrate, volatility_specific_gravity,
+        volatility_salinity, volatility_alkalinity, volatility_calcium, volatility_magnesium,
+        volatility_phosphate,
+    )
     try:
         q.update_sensor(sensor_id, enclosure_id, label, tracking_mode, mac_address or None, target_ranges,
-                         auto_update_enabled)
+                         auto_update_enabled, volatility)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
@@ -925,10 +989,13 @@ def admin_create_room_sensor(
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
 ):
     try:
         q.create_room_sensor(room_id, label, tracking_mode, mac_address or None,
-                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max,
+                              volatility_temperature or None, volatility_humidity or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/rooms/{room_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
@@ -980,11 +1047,13 @@ def admin_update_room_sensor(
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
     auto_update_enabled: bool = Form(False),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
 ):
     try:
         q.update_room_sensor(sensor_id, room_id, label, tracking_mode, mac_address or None,
                               _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max,
-                              auto_update_enabled)
+                              auto_update_enabled, volatility_temperature or None, volatility_humidity or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/room-sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
