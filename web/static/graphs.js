@@ -5,7 +5,7 @@
 // own "time" scale (which requires one).
 
 const GRAPH_PALETTE = ["#4f9d6e", "#4f8fd6", "#d6a24f", "#d65f5f", "#9d6ed6", "#5fd6c6", "#d64f9d", "#8fd64f"];
-const SPARKLINE_COLOR = "#4f8fd6";
+const SPARKLINE_COLOR = "#007f7f";
 const SPARKLINE_TARGET_RANGE_COLOR = "#4caf72"; // var(--status-green) — canvas fills can't read CSS vars
 const SPARKLINE_AXIS_COLOR = "#93a89c"; // var(--text-muted)
 
@@ -25,8 +25,8 @@ function sparklineIsRealDataset(item) {
 
 
 
-// A month of one Sensor metric's Readings under its "as of" line (see CONTEXT.md: Sparkline; ADR
-// 0023, ADR 0024) — a compact preview of the same metric's Graphs chart rather than a plain glance
+// A week of one Sensor metric's Readings under its "as of" line (see CONTEXT.md: Sparkline; ADR
+// 0023, ADR 0024, ADR 0028) — a compact preview of the same metric's Graphs chart rather than a plain glance
 // glyph: a minimal time/value axis, a shaded Target Range band (when the Sensor has one set) behind
 // the metric's own data, and a hover tooltip. A Smart Sensor's points are a 3-day-smoothed daily
 // [epoch_ms, min, avg, max] band (web/queries.py's _sparkline); a Manual Sensor's are raw, unsmoothed
@@ -76,10 +76,10 @@ function initSparklines() {
             datasets.push({data: points.map(function (p) { return {x: p[0], y: p[3]}; }),
                            borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: SPARKLINE_COLOR + "2a", borderColor: "rgba(0,0,0,0)"});
             datasets.push({data: points.map(function (p) { return {x: p[0], y: p[2]}; }),
-                           borderColor: SPARKLINE_COLOR, borderWidth: 1.25, pointRadius: 0, fill: false, tension: 0.25});
+                           borderColor: SPARKLINE_COLOR, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25});
         } else {
             datasets.push({data: points.map(function (p) { return {x: p[0], y: p[1]}; }),
-                           borderColor: SPARKLINE_COLOR, borderWidth: 1.25, pointRadius: 0, fill: false, tension: 0.25});
+                           borderColor: SPARKLINE_COLOR, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25});
         }
 
         // y-scale anchors to the Target Range when set (ties the axis to the shaded band) but
@@ -109,11 +109,16 @@ function initSparklines() {
                 interaction: {mode: "nearest", intersect: false},
                 scales: {
                     // A few date/value labels, no gridlines — kept sparse so this still reads as a
-                    // compact preview rather than a second full Graphs chart (ADR 0024).
+                    // compact preview rather than a second full Graphs chart (ADR 0024). The x-axis
+                    // shows exactly the window's start and end date (ADR 0028), not Chart.js's own
+                    // "nice" auto-picked ticks, since a week-long sparkline has little room for more.
                     x: {
                         type: "linear",
                         grid: {display: false},
-                        ticks: {maxTicksLimit: 3, font: {size: 9}, color: SPARKLINE_AXIS_COLOR, callback: formatSparklineDate},
+                        ticks: {font: {size: 9}, color: SPARKLINE_AXIS_COLOR, callback: formatSparklineDate},
+                        afterBuildTicks: function (axis) {
+                            axis.ticks = firstX === lastX ? [{value: firstX}] : [{value: firstX}, {value: lastX}];
+                        },
                     },
                     y: {
                         min: yMin,
@@ -200,10 +205,10 @@ function buildGraphChart(canvas, rows) {
                                yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: color + "2a",
                                borderColor: "rgba(0,0,0,0)", decimals: decimals});
                 datasets.push({label: row.label, data: row.series.map(function (p) { return {x: p[0], y: p[2]}; }),
-                               yAxisID: axisId, borderColor: color, borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.2, decimals: decimals});
+                               yAxisID: axisId, borderColor: color, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.2, decimals: decimals});
             } else {
                 datasets.push({label: row.label, data: row.series.map(function (p) { return {x: p[0], y: p[1]}; }),
-                               yAxisID: axisId, borderColor: color, borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.2, decimals: decimals});
+                               yAxisID: axisId, borderColor: color, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.2, decimals: decimals});
             }
         } else {
             // A marker row (Care Event / Plug Status / Animal Condition) has a moment but no

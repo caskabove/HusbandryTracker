@@ -114,7 +114,7 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
                        volatility_column="volatility_calcium", default_volatility="slow"),
     TargetRangeMetric("magnesium", "Mg", "ppm",
                        "target_magnesium_ppm_min", "target_magnesium_ppm_max", "magnesium_ppm",
-                       ("saltwater",),
+                       ("saltwater",), step="1", decimals=0,
                        volatility_column="volatility_magnesium", default_volatility="slow"),
     TargetRangeMetric("phosphate", "Phosphate", "ppm",
                        "target_phosphate_ppm_min", "target_phosphate_ppm_max", "phosphate_ppm",

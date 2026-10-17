@@ -72,7 +72,7 @@ def _latest_reading(conn, sensor: dict) -> dict | None:
     return reading
 
 
-_SPARKLINE_DAYS = 30
+_SPARKLINE_DAYS = 7
 # Trailing buckets averaged into each smoothed point (see CONTEXT.md: Sparkline; ADR 0024) — a
 # Smart Sensor's daily min/avg/max buckets get this before drawing, so a Sparkline reads as a trend
 # rather than a day-to-day zigzag. Index-based, not calendar-based: a bucket only exists for a day
@@ -101,18 +101,18 @@ def _sparkline_smoothed(points: list[list]) -> list[list]:
 
 
 def _sparkline(conn, sensor: dict, metric) -> dict:
-    """A Sparkline's points for one metric, covering the last month, plus the Sensor's own Target
-    Range for that metric (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024) — {"points": [...],
-    "target_min": float | None, "target_max": float | None}, all already in the metric's display
-    unit (Fahrenheit for Temperature, same as every pill), since the Target Range is stored in the
-    same unit as the Reading it judges (Celsius for Temperature).
+    """A Sparkline's points for one metric, covering the last week, plus the Sensor's own Target
+    Range for that metric (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0028) — {"points":
+    [...], "target_min": float | None, "target_max": float | None}, all already in the metric's
+    display unit (Fahrenheit for Temperature, same as every pill), since the Target Range is stored
+    in the same unit as the Reading it judges (Celsius for Temperature).
 
     A Smart Sensor's dedupe window is only 5 seconds (see plugins/govee_ble/plugin.py), so it can
-    write a new sensor_reading row every 5-30 seconds continuously — a month of that raw would be
-    tens of thousands of points for a chart this small, repeated on every Dashboard load. Its
-    Sparkline instead aggregates into daily min/avg/max buckets, then smooths those with a trailing
-    moving average (_sparkline_smoothed) so the line reads as a trend rather than a zigzag — both
-    as [epoch_ms, min, avg, max] rows, oldest first. A Manual Sensor's Readings are hand-logged and
+    write a new sensor_reading row every 5-30 seconds continuously — even a week of that raw would be
+    thousands of points for a chart this small, repeated on every Dashboard load. Its Sparkline
+    instead aggregates into daily min/avg/max buckets, then smooths those with a trailing moving
+    average (_sparkline_smoothed) so the line reads as a trend rather than a zigzag — both as
+    [epoch_ms, min, avg, max] rows, oldest first. A Manual Sensor's Readings are hand-logged and
     sparse (at most one a day), so bucketing and smoothing them would misrepresent what was
     actually recorded — its Sparkline stays raw and unsmoothed, as [epoch_ms, value] pairs.
     sensor_reading.recorded_at is true UTC with no backdating path (see view_data_queries.py's

@@ -79,7 +79,7 @@
                             data-decimals="{{ metric.decimals }}"
                             data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
                             data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                            title="{{ metric.label }} - last 30 days"></canvas>
+                            title="{{ metric.label }} - last 7 days"></canvas>
                 </a>
                 {% endif %}
             {% endfor %}
@@ -342,7 +342,7 @@
                                                     data-decimals="1"
                                                     data-target-min="{{ '' if temp_spark.target_min is none else temp_spark.target_min }}"
                                                     data-target-max="{{ '' if temp_spark.target_max is none else temp_spark.target_max }}"
-                                                    title="Temperature - last 30 days"></canvas>
+                                                    title="Temperature - last 7 days"></canvas>
                                         </a>
                                         {% endif %}
                                         {% endif %}
@@ -361,7 +361,7 @@
                                                     data-decimals="1"
                                                     data-target-min="{{ '' if humidity_spark.target_min is none else humidity_spark.target_min }}"
                                                     data-target-max="{{ '' if humidity_spark.target_max is none else humidity_spark.target_max }}"
-                                                    title="Humidity - last 30 days"></canvas>
+                                                    title="Humidity - last 7 days"></canvas>
                                         </a>
                                         {% endif %}
                                         {% endif %}
@@ -402,7 +402,7 @@
                                                         data-decimals="{{ metric.decimals }}"
                                                         data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
                                                         data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                                                        title="{{ metric.label }} - last 30 days"></canvas>
+                                                        title="{{ metric.label }} - last 7 days"></canvas>
                                             </a>
                                             {% endif %}
                                         {% endfor %}
