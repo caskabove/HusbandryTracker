@@ -17,178 +17,35 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <p><a href="{{ back_url }}">&larr; Back to {{ owner_label }}</a></p>
 
-        <form method="get" action="" class="admin-form view-data-range-form">
-            <label>Range
-                <select name="range" onchange="this.form.submit()">
-                    {% for key, title, _ in range_options %}
-                    <option value="{{ key }}" {% if key == range %}selected{% endif %}>{{ title }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <input type="hidden" name="end" value="{{ end }}">
-            <a href="?range={{ range }}&amp;end={{ prev_end }}" class="button-link">&laquo; Prev</a>
-            <span class="view-data-window">{{ dates[0].isoformat() }} to {{ dates[-1].isoformat() }}</span>
-            {% if next_end %}
-            <a href="?range={{ range }}&amp;end={{ next_end }}" class="button-link">Next &raquo;</a>
-            {% else %}
-            <span class="button-link disabled">Next &raquo;</span>
-            {% endif %}
-        </form>
-
         {% for section in sections %}
-        <section class="admin-card view-data-section">
+        <section class="admin-card">
             <h2>{{ section.title }}</h2>
-            <div class="view-data-scroll">
-                <table class="admin-table view-data-table">
-                    <thead>
-                        <tr>
-                            <th class="view-data-row-label"></th>
-                            {% for d in dates %}<th>{{ d.strftime("%b") }} {{ d.day }}</th>{% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in section.rows %}
-                        <tr id="row-{{ row.key }}">
-                            <td class="view-data-row-label admin-table-primary">{{ row.label }}</td>
-                            {% for d in dates %}
-                            {% set day = d.isoformat() %}
-                            {% set cell = row.cells[day] %}
-                            <td class="view-data-cell">
-                                {% if row.type == "reading" %}
-                                    {% set shown = cell.value|c_to_f if row.metric.converts_f_c and cell.value is not none else cell.value %}
-                                    {% set text = (("%." ~ row.metric.decimals ~ "f")|format(shown) ~ ("&deg;F" if row.metric.converts_f_c else row.metric.unit)) if shown is not none else "&mdash;" %}
-                                    {% if row.editable %}
-                                    <details class="view-data-edit">
-                                        <summary>{{ text|safe }}</summary>
-                                        <form method="post" action="/admin/sensors/{{ row.sensor_id }}/readings/cell" class="log-form">
-                                            <input type="hidden" name="metric_key" value="{{ row.metric_key }}">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="save">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <input type="number" step="{{ row.metric.step }}" name="value"
-                                                   value="{{ shown if shown is not none else '' }}"
-                                                   placeholder="{{ 'F' if row.metric.converts_f_c else row.metric.unit }}">
-                                            <button type="submit">Save</button>
-                                        </form>
-                                        {% if shown is not none %}
-                                        <form method="post" action="/admin/sensors/{{ row.sensor_id }}/readings/cell" class="inline-form">
-                                            <input type="hidden" name="metric_key" value="{{ row.metric_key }}">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="clear">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <button type="submit" class="danger-small">Clear</button>
-                                        </form>
-                                        {% endif %}
-                                    </details>
-                                    {% else %}
-                                    {{ text|safe }}
-                                    {% endif %}
-                                {% elif row.type == "care" %}
-                                    <details class="view-data-edit">
-                                        <summary>
-                                            {% if cell.time %}&#10003; {{ cell.time|clock_12h }}{% if cell.animal_name %} &mdash; {{ cell.animal_name }}{% endif %}{% else %}&mdash;{% endif %}
-                                        </summary>
-                                        <form method="post" action="/admin/enclosures/{{ row.enclosure_id }}/care-events/{{ row.kind }}/cell" class="log-form">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="save">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <input type="time" name="time" value="{{ cell.time }}">
-                                            <input type="text" name="note" value="{{ cell.note }}" placeholder="note">
-                                            {% if row.kind == "feeding" and animals %}
-                                            <select name="animal_id" title="Spot-feed one Animal instead of the whole Enclosure">
-                                                <option value="">Whole enclosure</option>
-                                                {% for a in animals %}
-                                                <option value="{{ a.id }}" {% if cell.animal_id == a.id %}selected{% endif %}>{{ a.name }}</option>
-                                                {% endfor %}
-                                            </select>
-                                            {% endif %}
-                                            <button type="submit">Save</button>
-                                        </form>
-                                        {% if cell.time %}
-                                        <form method="post" action="/admin/enclosures/{{ row.enclosure_id }}/care-events/{{ row.kind }}/cell" class="inline-form">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="clear">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <button type="submit" class="danger-small">Clear</button>
-                                        </form>
-                                        {% endif %}
-                                    </details>
-                                {% elif row.type == "animal_metric" %}
-                                    {% set text = (("%." ~ row.decimals ~ "f")|format(cell.value) ~ row.unit) if cell.value is not none else "&mdash;" %}
-                                    <details class="view-data-edit">
-                                        <summary>{{ text|safe }}</summary>
-                                        <form method="post" action="/admin/animals/{{ row.animal_id }}/log/cell" class="log-form">
-                                            <input type="hidden" name="field" value="{{ row.field }}">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="save">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <input type="number" step="{{ row.step }}" name="value"
-                                                   value="{{ cell.value if cell.value is not none else '' }}"
-                                                   placeholder="{{ row.unit }}">
-                                            <button type="submit">Save</button>
-                                        </form>
-                                        {% if cell.value is not none %}
-                                        <form method="post" action="/admin/animals/{{ row.animal_id }}/log/cell" class="inline-form">
-                                            <input type="hidden" name="field" value="{{ row.field }}">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="clear">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <button type="submit" class="danger-small">Clear</button>
-                                        </form>
-                                        {% endif %}
-                                    </details>
-                                {% elif row.type == "animal_condition" %}
-                                    <details class="view-data-edit">
-                                        <summary>{% if cell.condition %}{{ animal_condition_labels[cell.condition] }}{% else %}&mdash;{% endif %}</summary>
-                                        <form method="post" action="/admin/animals/{{ row.animal_id }}/log/condition/cell" class="log-form">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="save">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <select name="condition">
-                                                <option value="">&mdash;</option>
-                                                {% for c in animal_conditions %}
-                                                <option value="{{ c }}" {% if cell.condition == c %}selected{% endif %}>{{ animal_condition_labels[c] }}</option>
-                                                {% endfor %}
-                                            </select>
-                                            <input type="text" name="note" value="{{ cell.note }}" placeholder="note">
-                                            <button type="submit">Save</button>
-                                        </form>
-                                        {% if cell.condition %}
-                                        <form method="post" action="/admin/animals/{{ row.animal_id }}/log/condition/cell" class="inline-form">
-                                            <input type="hidden" name="date" value="{{ day }}">
-                                            <input type="hidden" name="action" value="clear">
-                                            <input type="hidden" name="range" value="{{ range }}">
-                                            <input type="hidden" name="end" value="{{ end }}">
-                                            <button type="submit" class="danger-small">Clear</button>
-                                        </form>
-                                        {% endif %}
-                                    </details>
-                                {% elif row.type == "plug_status" %}
-                                    {% if cell.is_on is none %}<span class="empty">&mdash;</span>
-                                    {% elif cell.is_on %}<span class="pill status-green">On</span>
-                                    {% else %}<span class="pill status-unknown">Off</span>{% endif %}
-                                {% elif row.type == "plug_telemetry" %}
-                                    {% if cell.value is not none %}{{ "%.1f"|format(cell.value) }}{{ row.unit }}{% else %}<span class="empty">&mdash;</span>{% endif %}
-                                {% endif %}
-                            </td>
-                            {% endfor %}
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="{{ dates|length + 1 }}" class="empty">Nothing tracked here yet</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <ul class="view-data-row-list">
+                {% for row in section.rows %}
+                {% if row.type == "reading" %}
+                {% set href = "/admin/sensors/" ~ row.sensor_id ~ "/readings/" ~ row.metric_key %}
+                {% elif row.type == "care" %}
+                {% set href = "/admin/enclosures/" ~ row.enclosure_id ~ "/care-events/" ~ row.kind %}
+                {% elif row.type == "animal_metric" %}
+                {% set href = "/admin/animals/" ~ row.animal_id ~ "/log/metric/" ~ row.field %}
+                {% elif row.type == "animal_condition" %}
+                {% set href = "/admin/animals/" ~ row.animal_id ~ "/log/condition" %}
+                {% elif row.type == "plug_status" %}
+                {% set href = "/admin/plugs/" ~ row.plug_id ~ "/status" %}
+                {% elif row.type == "plug_telemetry" %}
+                {% set href = "/admin/plugs/" ~ row.plug_id ~ "/telemetry/" ~ row.field %}
+                {% endif %}
+                <li class="view-data-row-item">
+                    <a class="view-data-row-link" href="{{ href }}">{{ row.label }}</a>
+                    {% if not row.editable %}<span class="pill status-unknown">Read-only</span>{% endif %}
+                </li>
+                {% endfor %}
+                {% if not section.rows %}
+                <li class="empty">Nothing tracked here yet</li>
+                {% endif %}
+            </ul>
         </section>
         {% endfor %}
     </main>
-    <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

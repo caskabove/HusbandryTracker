@@ -22,6 +22,18 @@ function onTrackingModeChange(select, smartBlockId, manualBlockId) {
     onToggleChange(select, "smart", smartBlockId, manualBlockId);
 }
 
+// View Data's Care Event cell (see CONTEXT.md: Period Slot; ADR 0026): the time input only applies
+// — and is only submitted — when "Exact time" is picked; any Period Slot name overrides it
+// server-side with that slot's own fixed hour, so hiding+disabling it here is just UX clarity, not
+// load-bearing correctness.
+function onPeriodSlotChange(select, timeInputId) {
+    const input = document.getElementById(timeInputId);
+    if (!input) return;
+    const exact = select.value === "exact";
+    input.style.display = exact ? "" : "none";
+    input.disabled = !exact;
+}
+
 // Plug form only: Controller Kind (see CONTEXT.md) is an independent three-way select — none /
 // thermostat / hydrostat — not a second value of Tracking Mode; a Plug can be Smart or Manual
 // *and* Thermostat-/Hydrostat-Controlled at once (see ADR 0008). The Target Schedule block's

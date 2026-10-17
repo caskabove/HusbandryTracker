@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
 from schemas import enclosure_types as et
-from web.queries import ANIMAL_CONDITION_LABELS, CARE_EVENT_KINDS
+from web.queries import ANIMAL_CONDITION_LABELS, CARE_EVENT_KINDS, PERIOD_SLOTS
 from web.view_data_queries import _metric_shown
 
 _PLUG_TELEMETRY_FIELDS = (("watts", "W"), ("volts", "V"), ("amps", "A"))
@@ -71,10 +71,17 @@ def _epoch_ms_local(ts: str) -> int:
     return int(local.timestamp() * 1000)
 
 
-# Period Slot anchor hours (see CONTEXT.md: Period Slot; ADR 0025) — a Care Event's marker snaps
-# to one of these at Week/Month range instead of its exact logged minute, which doesn't matter for
-# a hand-logged feeding/watering/cleaning the way it does for a Reading.
-_PERIOD_SLOT_ANCHORS = (("morning", 0, 11, 8), ("afternoon", 12, 17, 14), ("night", 18, 23, 20))
+# Period Slot anchor hours (see CONTEXT.md: Period Slot; ADR 0025, ADR 0026) — a Care Event's
+# marker snaps to one of these at Week/Month range instead of its exact logged minute, which doesn't
+# matter for a hand-logged feeding/watering/cleaning the way it does for a Reading. The anchor hours
+# themselves come from PERIOD_SLOTS (web/queries.py), shared with View Data's entry-side use of the
+# same three slots — only the hour-range columns below are specific to this display-snap use.
+_SLOT_HOURS = dict(PERIOD_SLOTS)
+_PERIOD_SLOT_ANCHORS = (
+    ("morning", 0, 11, _SLOT_HOURS["morning"]),
+    ("afternoon", 12, 17, _SLOT_HOURS["afternoon"]),
+    ("night", 18, 23, _SLOT_HOURS["night"]),
+)
 
 
 def _period_slot_epoch_ms(ts: str) -> int:

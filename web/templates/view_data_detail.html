@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker Data - {{ title }}</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ title }}</h1>
+        {% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <p><a href="{{ back_url }}">&larr; Back to Data</a></p>
+
+        <section class="admin-card">
+            {% if editable %}
+            <form method="post" action="{{ post_action }}" class="admin-form">
+                <input type="hidden" name="action" value="add">
+                <label>Date
+                    <input type="date" name="date" required>
+                </label>
+
+                {% if row_type == "care" %}
+                <label>When
+                    <select name="period_slot" onchange="onPeriodSlotChange(this, 'add-care-time')">
+                        <option value="morning">Morning</option>
+                        <option value="afternoon" selected>Afternoon</option>
+                        <option value="night">Night</option>
+                        <option value="exact">Exact time&hellip;</option>
+                    </select>
+                </label>
+                <label>Time
+                    <input type="time" id="add-care-time" name="time" style="display:none" disabled>
+                </label>
+                <label>Note
+                    <input type="text" name="note" placeholder="note">
+                </label>
+                {% if kind == "feeding" and animals %}
+                <label>Animal
+                    <select name="animal_id">
+                        <option value="">Whole enclosure</option>
+                        {% for a in animals %}
+                        <option value="{{ a.id }}">{{ a.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                {% endif %}
+                {% else %}
+                <label>When
+                    <select name="period_slot">
+                        <option value="morning">Morning</option>
+                        <option value="afternoon" selected>Afternoon</option>
+                        <option value="night">Night</option>
+                    </select>
+                </label>
+                {% endif %}
+
+                {% if row_type == "reading" %}
+                <label>Value
+                    <input type="number" step="{{ metric.step }}" name="value" required
+                           placeholder="{{ 'F' if metric.converts_f_c else metric.unit }}">
+                </label>
+                {% elif row_type == "animal_metric" %}
+                <label>Value
+                    <input type="number" step="{{ step }}" name="value" required placeholder="{{ unit }}">
+                </label>
+                {% elif row_type == "animal_condition" %}
+                <label>Condition
+                    <select name="condition" required>
+                        <option value="">&mdash;</option>
+                        {% for c in animal_conditions %}
+                        <option value="{{ c }}">{{ animal_condition_labels[c] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Note
+                    <input type="text" name="note" placeholder="note">
+                </label>
+                {% endif %}
+                <button type="submit">Add</button>
+            </form>
+            {% endif %}
+
+            <ul class="view-data-entry-list">
+                {% for e in entries %}
+                <li class="view-data-entry">
+                    {% if row_type == "reading" %}
+                    {% set shown = e.value|c_to_f if metric.converts_f_c else e.value %}
+                    {% set text = ("%." ~ metric.decimals ~ "f")|format(shown) ~ ("&deg;F" if metric.converts_f_c else metric.unit) %}
+                    {% if editable %}
+                    <details class="view-data-edit">
+                        <summary>{{ e.date }} {{ e.time|clock_12h }} &mdash; {{ text|safe }}</summary>
+                        <form method="post" action="{{ post_action }}" class="log-form">
+                            <input type="hidden" name="action" value="update">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <input type="number" step="{{ metric.step }}" name="value" value="{{ shown }}"
+                                   placeholder="{{ 'F' if metric.converts_f_c else metric.unit }}">
+                            <button type="submit">Save</button>
+                        </form>
+                        <form method="post" action="{{ post_action }}" class="inline-form">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <button type="submit" class="danger-small">Delete</button>
+                        </form>
+                    </details>
+                    {% else %}
+                    <span>{{ e.date }} {{ e.time|clock_12h }} &mdash; {{ text|safe }}</span>
+                    {% endif %}
+
+                    {% elif row_type == "care" %}
+                    <details class="view-data-edit">
+                        <summary>
+                            {{ e.date }} {{ e.time|clock_12h }}{% if e.note %} &mdash; {{ e.note }}{% endif %}{% if e.animal_name %} &mdash; {{ e.animal_name }}{% endif %}
+                        </summary>
+                        <form method="post" action="{{ post_action }}" class="log-form">
+                            <input type="hidden" name="action" value="update">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <input type="date" name="date" value="{{ e.date }}">
+                            {% set time_id = "care-time-" ~ e.id %}
+                            <select name="period_slot" onchange="onPeriodSlotChange(this, '{{ time_id }}')">
+                                <option value="morning">Morning</option>
+                                <option value="afternoon">Afternoon</option>
+                                <option value="night">Night</option>
+                                <option value="exact" selected>Exact time&hellip;</option>
+                            </select>
+                            <input type="time" id="{{ time_id }}" name="time" value="{{ e.time }}">
+                            <input type="text" name="note" value="{{ e.note }}" placeholder="note">
+                            {% if kind == "feeding" and animals %}
+                            <select name="animal_id">
+                                <option value="">Whole enclosure</option>
+                                {% for a in animals %}
+                                <option value="{{ a.id }}" {% if e.animal_id == a.id %}selected{% endif %}>{{ a.name }}</option>
+                                {% endfor %}
+                            </select>
+                            {% endif %}
+                            <button type="submit">Save</button>
+                        </form>
+                        <form method="post" action="{{ post_action }}" class="inline-form">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <button type="submit" class="danger-small">Delete</button>
+                        </form>
+                    </details>
+
+                    {% elif row_type == "animal_metric" %}
+                    {% set text = ("%." ~ decimals ~ "f")|format(e.value) ~ unit %}
+                    <details class="view-data-edit">
+                        <summary>{{ e.date }} {{ e.time|clock_12h }} &mdash; {{ text|safe }}</summary>
+                        <form method="post" action="{{ post_action }}" class="log-form">
+                            <input type="hidden" name="action" value="update">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <input type="number" step="{{ step }}" name="value" value="{{ e.value }}" placeholder="{{ unit }}">
+                            <button type="submit">Save</button>
+                        </form>
+                        <form method="post" action="{{ post_action }}" class="inline-form">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <button type="submit" class="danger-small">Delete</button>
+                        </form>
+                    </details>
+
+                    {% elif row_type == "animal_condition" %}
+                    <details class="view-data-edit">
+                        <summary>
+                            {{ e.date }} {{ e.time|clock_12h }} &mdash; {{ animal_condition_labels[e.condition] }}{% if e.note %} &mdash; {{ e.note }}{% endif %}
+                        </summary>
+                        <form method="post" action="{{ post_action }}" class="log-form">
+                            <input type="hidden" name="action" value="update">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <select name="condition">
+                                {% for c in animal_conditions %}
+                                <option value="{{ c }}" {% if e.condition == c %}selected{% endif %}>{{ animal_condition_labels[c] }}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="text" name="note" value="{{ e.note }}" placeholder="note">
+                            <button type="submit">Save</button>
+                        </form>
+                        <form method="post" action="{{ post_action }}" class="inline-form">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="entry_id" value="{{ e.id }}">
+                            <button type="submit" class="danger-small">Delete</button>
+                        </form>
+                    </details>
+
+                    {% elif row_type == "plug_status" %}
+                    <span>{{ e.date }} {{ e.time|clock_12h }} &mdash; {{ "On" if e.is_on else "Off" }}</span>
+
+                    {% elif row_type == "plug_telemetry" %}
+                    <span>{{ e.date }} {{ e.time|clock_12h }} &mdash; {{ "%.1f"|format(e.value) }}{{ unit }}</span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+                {% if not entries %}
+                <li class="empty">Nothing logged yet</li>
+                {% endif %}
+            </ul>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

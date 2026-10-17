@@ -677,17 +677,22 @@ span.button-link.disabled {
 }
 .view-data-range-form { align-items: center; }
 .view-data-window { color: var(--text-muted); font-size: 0.85rem; }
-.view-data-scroll { overflow-x: auto; }
-.view-data-table { table-layout: fixed; white-space: nowrap; }
-.view-data-table th, .view-data-table td { min-width: 4.5rem; }
-.view-data-row-label {
-    position: sticky;
-    left: 0;
-    background: var(--bg);
-    min-width: 11rem !important;
-    z-index: 1;
+
+/* View Data (see CONTEXT.md: View Data; ADR 0027): the index is just a list of row titles per
+   section; clicking one opens its own detail page with the real, editable entry list below. */
+.view-data-row-list { list-style: none; padding: 0; margin: 0; }
+.view-data-row-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
 }
-.view-data-cell { font-size: 0.85rem; }
+.view-data-row-item:last-child { border-bottom: none; }
+.view-data-row-link { color: var(--primary-bright); font-size: 0.95rem; }
+.view-data-entry-list { list-style: none; padding: 0; margin: 0; }
+.view-data-entry { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.view-data-entry:last-child { border-bottom: none; }
 .view-data-edit summary {
     cursor: pointer;
     color: var(--primary-bright);

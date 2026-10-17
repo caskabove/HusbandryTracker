@@ -83,6 +83,7 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
     TargetRangeMetric("ph", "pH", "",
                        "target_ph_min", "target_ph_max", "ph",
                        ("freshwater", "saltwater", "amphibian"),
+                       step="0.01", decimals=2,
                        volatility_column="volatility_ph"),
     TargetRangeMetric("ammonia", "Ammonia", "ppm",
                        "target_ammonia_ppm_min", "target_ammonia_ppm_max", "ammonia_ppm",

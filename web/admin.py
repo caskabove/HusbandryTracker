@@ -25,7 +25,9 @@ from web import graphs_queries as gq
 from web import view_data_queries as vd
 from web.govee_refresh import refresh_sensors
 from web.plug_probe import probe_plug
-from web.queries import ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, log_care_event, log_reading
+from web.queries import (
+    ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, PERIOD_SLOT_HHMM, log_care_event, log_reading,
+)
 from web.status import acknowledged_drift_status, care_interval_status, schedule_drift_status, target_range_status
 
 _WEB_DIR = APP_ROOT / "web"
@@ -1060,8 +1062,8 @@ def admin_update_room_sensor(
 
 
 def _view_data_window(range: str, end: str) -> dict:
-    """Shared GET-side window/navigation bits for View Data (see CONTEXT.md: View Data; ADR 0021) —
-    identical between the Room and Enclosure pages, only the rows shown differ."""
+    """Shared GET-side window/navigation bits for Graphs (see CONTEXT.md: Graphs; ADR 0022) — View
+    Data itself dropped its own Range picker under ADR 0027."""
     start, end_date, days = vd.compute_window(range, end)
     today = datetime.now().date()
     next_end = end_date + timedelta(days=days)
@@ -1076,43 +1078,39 @@ def _view_data_window(range: str, end: str) -> dict:
 
 
 @router.get("/rooms/{room_id}/data")
-def admin_room_data(request: Request, room_id: int, range: str = "month", end: str = ""):
+def admin_room_data(request: Request, room_id: int):
+    """View Data index (see CONTEXT.md: View Data; ADR 0027) — a title per row, nothing else;
+    clicking one opens that row's own detail page below."""
     room = q.get_room(room_id)
     if room is None:
         return RedirectResponse(url="/admin", status_code=303)
-    window = _view_data_window(range, end)
     return templates.TemplateResponse(
         request, "view_data.html",
         {
             "owner_label": room["name"],
             "owner_kind": "room",
             "back_url": f"/admin/rooms/{room_id}",
-            "sections": vd.build_room_sections(room_id, window["dates"]),
-            "animals": [],
+            "sections": vd.build_room_sections(room_id),
             "error": request.query_params.get("error"),
-            **window,
         }
     )
 
 
 @router.get("/enclosures/{enclosure_id}/data")
-def admin_enclosure_data(request: Request, enclosure_id: int, range: str = "month", end: str = ""):
+def admin_enclosure_data(request: Request, enclosure_id: int):
+    """View Data index for an Enclosure — see admin_room_data above (same shape, different row set,
+    same split View Data has always drawn between a Room and an Enclosure)."""
     enclosure = q.get_enclosure(enclosure_id)
     if enclosure is None:
         return RedirectResponse(url="/admin/enclosures", status_code=303)
-    window = _view_data_window(range, end)
     return templates.TemplateResponse(
         request, "view_data.html",
         {
             "owner_label": enclosure["name"],
             "owner_kind": "enclosure",
             "back_url": f"/admin/enclosures/{enclosure_id}",
-            "sections": vd.build_enclosure_sections(enclosure_id, window["dates"]),
-            "animals": enclosure["animals"],
-            "animal_conditions": ANIMAL_CONDITIONS,
-            "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "sections": vd.build_enclosure_sections(enclosure_id),
             "error": request.query_params.get("error"),
-            **window,
         }
     )
 
@@ -1169,133 +1167,304 @@ def admin_enclosure_graphs(request: Request, enclosure_id: int, range: str = "mo
     )
 
 
-@router.post("/sensors/{sensor_id}/readings/cell")
-def admin_set_reading_cell(
-    sensor_id: int,
-    metric_key: str = Form(...),
-    date: str = Form(...),
-    action: str = Form("save"),
-    value: str = Form(""),
-    range: str = Form("month"),
-    end: str = Form(""),
-):
-    """One cell of View Data's Sensor Readings section (see CONTEXT.md: View Data; ADR 0021) — only
-    ever reachable for a Manual Sensor; set_reading_cell() itself rejects a Smart one."""
+@router.get("/sensors/{sensor_id}/readings/{metric_key}")
+def admin_reading_detail(request: Request, sensor_id: int, metric_key: str):
+    """Every real Reading for one Sensor+metric (see CONTEXT.md: View Data; ADR 0027) — reached by
+    clicking that row's title on the View Data index. Only ever editable for a Manual Sensor; a
+    Smart one's Reading is shown read-only, same split View Data has always drawn."""
     sensor = q.get_sensor(sensor_id)
-    error = None
     if sensor is None:
-        error = "Sensor not found."
-    else:
-        try:
-            if action == "clear":
-                vd.set_reading_cell(sensor_id, metric_key, date, None)
-            else:
-                metric = et.metric_by_key(metric_key)
-                try:
-                    parsed = float(value) if value.strip() else None
-                except ValueError:
-                    raise ValueError(f"{value!r} isn't a valid number.")
-                if parsed is not None and metric.converts_f_c:
-                    parsed = _f_to_c(parsed)
-                vd.set_reading_cell(sensor_id, metric_key, date, parsed)
-        except ValueError as exc:
-            error = str(exc)
+        return RedirectResponse(url="/admin", status_code=303)
+    try:
+        metric = et.metric_by_key(metric_key)
+    except ValueError:
+        return RedirectResponse(url="/admin", status_code=303)
     owner_path = (
-        f"/admin/rooms/{sensor['room_id']}/data" if sensor and sensor["room_id"]
-        else f"/admin/enclosures/{sensor['enclosure_id']}/data" if sensor
-        else "/admin"
+        f"/admin/rooms/{sensor['room_id']}/data" if sensor["room_id"]
+        else f"/admin/enclosures/{sensor['enclosure_id']}/data"
     )
-    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
-    anchor = "" if error else f"#row-reading-{sensor_id}-{metric_key}"
-    return RedirectResponse(url=f"{owner_path}{qs}{anchor}", status_code=303)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "reading",
+            "title": f"{sensor['label']} — {metric.label or metric.key.replace('_', ' ').title()}",
+            "editable": sensor["tracking_mode"] == "manual",
+            "entries": vd.list_reading_entries(sensor_id, metric_key),
+            "metric": metric,
+            "post_action": f"/admin/sensors/{sensor_id}/readings/{metric_key}/entries",
+            "back_url": owner_path,
+            "error": request.query_params.get("error"),
+        }
+    )
 
 
-@router.post("/enclosures/{enclosure_id}/care-events/{kind}/cell")
-def admin_set_care_event_cell(
-    enclosure_id: int,
-    kind: str,
-    date: str = Form(...),
-    action: str = Form("save"),
-    time: str = Form(""),
-    note: str = Form(""),
-    animal_id: str = Form(""),
-    range: str = Form("month"),
-    end: str = Form(""),
+@router.post("/sensors/{sensor_id}/readings/{metric_key}/entries")
+def admin_reading_entries(
+    sensor_id: int,
+    metric_key: str,
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    period_slot: str = Form("afternoon"),
+    value: str = Form(""),
 ):
-    """One cell of View Data's Care Events section (see CONTEXT.md: View Data; ADR 0021)."""
+    """Add/Edit/Delete one Reading entry (see CONTEXT.md: View Data, Period Slot; ADR 0026, ADR
+    0027) — only ever reachable for a Manual Sensor; add_reading_entry() itself rejects a Smart
+    one."""
     error = None
     try:
-        if action == "clear":
-            vd.delete_care_event_cell(enclosure_id, kind, date)
+        metric = et.metric_by_key(metric_key)
+        if action == "delete":
+            vd.delete_reading_entry(int(entry_id), metric_key)
         else:
-            vd.set_care_event_cell(enclosure_id, kind, date, time or None, note or None,
-                                    int(animal_id) if animal_id else None)
+            try:
+                parsed = float(value) if value.strip() else None
+            except ValueError:
+                raise ValueError(f"{value!r} isn't a valid number.")
+            if parsed is None:
+                raise ValueError("Enter a value.")
+            if metric.converts_f_c:
+                parsed = _f_to_c(parsed)
+            if action == "add":
+                vd.add_reading_entry(sensor_id, metric_key, date, period_slot, parsed)
+            elif action == "update":
+                vd.update_reading_entry(int(entry_id), metric_key, parsed)
+            else:
+                raise ValueError(f"Unknown action: {action!r}")
     except ValueError as exc:
         error = str(exc)
-    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
-    anchor = "" if error else f"#row-care-{enclosure_id}-{kind}"
-    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}/data{qs}{anchor}", status_code=303)
+    qs = f"?error={quote(error)}" if error else ""
+    return RedirectResponse(url=f"/admin/sensors/{sensor_id}/readings/{metric_key}{qs}", status_code=303)
 
 
-@router.post("/animals/{animal_id}/log/cell")
-def admin_set_animal_metric_cell(
-    animal_id: int,
-    field: str = Form(...),
-    date: str = Form(...),
-    action: str = Form("save"),
-    value: str = Form(""),
-    range: str = Form("month"),
-    end: str = Form(""),
+@router.get("/enclosures/{enclosure_id}/care-events/{kind}")
+def admin_care_event_detail(request: Request, enclosure_id: int, kind: str):
+    """Every real Care Event of one kind for one Enclosure (see CONTEXT.md: View Data; ADR 0027)."""
+    enclosure = q.get_enclosure(enclosure_id)
+    if enclosure is None or kind not in CARE_EVENT_KINDS:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "care",
+            "title": kind.replace("_", " ").capitalize(),
+            "editable": True,
+            "entries": vd.list_care_event_entries(enclosure_id, kind),
+            "kind": kind,
+            "animals": enclosure["animals"],
+            "post_action": f"/admin/enclosures/{enclosure_id}/care-events/{kind}/entries",
+            "back_url": f"/admin/enclosures/{enclosure_id}/data",
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/enclosures/{enclosure_id}/care-events/{kind}/entries")
+def admin_care_event_entries(
+    enclosure_id: int,
+    kind: str,
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    time: str = Form(""),
+    period_slot: str = Form("afternoon"),
+    note: str = Form(""),
+    animal_id: str = Form(""),
 ):
-    """One Weight/Length/Count cell of View Data's Animal Log section (see CONTEXT.md: Animal Log,
-    View Data; ADR 0021)."""
+    """Add/Edit/Delete one Care Event entry (see CONTEXT.md: View Data, Period Slot; ADR 0026, ADR
+    0027) — period_slot "exact" means use the `time` field as-is; any other value (a Period Slot
+    name) overrides whatever's in `time` with that slot's own fixed HH:MM."""
+    error = None
+    try:
+        if action == "delete":
+            vd.delete_care_event_entry(int(entry_id))
+        else:
+            resolved_time = time if period_slot == "exact" else PERIOD_SLOT_HHMM.get(period_slot)
+            aid = int(animal_id) if animal_id else None
+            if action == "add":
+                vd.add_care_event_entry(enclosure_id, kind, date, resolved_time or None, note or None, aid)
+            elif action == "update":
+                vd.update_care_event_entry(int(entry_id), date, resolved_time or None, note or None, aid)
+            else:
+                raise ValueError(f"Unknown action: {action!r}")
+    except ValueError as exc:
+        error = str(exc)
+    qs = f"?error={quote(error)}" if error else ""
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}/care-events/{kind}{qs}", status_code=303)
+
+
+@router.get("/animals/{animal_id}/log/metric/{field}")
+def admin_animal_metric_detail(request: Request, animal_id: int, field: str):
+    """Every real Weight/Length/Count entry for one Animal (see CONTEXT.md: Animal Log, View Data;
+    ADR 0027)."""
+    animal = q.get_animal(animal_id)
+    if animal is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    try:
+        label, unit, decimals, step = vd.animal_metric_field_info(field)
+    except ValueError:
+        return RedirectResponse(url=f"/admin/enclosures/{animal['enclosure_id']}/data", status_code=303)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "animal_metric",
+            "title": f"{animal['name']} — {label}",
+            "editable": True,
+            "entries": vd.list_animal_metric_entries(animal_id, field),
+            "unit": unit,
+            "decimals": decimals,
+            "step": step,
+            "post_action": f"/admin/animals/{animal_id}/log/metric/{field}/entries",
+            "back_url": f"/admin/enclosures/{animal['enclosure_id']}/data",
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/animals/{animal_id}/log/metric/{field}/entries")
+def admin_animal_metric_entries(
+    animal_id: int,
+    field: str,
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    period_slot: str = Form("afternoon"),
+    value: str = Form(""),
+):
+    """Add/Edit/Delete one Weight/Length/Count entry (see CONTEXT.md: Animal Log, View Data, Period
+    Slot; ADR 0026, ADR 0027)."""
     animal = q.get_animal(animal_id)
     error = None
     if animal is None:
         error = "Animal not found."
     else:
         try:
-            if action == "clear":
-                vd.set_animal_metric_cell(animal_id, field, date, None)
+            if action == "delete":
+                vd.delete_animal_metric_entry(int(entry_id), field)
             else:
                 try:
                     parsed = (int(value) if field == "count" else float(value)) if value.strip() else None
                 except ValueError:
                     raise ValueError(f"{value!r} isn't a valid number.")
-                vd.set_animal_metric_cell(animal_id, field, date, parsed)
+                if parsed is None:
+                    raise ValueError("Enter a value.")
+                if action == "add":
+                    vd.add_animal_metric_entry(animal_id, field, date, period_slot, parsed)
+                elif action == "update":
+                    vd.update_animal_metric_entry(int(entry_id), field, parsed)
+                else:
+                    raise ValueError(f"Unknown action: {action!r}")
         except ValueError as exc:
             error = str(exc)
-    owner_path = f"/admin/enclosures/{animal['enclosure_id']}/data" if animal else "/admin"
-    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
-    anchor = "" if error else f"#row-animal-{animal_id}-{field}"
-    return RedirectResponse(url=f"{owner_path}{qs}{anchor}", status_code=303)
+    qs = f"?error={quote(error)}" if error else ""
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/log/metric/{field}{qs}", status_code=303)
 
 
-@router.post("/animals/{animal_id}/log/condition/cell")
-def admin_set_animal_condition_cell(
+@router.get("/animals/{animal_id}/log/condition")
+def admin_animal_condition_detail(request: Request, animal_id: int):
+    """Every real Condition entry for one Animal (see CONTEXT.md: Animal Log, View Data; ADR 0027)."""
+    animal = q.get_animal(animal_id)
+    if animal is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "animal_condition",
+            "title": f"{animal['name']} — Condition",
+            "editable": True,
+            "entries": vd.list_animal_condition_entries(animal_id),
+            "animal_conditions": ANIMAL_CONDITIONS,
+            "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "post_action": f"/admin/animals/{animal_id}/log/condition/entries",
+            "back_url": f"/admin/enclosures/{animal['enclosure_id']}/data",
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/animals/{animal_id}/log/condition/entries")
+def admin_animal_condition_entries(
     animal_id: int,
-    date: str = Form(...),
-    action: str = Form("save"),
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    period_slot: str = Form("afternoon"),
     condition: str = Form(""),
     note: str = Form(""),
-    range: str = Form("month"),
-    end: str = Form(""),
 ):
-    """One Condition cell of View Data's Animal Log section — picking the blank option acts as a
-    clear, same as leaving the cell empty (see CONTEXT.md: Animal Log, View Data; ADR 0021)."""
-    animal = q.get_animal(animal_id)
+    """Add/Edit/Delete one Condition entry (see CONTEXT.md: Animal Log, View Data, Period Slot; ADR
+    0026, ADR 0027)."""
     error = None
-    if animal is None:
-        error = "Animal not found."
-    else:
-        try:
-            if action == "clear" or not condition:
-                vd.delete_animal_condition_cell(animal_id, date)
-            else:
-                vd.set_animal_condition_cell(animal_id, date, condition, note or None)
-        except ValueError as exc:
-            error = str(exc)
-    owner_path = f"/admin/enclosures/{animal['enclosure_id']}/data" if animal else "/admin"
-    qs = f"?range={range}&end={end}" + (f"&error={quote(error)}" if error else "")
-    anchor = "" if error else f"#row-animal-{animal_id}-condition"
-    return RedirectResponse(url=f"{owner_path}{qs}{anchor}", status_code=303)
+    try:
+        if action == "delete":
+            vd.delete_animal_condition_entry(int(entry_id))
+        elif action == "add":
+            if not condition:
+                raise ValueError("Pick a Condition.")
+            vd.add_animal_condition_entry(animal_id, date, period_slot, condition, note or None)
+        elif action == "update":
+            if not condition:
+                raise ValueError("Pick a Condition.")
+            vd.update_animal_condition_entry(int(entry_id), condition, note or None)
+        else:
+            raise ValueError(f"Unknown action: {action!r}")
+    except ValueError as exc:
+        error = str(exc)
+    qs = f"?error={quote(error)}" if error else ""
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/log/condition{qs}", status_code=303)
+
+
+@router.get("/plugs/{plug_id}/status")
+def admin_plug_status_detail(request: Request, plug_id: int):
+    """Every Status transition for one Plug (see CONTEXT.md: View Data, Plug; ADR 0027) — read-only,
+    always auto-collected (a Smart Plug's own detector) or self-reported (a Manual Plug's Command
+    log), never hand-edited."""
+    plug = q.get_plug(plug_id)
+    if plug is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    owner_path = (
+        f"/admin/rooms/{plug['room_id']}/data" if plug["room_id"]
+        else f"/admin/enclosures/{plug['enclosure_ids'][0]}/data" if plug["enclosure_ids"]
+        else "/admin"
+    )
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "plug_status",
+            "title": f"{plug['label']} — Status",
+            "editable": False,
+            "entries": vd.list_plug_status_entries(plug_id),
+            "back_url": owner_path,
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.get("/plugs/{plug_id}/telemetry/{field}")
+def admin_plug_telemetry_detail(request: Request, plug_id: int, field: str):
+    """Every Data Capture reading of one field for one Plug — read-only, same as Status above (see
+    CONTEXT.md: View Data, Plug; ADR 0027)."""
+    plug = q.get_plug(plug_id)
+    if plug is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    try:
+        unit = vd.plug_telemetry_unit(field)
+    except ValueError:
+        return RedirectResponse(url="/admin", status_code=303)
+    owner_path = (
+        f"/admin/rooms/{plug['room_id']}/data" if plug["room_id"]
+        else f"/admin/enclosures/{plug['enclosure_ids'][0]}/data" if plug["enclosure_ids"]
+        else "/admin"
+    )
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "plug_telemetry",
+            "title": f"{plug['label']} — {field.capitalize()}",
+            "editable": False,
+            "entries": vd.list_plug_telemetry_entries(plug_id, field),
+            "unit": unit,
+            "back_url": owner_path,
+            "error": request.query_params.get("error"),
+        }
+    )

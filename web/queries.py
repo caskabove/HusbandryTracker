@@ -23,6 +23,13 @@ ANIMAL_CONDITION_LABELS = {
     "poor": "Poor", "ok": "OK", "good": "Good", "really_good": "Really Good",
 }
 
+# Morning/Afternoon/Night anchor hours — see CONTEXT.md: Period Slot; ADR 0026. Shared by both this
+# concept's uses: View Data's cell editors (entry — see web/view_data_queries.py) and Graphs' Care
+# Event marker snapping (display — see web/graphs_queries.py's _PERIOD_SLOT_ANCHORS), so the three
+# hours only ever live in one place.
+PERIOD_SLOTS: tuple[tuple[str, int], ...] = (("morning", 8), ("afternoon", 14), ("night", 20))
+PERIOD_SLOT_HHMM: dict[str, str] = {name: f"{hour:02d}:00" for name, hour in PERIOD_SLOTS}
+
 
 def days_since(occurred_at: str | None) -> int | None:
     if occurred_at is None:
