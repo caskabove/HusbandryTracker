@@ -32,8 +32,13 @@ from an extra pair of hands the first time, so don't be surprised if it's the sl
   included, can only join a 2.4GHz network, not 5GHz. If your router broadcasts both under the same
   name, this is the most common reason pairing silently fails — see the same callout in the [Tuya
   Zigbee sensor how-to](HOWTO_TUYA_TEMP_HUMIDITY_PROBE_SENSOR.md#1-what-you-need) for how to check.
-- **The Husbandry Tracker folder set up already** (section 2 of `docs/USER_GUIDE.md`) — step 3 below runs
-  a command from inside it.
+- **A one-time Python install, just for this step** — even if you installed Husbandry Tracker from
+  `HusbandryTrackerSetup.exe` and have never otherwise touched Python, step 3 below needs a short
+  wizard that doesn't ship inside the installer yet. [Python
+  itself](https://www.python.org/downloads/) (check "Add python.exe to PATH" during install) plus a
+  download or `git clone` of the [Husbandry Tracker
+  repository](https://github.com/caskabove/HusbandryTracker) — anywhere on your computer, just to
+  borrow its `tools/` folder and `requirements.txt` — is all that's needed.
 
 ---
 
@@ -64,9 +69,9 @@ requires linking a free Tuya developer account to the same account you just used
 is the one part of setup that's genuinely more technical — plan on doing it once with someone
 comfortable following a multi-step wizard, not per-plug.
 
-1. Open a Command Prompt in the Husbandry Tracker folder, and run:
+1. Open a Command Prompt in that folder, and run:
    ```
-   .venv\Scripts\activate
+   pip install -r requirements.txt
    python -m tinytuya wizard
    ```
 2. This walks you through, step by step, in the same window:

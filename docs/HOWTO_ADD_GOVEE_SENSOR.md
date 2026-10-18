@@ -52,16 +52,24 @@ and I'd rather fix it than leave it wrong.)*
 ## 3. Finding the Sensor's ID
 
 This is the one step that needs a short detour into a Command Prompt, because finding a Govee
-sensor's ID isn't something the Husbandry Tracker website can do on its own yet.
+sensor's ID isn't something the Husbandry Tracker website can do on its own yet — even if you
+installed Husbandry Tracker from `HusbandryTrackerSetup.exe` and have never otherwise touched
+Python, this one step needs a small, separate, one-time Python install just to run a short
+discovery script. It's a five-minute detour, not a different way of running the app.
 
-1. Open a Command Prompt in the Husbandry Tracker folder, and run:
+1. Install [Python](https://www.python.org/downloads/) if you don't already have it (check **"Add
+   python.exe to PATH"** during install).
+2. Download or `git clone` the [Husbandry Tracker
+   repository](https://github.com/caskabove/HusbandryTracker) anywhere on your computer — this is
+   only to borrow its `tools/` folder, you won't run the app from here.
+3. Open a Command Prompt in that folder, and run:
    ```
-   .venv\Scripts\activate
+   pip install -r requirements.txt
    python tools\govee_discover.py 20
    ```
-2. Wait 20 seconds. It'll print a list of nearby Govee sensors, each with a code like
+4. Wait 20 seconds. It'll print a list of nearby Govee sensors, each with a code like
    `E3:60:59:23:50:A6` — that's the sensor's ID (its "MAC address").
-3. To figure out *which* sensor belongs to *which* enclosure: check the current reading it prints
+5. To figure out *which* sensor belongs to *which* enclosure: check the current reading it prints
    against what the Govee Home app (or the sensor's own little screen) shows for that enclosure —
    they should match.
 
@@ -83,5 +91,5 @@ sensor's ID isn't something the Husbandry Tracker website can do on its own yet.
 Nothing to do — once added, Husbandry Tracker listens for this sensor's Bluetooth broadcasts in the
 background and updates its reading automatically, no app needed. Use the dashboard's **"↻
 Refresh"** button if you want a fresh reading right now instead of waiting for the next automatic
-one (see `docs/USER_GUIDE.md` section 4). If you have Send Alert set up, you'll also get notified if
+one (see `docs/USER_GUIDE.md` section 3). If you have Send Alert set up, you'll also get notified if
 this sensor's reading goes out of range or it stops reporting altogether.
