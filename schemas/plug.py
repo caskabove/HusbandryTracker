@@ -46,6 +46,7 @@ class PlugBase(BaseModel):
     controller_kind: ControllerKind = ControllerKind.NONE
     target_temp_c: float | None = None        # paired with controller_kind = thermostat
     target_humidity_pct: float | None = None  # paired with controller_kind = hydrostat
+    plug_group_id: int | None = None  # NULL if standalone — see CONTEXT.md: Plug Group
 
     @model_validator(mode="after")
     def _check_tracking_mode_identity(self) -> PlugBase:

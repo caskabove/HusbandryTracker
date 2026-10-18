@@ -38,8 +38,17 @@ _TargetRangeFields = create_model(
     },
 )
 
+# One nullable "fast"/"slow" override column per metric — see CONTEXT.md: Volatility; ADR 0025.
+_VolatilityFields = create_model(
+    "_SensorVolatilityFields",
+    **{
+        metric.volatility_column: (str | None, None)
+        for metric in et.TARGET_RANGE_METRICS
+    },
+)
 
-class SensorBase(_TargetRangeFields):  # type: ignore[misc]
+
+class SensorBase(_TargetRangeFields, _VolatilityFields):  # type: ignore[misc]
     model_config = ConfigDict(use_enum_values=False)
 
     label: str

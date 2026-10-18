@@ -47,6 +47,10 @@ class EnclosureBase(BaseModel):
     watering_interval_days: int = 3
     spot_clean_interval_days: int = 7
     deep_clean_interval_days: int = 30
+    show_feeding_on_dashboard: bool = True      # see CONTEXT.md: Care Interval
+    show_watering_on_dashboard: bool = True
+    show_spot_clean_on_dashboard: bool = True
+    show_deep_clean_on_dashboard: bool = True
 
     @model_validator(mode="after")
     def _check_enclosure_type(self) -> EnclosureBase:
