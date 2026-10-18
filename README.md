@@ -7,7 +7,9 @@ your own computer.
 
 **[⬇ Download for Windows](https://github.com/caskabove/HusbandryTracker/releases/latest)**
 
-_The first installer release hasn't been published yet — until it is, use **Building from source** below._
+_No stable installer release yet — the link above stays empty until one ships. A first **beta**
+installer is available from the [Releases page](https://github.com/caskabove/HusbandryTracker/releases)
+for anyone willing to try it early; everyone else, use **Building from source** below._
 
 No technical background needed — download `HusbandryTrackerSetup.exe` from the latest release above,
 run it, and follow the prompts. Windows may show a "Windows protected your PC" warning the first
