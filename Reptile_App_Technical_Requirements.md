@@ -53,10 +53,10 @@ These four constraints should be treated as acceptance criteria for every future
 - **Note:** Docker is currently sidelined for local dev (ADR 0002) because the Govee BLE Plugin needs host Bluetooth access. The Tuya Plugin, Ingest and web all containerize fine; the Govee Plugin is the one host-process exception. This doesn't change the packaging *targets* above, but the Pi-image path is the cleaner fit given the BLE constraint.
 - Full detail: see §4.4 and §9.7 (hardware).
 
-### 2.6 Licensing (recommended, not yet confirmed — build should not assume final)
-- Recommendation on record: AGPLv3 for the core app, open-core structure (AGPL/MIT core + closed relay/mobile-push component sold as the subscription).
-- **Build implication:** code that will live in the closed relay component vs. the open core should be modularized as separably as possible from day one, regardless of final license choice — see §4.2.
-- No `LICENSE` file exists yet — consistent with "not confirmed." See §9.2.
+### 2.6 Licensing — decided: AGPL-3.0-or-later
+- The core app is licensed **AGPL-3.0-or-later** (decided 2026-10-16; `LICENSE` holds the full text). Open-core structure: AGPL core + a separate, closed relay/mobile-push service sold as the subscription.
+- **Build implication:** the closed relay must stay a separate program that talks to the core over a network protocol and does not copy or link AGPL core code — see §4.2.
+- See §9.2.
 
 ---
 
@@ -189,13 +189,11 @@ A snapshot of what is actually implemented, so the requirements above can be rea
 - Full research: `Pricing_Strategy_for_an_Open-Source_Reptile_Husbandry_App...md` (project file). Cash-flow model: see §6.
 - **Next touch:** revisit only if conversion/cost thresholds in the pricing doc get triggered post-launch, or if a second pricing tier is modeled.
 
-### 9.2 Licensing — 🟡 Recommended, not confirmed
-- **Recommendation on record:** AGPLv3 for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product.
-- **Structure:** open-core — AGPL/MIT core + a small closed relay/mobile-push service sold as the subscription (same shape as Nabu Casa ↔ Home Assistant).
-- **Needs decision:** AGPLv3 vs. MIT vs. Apache 2.0 vs. other open-core split; whether to require a CLA.
-- **Considerations when picked up:** contributor friction (AGPL can scare off some contributors), how it interacts legally with the closed relay component, the CLA question.
-- **Blocks:** no `LICENSE` file and no public repo until this is signed off (§4.2 modularization can and should begin regardless).
-- **Next touch:** dedicated session — needs sign-off before any public repo goes up.
+### 9.2 Licensing — ✅ Decided: AGPL-3.0-or-later
+- **Decision (2026-10-16):** AGPL-3.0-or-later for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product. Replaces the MIT `LICENSE` that shipped earlier; releases before this date stay MIT for anyone who already has them.
+- **Structure:** open-core — AGPL core + a small closed relay/mobile-push service sold as the subscription (same shape as Nabu Casa ↔ Home Assistant).
+- **Still open:** whether to require a CLA from outside contributors; a short legal review of how the closed relay sits next to the AGPL core and what the Windows installer must include to satisfy the source-offer terms.
+- **Considerations:** contributor friction (AGPL can scare off some contributors, mostly companies).
 
 ### 9.3 Remote Access — Architecture & Security — ⚪ Open
 - **Decided:** priced at $3–5/mo, positioned as the one paid feature (§2.4).

@@ -1,8 +1,14 @@
-# Reptile Husbandry App — Project Plan & Decision Tracker
+# Reptile Husbandry App — Project Plan (moved)
 
-*Living document. Updated each session — items get added, removed, resolved, or revisited here as decisions firm up.*
+This file used to hold the project plan and decision tracker. It drifted out of date, so it is now
+a pointer only.
 
-**Last updated:** 2026-09-22 (Session 5)
+- **Business plan and decision tracker** (pricing, licensing, go-to-market, legal): kept in the
+  CaskAbove project workspace, outside this repo.
+- **Task tracking**: Jira project RHA.
+- **Technical decisions**: [`docs/adr/`](docs/adr/) and
+  [`Reptile_App_Technical_Requirements.md`](Reptile_App_Technical_Requirements.md).
+- **Domain glossary**: [`CONTEXT.md`](CONTEXT.md).
 
 **North star (confirmed):** Not optimizing for max revenue. Free, fully-functional, unlimited local self-hosted core for everyone; one small optional paid tier to cover hosting costs. Model: Home Assistant / Nabu Casa.
 
@@ -29,11 +35,10 @@
 
 ---
 
-## 2. Licensing — 🟡 Recommended, not confirmed
-- **Recommendation on record:** AGPLv3 for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product.
-- **Structure:** open-core — AGPL/MIT core + a small closed relay/mobile-push service sold as the subscription (same shape as Nabu Casa ↔ Home Assistant).
-- **Needs decision:** AGPLv3 vs. MIT vs. Apache 2.0 vs. other open-core split.
-- **Considerations to weigh when we pick this up:** contributor friction (AGPL can scare off some contributors), how it interacts with the "closed relay" component legally, whether you want a CLA.
+## 2. Licensing — ✅ Decided: AGPL-3.0-or-later
+- **Decision (2026-10-16):** AGPL-3.0-or-later for the core app. Prevents a well-funded competitor from forking the free core into a closed hosted product. Earlier releases shipped under MIT and stay MIT for anyone who already has them.
+- **Structure:** open-core — AGPL core + a small closed relay/mobile-push service sold as the subscription (same shape as Nabu Casa ↔ Home Assistant).
+- **Still open:** whether to require a CLA; a short legal review of how the closed relay interacts with the AGPL core.
 
 **Next touch:** dedicated session — needs your sign-off before any public repo goes up.
 
