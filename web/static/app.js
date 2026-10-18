@@ -219,3 +219,45 @@ async function onDiscoverGoveeClick(button) {
         button.disabled = false;
     }
 }
+
+async function onDiscoverTuyaClick(button) {
+    const form = button.closest("form");
+    const deviceIdField = form.querySelector('[name="tuya_device_id"]');
+    const localKeyField = form.querySelector('[name="tuya_local_key"]');
+    const switchKeyField = form.querySelector('[name="switch_dps_key"]');
+    const results = button.parentElement.querySelector(".discover-results");
+    results.style.display = "";
+    results.innerHTML = '<p class="empty">Asking Tuya’s cloud for your linked devices…</p>';
+    button.disabled = true;
+    try {
+        const response = await fetch("/admin/plugs/discover-tuya", {method: "POST"});
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            results.innerHTML = `<p class="empty">${data.error || "Discovery failed — try again."}</p>`;
+            return;
+        }
+        if (!data.devices.length) {
+            results.innerHTML = '<p class="empty">No devices found on that Tuya account.</p>';
+            return;
+        }
+        results.innerHTML = "";
+        data.devices.forEach(function (device) {
+            const pick = document.createElement("button");
+            pick.type = "button";
+            pick.textContent = `${device.name} (${device.category || "device"})`;
+            pick.onclick = function () {
+                deviceIdField.value = device.id;
+                localKeyField.value = device.local_key;
+                if (switchKeyField && device.switch_key_guess) {
+                    switchKeyField.value = device.switch_key_guess;
+                }
+                results.style.display = "none";
+            };
+            results.appendChild(pick);
+        });
+    } catch (err) {
+        results.innerHTML = '<p class="empty">Discovery failed — try again.</p>';
+    } finally {
+        button.disabled = false;
+    }
+}

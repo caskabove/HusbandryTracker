@@ -1320,3 +1320,28 @@ def update_settings(ble_refresh_timeout_seconds: int, alert_debounce_minutes: in
             (ble_refresh_timeout_seconds, alert_debounce_minutes, ntfy_server_url or None, ntfy_topic or None,
              schedule_drift_threshold_minutes),
         )
+
+
+def update_tuya_credentials(access_id: str | None, access_secret: str | None, api_region: str) -> None:
+    """See ADR 0030. access_secret blank means "keep the existing one" — the rendered Settings form
+    never echoes the saved secret back, so there's nothing for a blank submission to legitimately
+    overwrite. Pass an empty access_id (not access_secret) to actually clear both at once."""
+    if api_region not in ("us", "eu", "cn", "in"):
+        raise ValueError("Tuya API Region must be one of: us, eu, cn, in.")
+    with get_connection() as conn:
+        if not access_id:
+            conn.execute(
+                "UPDATE app_setting SET tuya_access_id = NULL, tuya_access_secret = NULL, tuya_api_region = ? WHERE id = 1",
+                (api_region,),
+            )
+            return
+        if access_secret:
+            conn.execute(
+                "UPDATE app_setting SET tuya_access_id = ?, tuya_access_secret = ?, tuya_api_region = ? WHERE id = 1",
+                (access_id, access_secret, api_region),
+            )
+        else:
+            conn.execute(
+                "UPDATE app_setting SET tuya_access_id = ?, tuya_api_region = ? WHERE id = 1",
+                (access_id, api_region),
+            )

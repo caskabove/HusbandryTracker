@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS app_setting (
     ntfy_server_url                TEXT,                         -- e.g. "https://ntfy.sh"; NULL/empty disables Send Alert delivery
     ntfy_topic                     TEXT,
     schedule_drift_threshold_minutes INTEGER NOT NULL DEFAULT 15, -- see CONTEXT.md: Timer Warning, ADR 0012
-    ingest_scan_interval_seconds   INTEGER NOT NULL DEFAULT 5    -- see CONTEXT.md: Ingest; ADR 0013
+    ingest_scan_interval_seconds   INTEGER NOT NULL DEFAULT 5,   -- see CONTEXT.md: Ingest; ADR 0013
+    tuya_access_id                 TEXT,                         -- Tuya IoT Cloud project credentials — see ADR 0030
+    tuya_access_secret             TEXT,                         -- never echoed back into any rendered page
+    tuya_api_region                TEXT NOT NULL DEFAULT 'us'    -- one of: us, eu, cn, in
 );
 INSERT OR IGNORE INTO app_setting (id) VALUES (1);
 

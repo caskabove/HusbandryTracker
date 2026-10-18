@@ -25,6 +25,7 @@ from web import graphs_queries as gq
 from web import view_data_queries as vd
 from web.govee_refresh import discover_govee, refresh_sensors
 from web.plug_probe import probe_plug
+from web.tuya_discover import discover_tuya
 from web.queries import (
     ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, PERIOD_SLOT_HHMM, log_care_event, log_reading,
 )
@@ -175,6 +176,22 @@ def admin_update_settings(
     try:
         q.update_settings(ble_refresh_timeout_seconds, alert_debounce_minutes,
                            ntfy_server_url or None, ntfy_topic or None, schedule_drift_threshold_minutes)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.post("/settings/tuya-credentials")
+def admin_update_tuya_credentials(
+    tuya_access_id: str = Form(""),
+    tuya_access_secret: str = Form(""),
+    tuya_api_region: str = Form("us"),
+):
+    """See ADR 0030. A separate route/row-subset from admin_update_settings on purpose — see
+    update_tuya_credentials()'s own docstring for why a blank Access Secret here means "keep the
+    existing one," not "clear it"."""
+    try:
+        q.update_tuya_credentials(tuya_access_id or None, tuya_access_secret or None, tuya_api_region)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
@@ -693,6 +710,27 @@ def admin_update_sensor(
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/plugs/discover-tuya")
+async def admin_discover_tuya_plugs():
+    """Backs every Add Plug/Add Plug Group form's "Discover Devices" button (see ADR 0030) — same
+    JSON-endpoint exception to the redirect-and-redisplay convention as /sensors/discover (ADR
+    0029). Needs Tuya Cloud Credentials saved first; never touches the database — see
+    discover_tuya()."""
+    settings = q.get_settings()
+    access_id = settings.get("tuya_access_id")
+    access_secret = settings.get("tuya_access_secret")
+    if not access_id or not access_secret:
+        return JSONResponse(
+            {"error": "Save your Tuya Cloud Credentials above first (Access ID and Access Secret)."},
+            status_code=400,
+        )
+    try:
+        devices = await discover_tuya(access_id, access_secret, settings.get("tuya_api_region") or "us")
+    except Exception as exc:  # Tuya's cloud can reject credentials or be unreachable
+        return JSONResponse({"error": f"Discovery failed: {exc}"}, status_code=502)
+    return JSONResponse({"devices": devices})
 
 
 @router.post("/plugs")

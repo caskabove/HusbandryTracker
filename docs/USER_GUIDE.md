@@ -259,30 +259,23 @@ Plug"** form's Tracking Mode dropdown.
 
 A Plug always belongs to exactly one of those, never both, never neither.
 
-#### A one-time technical step for a Smart Plug
+#### A one-time account-linking step for a Smart Plug
 
-Unlike a Govee sensor's ID (which you can now just click — see **Discover Devices** above), a
-Gosund plug's **device ID** and **local key** still can't be found with a simple scan — getting
-them needs a short wizard that, even though you installed Husbandry Tracker from the `.exe`, needs
-a small, separate, one-time Python install just to run. It's a bigger detour than Govee's, not a
-different way of running the app:
+Unlike a Govee sensor's ID (a plain Bluetooth broadcast — see **Discover Devices** above), a
+Gosund plug's **device ID** and **local key** only exist in Tuya's own cloud — no scan can find
+them. The one unavoidable step, done **once** no matter how many plugs you add afterward, is
+linking a free Tuya developer account to the same account you paired the plug with in Smart Life:
 
-1. Install [Python](https://www.python.org/downloads/) if you don't already have it (check **"Add
-   python.exe to PATH"** during install).
-2. Download or `git clone` the [Husbandry Tracker
-   repository](https://github.com/caskabove/HusbandryTracker) anywhere on your computer — this is
-   only to borrow its `requirements.txt`, you won't run the app from here.
-3. Open a Command Prompt in that folder and run:
-   ```
-   pip install -r requirements.txt
-   python -m tinytuya wizard
-   ```
+1. Go to [iot.tuya.com](https://iot.tuya.com) and create a free account.
+2. Create a "Cloud" project there and link it to your Smart Life account (usually a QR-code scan
+   from your phone).
+3. On Husbandry Tracker's Control Panel, find the **Tuya Cloud Credentials** card and paste in the
+   **Access ID** and **Access Secret** the project's page shows you, pick the matching **API
+   Region**, and click **Save**. The Access Secret is never shown again once saved.
 
-This walks you through linking a free Tuya developer account to your Smart Life account (usually a
-QR-code scan from your phone), then prints each plug's device ID, local key, and IP address. See
-[How To: Add a Gosund Smart Plug](HOWTO_ADD_GOSUND_PLUG.md) for the full walkthrough, including
-pairing the plug in Smart Life first — **this is the one setup step worth doing with an extra pair
-of hands the first time.**
+No Python, no Command Prompt. See [How To: Add a Gosund Smart Plug](HOWTO_ADD_GOSUND_PLUG.md) for
+the full walkthrough, including pairing the plug in Smart Life first — **this is the one setup step
+worth doing with an extra pair of hands the first time.**
 
 #### Smart Plug (Gosund)
 
@@ -292,12 +285,14 @@ control the same plug.
 
 1. On the **"Add Plug"** form, set **Tracking Mode** to **Smart**, give it a label (e.g. "UTH",
    "basking bulb"), and pick a **Purpose** (light/heat/cooling/etc. — free text, type whatever fits).
-2. Enter the **device ID** and **local key** from the wizard above.
-3. Leave **Outlet / DPS key** as `1` unless the plug is a multi-outlet power strip — see [Section
-   8](#8-grouping-outlets-on-a-power-strip-plug-groups) for those.
-4. Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
+2. Click **Discover Devices**, then click this plug from the list — that fills in the **device ID**
+   and **local key**, plus a best guess at **Outlet / DPS key** (double-check against
+   `tools/tuya_probe.py` if unsure — see the how-to above). Leave it as `1` unless the plug is a
+   multi-outlet power strip — see [Section 8](#8-grouping-outlets-on-a-power-strip-plug-groups) for
+   those.
+3. Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
    can help.
-5. Set **Belongs to** (above), and click **Create**.
+4. Set **Belongs to** (above), and click **Create**.
 
 #### Manual Plug
 

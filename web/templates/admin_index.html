@@ -42,6 +42,32 @@
         </section>
 
         <section class="admin-card">
+            <h2>Tuya Cloud Credentials</h2>
+            {# Powers every Add Plug/Add Plug Group form's "Discover Devices" button (see ADR 0030).
+               Get these from a Tuya IoT Cloud project linked to the Smart Life/Tuya Smart account
+               that paired the plug — see docs/HOWTO_ADD_GOSUND_PLUG.md section 3. #}
+            <form method="post" action="/admin/settings/tuya-credentials" class="admin-form">
+                <label>Access ID
+                    <input type="text" name="tuya_access_id" value="{{ settings.tuya_access_id or '' }}" placeholder="from your Tuya IoT Cloud project">
+                </label>
+                <label>Access Secret
+                    <input type="password" name="tuya_access_secret" placeholder="{% if settings.tuya_access_secret %}(already set — leave blank to keep it){% else %}from your Tuya IoT Cloud project{% endif %}">
+                </label>
+                <label>API Region
+                    <select name="tuya_api_region">
+                        {% for region, region_label in [("us", "Americas"), ("eu", "Europe"), ("cn", "China"), ("in", "India")] %}
+                        <option value="{{ region }}" {% if settings.tuya_api_region == region %}selected{% endif %}>{{ region_label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit">Save</button>
+            </form>
+            <p class="empty">One-time setup, needed only for the Discover Devices button on Add Plug/Add Plug
+                Group — see docs/HOWTO_ADD_GOSUND_PLUG.md section 3 for where these come from.
+                Access Secret is never shown again once saved.</p>
+        </section>
+
+        <section class="admin-card">
             <h2>Rooms</h2>
             <table class="admin-table">
                 <thead><tr><th>Name</th><th>Enclosures</th><th>Light Schedule</th><th></th></tr></thead>
@@ -137,7 +163,7 @@
                 <form method="post" action="/admin/sensors" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
                     <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
-                    <div class="discover-govee">
+                    <div class="discover-device">
                         <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
                         <div class="discover-results" style="display:none"></div>
                     </div>
@@ -237,6 +263,10 @@
 
                     <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
                     <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
+                    <div class="discover-device">
+                        <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                        <div class="discover-results" style="display:none"></div>
+                    </div>
                     <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
 
                     <p class="empty"><strong>3 relay-controlled outlets</strong> (DPS keys default 1/2/3 — confirm with Probe if unsure):</p>
@@ -382,6 +412,10 @@
                         <div id="add-plug-tuya-creds">
                             <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
                             <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                            <div class="discover-device">
+                                <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                                <div class="discover-results" style="display:none"></div>
+                            </div>
                             <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
                         </div>
                         <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
