@@ -189,6 +189,9 @@ body {
     height: fit-content;
 }
 .admin-form button:hover { background: var(--primary-bright); color: #0d1913; }
+.discover-govee { display: flex; flex-direction: column; gap: 0.4rem; }
+.discover-results { display: flex; flex-direction: column; gap: 0.3rem; max-width: 320px; }
+.discover-results button { font-size: 0.8rem; text-align: left; }
 
 .danger-form { margin-top: 0.75rem; }
 .animal-log-form + .animal-log-form { margin-top: 0.75rem; }

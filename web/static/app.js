@@ -176,3 +176,46 @@ async function onRoomDrop(event) {
         alert("Couldn't move that enclosure — try again.");
     }
 }
+
+// Add Sensor forms' "Discover Devices" button (see ADR 0029, CONTEXT.md: Device Registration) —
+// scans for ~20s and lists whatever Govee-looking devices answered, each as its own button that
+// fills in *this same form's* MAC address field. Deliberately does NOT reload the page afterward,
+// unlike every other action in this app (see onRoomDrop above) — the surrounding form may already
+// be partway filled in (Label, Target Range, Volatility), and a reload would discard all of that
+// for a result that's only ever used once, to fill in one field.
+async function onDiscoverGoveeClick(button) {
+    const macField = button.closest("form").querySelector('[name="mac_address"]');
+    const results = button.parentElement.querySelector(".discover-results");
+    results.style.display = "";
+    results.innerHTML = '<p class="empty">Scanning for Govee sensors (about 20s)…</p>';
+    button.disabled = true;
+    try {
+        const response = await fetch("/admin/sensors/discover", {method: "POST"});
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            results.innerHTML = `<p class="empty">${data.error || "Discovery failed — try again."}</p>`;
+            return;
+        }
+        if (!data.devices.length) {
+            results.innerHTML = '<p class="empty">No Govee sensors found — check Bluetooth is on, '
+                + 'and the sensor is powered and in range.</p>';
+            return;
+        }
+        results.innerHTML = "";
+        data.devices.forEach(function (device) {
+            const tempF = (device.temperature_c * 9 / 5 + 32).toFixed(1);
+            const pick = document.createElement("button");
+            pick.type = "button";
+            pick.textContent = `${device.mac} — ${tempF}°F / ${device.humidity_pct.toFixed(0)}% RH`;
+            pick.onclick = function () {
+                macField.value = device.mac;
+                results.style.display = "none";
+            };
+            results.appendChild(pick);
+        });
+    } catch (err) {
+        results.innerHTML = '<p class="empty">Discovery failed — try again.</p>';
+    } finally {
+        button.disabled = false;
+    }
+}

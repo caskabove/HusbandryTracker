@@ -360,6 +360,10 @@
                     </label>
                     <div id="add-sensor-smart" class="mode-fields">
                         <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF"></label>
+                        <div class="discover-govee">
+                            <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
+                            <div class="discover-results" style="display:none"></div>
+                        </div>
                     </div>
                     <div id="add-sensor-manual" class="mode-fields" style="display:none">
                         <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric — whichever this Sensor tracks.</p>

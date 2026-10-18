@@ -200,38 +200,23 @@ Every Sensor is either **Smart** (a real Govee device, read automatically) or **
 device — you log readings by hand). An enclosure can have more than one — a common setup is one on
 the warm side and one on the cool side, each with its own label and target range.
 
-#### A one-time technical step for a Smart Sensor
-
-Finding a Govee sensor's ID isn't something the website can do on its own yet, so — even though
-you installed Husbandry Tracker from the `.exe` and have no reason to otherwise touch Python — this
-one step needs a small, separate, one-time Python install just to run a short discovery script.
-It's a five-minute detour, not a different way of running the app:
-
-1. Install [Python](https://www.python.org/downloads/) (check **"Add python.exe to PATH"** during
-   install).
-2. Download or `git clone` the [Husbandry Tracker
-   repository](https://github.com/caskabove/HusbandryTracker) anywhere on your computer — this is
-   only to borrow its `tools/` folder, you won't run the app from here.
-3. Open a Command Prompt in that folder and run:
-   ```
-   pip install -r requirements.txt
-   python tools\govee_discover.py 20
-   ```
-4. Wait 20 seconds. It prints a list of nearby Govee sensors, each with an ID like
-   `E3:60:59:23:50:A6` ("MAC address") — check the reading it prints against what the Govee Home
-   app shows for that enclosure to confirm which sensor is which.
-
-See [How To: Add a Govee Sensor](HOWTO_ADD_GOVEE_SENSOR.md) for this same walkthrough end to end,
-including pairing the sensor in the Govee Home app first.
-
 #### Smart Sensor (Govee)
 
 1. On the enclosure's own Admin page, in the **"Add Sensor"** form, leave **Tracking Mode** on
    **Smart**.
-2. Paste in the sensor's ID from above, and give it a label (e.g. "warm side").
-3. Optionally set a target range (min and max) on whichever metric it measures — that's what turns
+2. Click **Discover Devices**, next to the MAC address field. Wait about 20 seconds while it
+   listens for nearby Govee sensors — put the Govee Home app in the foreground on your phone too,
+   so you can cross-check readings live.
+3. Click whichever device in the results list is the one you mean (each shows a live temperature/
+   humidity reading, so you can match it against what that enclosure's sensor is actually reading
+   right now) — that fills in the MAC address field for you.
+4. Give it a label (e.g. "warm side").
+5. Optionally set a target range (min and max) on whichever metric it measures — that's what turns
    its reading green or red on the dashboard.
-4. Click **Create**.
+6. Click **Create**.
+
+See [How To: Add a Govee Sensor](HOWTO_ADD_GOVEE_SENSOR.md) for this same walkthrough end to end,
+including pairing the sensor in the Govee Home app first.
 
 #### Manual Sensor
 
@@ -276,14 +261,22 @@ A Plug always belongs to exactly one of those, never both, never neither.
 
 #### A one-time technical step for a Smart Plug
 
-Same situation as the Govee sensor above, but one step further: a Gosund plug's **device ID** and
-**local key** can't be found with a simple scan — getting them needs a short wizard, run from the
-same one-time Python setup described above:
+Unlike a Govee sensor's ID (which you can now just click — see **Discover Devices** above), a
+Gosund plug's **device ID** and **local key** still can't be found with a simple scan — getting
+them needs a short wizard that, even though you installed Husbandry Tracker from the `.exe`, needs
+a small, separate, one-time Python install just to run. It's a bigger detour than Govee's, not a
+different way of running the app:
 
-```
-pip install -r requirements.txt
-python -m tinytuya wizard
-```
+1. Install [Python](https://www.python.org/downloads/) if you don't already have it (check **"Add
+   python.exe to PATH"** during install).
+2. Download or `git clone` the [Husbandry Tracker
+   repository](https://github.com/caskabove/HusbandryTracker) anywhere on your computer — this is
+   only to borrow its `requirements.txt`, you won't run the app from here.
+3. Open a Command Prompt in that folder and run:
+   ```
+   pip install -r requirements.txt
+   python -m tinytuya wizard
+   ```
 
 This walks you through linking a free Tuya developer account to your Smart Life account (usually a
 QR-code scan from your phone), then prints each plug's device ID, local key, and IP address. See

@@ -15,7 +15,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app_paths import APP_ROOT
@@ -23,7 +23,7 @@ from schemas import enclosure_types as et
 from web import admin_queries as q
 from web import graphs_queries as gq
 from web import view_data_queries as vd
-from web.govee_refresh import refresh_sensors
+from web.govee_refresh import discover_govee, refresh_sensors
 from web.plug_probe import probe_plug
 from web.queries import (
     ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, PERIOD_SLOT_HHMM, log_care_event, log_reading,
@@ -410,6 +410,19 @@ def admin_log_animal_condition(
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/sensors/discover")
+async def admin_discover_govee_sensors():
+    """Backs every Add Sensor form's "Discover Devices" button (see ADR 0029) — a plain JSON
+    endpoint, unlike every other admin route, because the result fills in one field of a form the
+    user may already be partway through filling out; a redirect-and-redisplay round trip (this
+    app's usual pattern) would discard that. Never touches the database — see discover_govee()."""
+    try:
+        devices = await discover_govee()
+    except Exception as exc:  # bleak can raise a range of OS/adapter errors if Bluetooth is off
+        return JSONResponse({"error": f"Discovery failed: {exc}"}, status_code=502)
+    return JSONResponse({"devices": devices})
 
 
 @router.post("/sensors")

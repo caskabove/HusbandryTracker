@@ -137,6 +137,10 @@
                 <form method="post" action="/admin/sensors" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
                     <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+                    <div class="discover-govee">
+                        <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
+                        <div class="discover-results" style="display:none"></div>
+                    </div>
                     <label>Belongs to
                         <select name="parent_type" onchange="onToggleChange(this, 'enclosure', 'add-sensor-global-enclosure', 'add-sensor-global-room')">
                             <option value="enclosure" selected>Enclosure</option>

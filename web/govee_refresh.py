@@ -1,4 +1,5 @@
-"""On-demand, one-shot BLE listen for a dashboard Refresh (see CONTEXT.md: Refresh, ADR 0005).
+"""On-demand, one-shot BLE listen for a dashboard Refresh (see CONTEXT.md: Refresh, ADR 0005), and
+for the Add Sensor form's "Discover Devices" button (see ADR 0029).
 
 Distinct from plugins/govee_ble/plugin.py's continuous, all-devices background scan: this opens a
 short-lived BleakScanner from the *web* process itself, listening only for a specific set of MACs,
@@ -9,7 +10,9 @@ concurrent scans *within this same process* are not (hence the module-level lock
 
 Deliberately outside the Plugin/Registry/Inbox/Ingest pipeline (see CONTEXT.md: Refresh; ADR 0013)
 — this writes straight to sensor_reading, the same as before that pivot. A Refresh-triggered
-Reading is never a Plugin Event.
+Reading is never a Plugin Event. discover_govee() below writes nothing at all — purely diagnostic,
+same as Probe (ADR 0016) — since it's listening for devices that may not be registered as a Sensor
+yet, or ever.
 """
 from __future__ import annotations
 
@@ -78,3 +81,49 @@ async def refresh_sensors(sensor_ids_by_mac: dict[str, int], timeout_seconds: fl
                     )
 
         return results
+
+
+# Fixed, not the Refresh Timeout setting (q.get_settings()["ble_refresh_timeout_seconds"]) — that
+# setting means "how long to wait for a *specific known* device before giving up," a different
+# question from "how long to listen for whatever's out there," which is what tools/govee_discover.py
+# (the terminal tool this replaces for everyday use — see ADR 0029) has always defaulted to.
+DISCOVER_TIMEOUT_SECONDS = 20.0
+
+
+async def discover_govee(timeout_seconds: float = DISCOVER_TIMEOUT_SECONDS) -> list[dict]:
+    """Listens for *any* Govee-looking BLE advertisement (unlike refresh_sensors, not limited to a
+    known set of MACs) for timeout_seconds, and returns a best-effort decode of each distinct device
+    seen — for the Add Sensor form's "Discover Devices" button (see ADR 0029). Never touches the
+    database: this is meant to run before a device has been registered as a Sensor at all, so there's
+    nothing to attribute a reading to yet, same reasoning as Probe (ADR 0016).
+
+    Shares _lock with refresh_sensors() — see that function's own docstring for why two BLE scans
+    within this one process take turns rather than overlapping.
+    """
+    async with _lock:
+        found: dict[str, dict] = {}
+
+        def _on_detection(device: BLEDevice, adv: AdvertisementData) -> None:
+            mac = device.address.upper()
+            if mac in found:
+                return
+            for manufacturer_id, decode in DECODERS:
+                raw = adv.manufacturer_data.get(manufacturer_id)
+                if raw is None:
+                    continue
+                reading = decode(raw)
+                if reading is not None:
+                    found[mac] = {
+                        "mac": mac,
+                        "name": device.name or adv.local_name,
+                        "temperature_c": reading.temperature_c,
+                        "humidity_pct": reading.humidity_pct,
+                        "battery_pct": reading.battery_pct,
+                    }
+                break
+
+        scanner = BleakScanner(detection_callback=_on_detection)
+        async with scanner:
+            await asyncio.sleep(timeout_seconds)
+
+        return sorted(found.values(), key=lambda d: d["mac"])
