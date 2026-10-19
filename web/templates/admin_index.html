@@ -41,11 +41,20 @@
                 Schedule Drift Threshold is how far a Smart Plug's Target and Detected Schedule can disagree before a Timer Warning shows (see CONTEXT.md: Timer Warning).</p>
         </section>
 
-        <section class="admin-card">
+        <section class="admin-card" id="tuya-cloud-credentials">
             <h2>Tuya Cloud Credentials</h2>
             {# Powers every Add Plug/Add Plug Group form's "Discover Devices" button (see ADR 0030).
-               Get these from a Tuya IoT Cloud project linked to the Smart Life/Tuya Smart account
-               that paired the plug — see docs/HOWTO_ADD_GOSUND_PLUG.md section 3. #}
+               Instructions here are self-contained, not a cross-reference to
+               docs/HOWTO_ADD_GOSUND_PLUG.md — that file isn't bundled into the installer (see
+               packaging/husbandrytracker.spec, which only bundles USER_GUIDE.md), so an
+               installer-only user would have no way to open it. #}
+            <p class="empty">Where to get these — a one-time setup, done once no matter how many Tuya
+                plugs you add afterward:</p>
+            <ol class="empty">
+                <li>Go to <a href="https://iot.tuya.com" target="_blank" rel="noopener">iot.tuya.com</a> and create a free account.</li>
+                <li>Create a "Cloud" project there, then link it to your Smart Life (or Tuya Smart) account — this usually means scanning a QR code with your phone, in that app.</li>
+                <li>The project's page shows an <strong>Access ID</strong> and <strong>Access Secret</strong> — paste them in below.</li>
+            </ol>
             <form method="post" action="/admin/settings/tuya-credentials" class="admin-form">
                 <label>Access ID
                     <input type="text" name="tuya_access_id" value="{{ settings.tuya_access_id or '' }}" placeholder="from your Tuya IoT Cloud project">
@@ -62,9 +71,9 @@
                 </label>
                 <button type="submit">Save</button>
             </form>
-            <p class="empty">One-time setup, needed only for the Discover Devices button on Add Plug/Add Plug
-                Group — see docs/HOWTO_ADD_GOSUND_PLUG.md section 3 for where these come from.
-                Access Secret is never shown again once saved.</p>
+            <p class="empty">Needed only for the Discover Devices button on Add Plug/Add Plug Group, below
+                — see <a href="/guide#a-one-time-account-linking-step-for-a-smart-plug">the full walkthrough</a>
+                if you get stuck. Access Secret is never shown again once saved.</p>
         </section>
 
         <section class="admin-card">

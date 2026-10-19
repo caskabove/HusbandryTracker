@@ -723,7 +723,8 @@ async def admin_discover_tuya_plugs():
     access_secret = settings.get("tuya_access_secret")
     if not access_id or not access_secret:
         return JSONResponse(
-            {"error": "Save your Tuya Cloud Credentials above first (Access ID and Access Secret)."},
+            {"error": 'Save your <a href="#tuya-cloud-credentials">Tuya Cloud Credentials</a> first '
+                      '(Access ID and Access Secret, near the top of this page, under Settings).'},
             status_code=400,
         )
     try:
