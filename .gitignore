@@ -13,3 +13,4 @@ build/
 dist/
 handoff-*.md
 migrate*.py
+/data.live-backup-20261018-201956/
