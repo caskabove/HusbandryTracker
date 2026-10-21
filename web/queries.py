@@ -79,7 +79,10 @@ def _latest_reading(conn, sensor: dict) -> dict | None:
     return reading
 
 
-_SPARKLINE_DAYS = 7
+# Every window Sparkline offers, keyed by the name used in templates/graphs.js (ADR 0032) — a
+# viewer picks one per chart, client-side, from data this already fetches both of up front.
+_SPARKLINE_RANGES: tuple[tuple[str, int], ...] = (("week", 7), ("month", 30))
+
 # Trailing buckets averaged into each smoothed point (see CONTEXT.md: Sparkline; ADR 0024) — a
 # Smart Sensor's daily min/avg/max buckets get this before drawing, so a Sparkline reads as a trend
 # rather than a day-to-day zigzag. Index-based, not calendar-based: a bucket only exists for a day
@@ -107,26 +110,17 @@ def _sparkline_smoothed(points: list[list]) -> list[list]:
     return smoothed
 
 
-def _sparkline(conn, sensor: dict, metric) -> dict:
-    """A Sparkline's points for one metric, covering the last week, plus the Sensor's own Target
-    Range for that metric (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0028) — {"points":
-    [...], "target_min": float | None, "target_max": float | None}, all already in the metric's
-    display unit (Fahrenheit for Temperature, same as every pill), since the Target Range is stored
-    in the same unit as the Reading it judges (Celsius for Temperature).
-
-    A Smart Sensor's dedupe window is only 5 seconds (see plugins/govee_ble/plugin.py), so it can
-    write a new sensor_reading row every 5-30 seconds continuously — even a week of that raw would be
-    thousands of points for a chart this small, repeated on every Dashboard load. Its Sparkline
-    instead aggregates into daily min/avg/max buckets, then smooths those with a trailing moving
-    average (_sparkline_smoothed) so the line reads as a trend rather than a zigzag — both as
-    [epoch_ms, min, avg, max] rows, oldest first. A Manual Sensor's Readings are hand-logged and
-    sparse (at most one a day), so bucketing and smoothing them would misrepresent what was
-    actually recorded — its Sparkline stays raw and unsmoothed, as [epoch_ms, value] pairs.
+def _sparkline_points(conn, sensor: dict, metric, days: int) -> list[list]:
+    """One window's worth of points for one metric, already in the metric's display unit
+    (Fahrenheit for Temperature, same as every pill) — [epoch_ms, value] pairs for a Manual Sensor,
+    [epoch_ms, min, avg, max] rows for a Smart Sensor. Factored out of _sparkline (see its
+    docstring for the raw/bucket/smooth reasoning) so Sparkline can fetch more than one window's
+    worth of the same metric (ADR 0032) without duplicating that reasoning per window.
     sensor_reading.recorded_at is true UTC with no backdating path (see view_data_queries.py's
     module docstring) — converted here so epoch_ms lines up with the viewer's actual wall-clock,
     same as every other chart in this app."""
     column = metric.reading_column
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=_SPARKLINE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     if sensor["tracking_mode"] == "manual":
         rows = conn.execute(
             f"SELECT recorded_at, {column} AS value FROM sensor_reading "
@@ -147,13 +141,33 @@ def _sparkline(conn, sensor: dict, metric) -> dict:
             for row in rows
         ]
         points = _sparkline_smoothed(points)
+    if metric.converts_f_c:
+        points = [[p[0]] + [_sparkline_c_to_f(v) for v in p[1:]] for p in points]
+    return points
+
+
+def _sparkline(conn, sensor: dict, metric) -> dict:
+    """A Sparkline's points for one metric, in every window Sparkline offers, plus the Sensor's
+    own Target Range for that metric (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0028, ADR
+    0032) — {"ranges": {"week": [...], "month": [...]}, "target_min": float | None, "target_max":
+    float | None}. A viewer picks the window client-side (graphs.js's setSparklineRange) from
+    whichever of these two this already fetched, rather than round-tripping to the server per
+    click — both windows reuse the same per-window raw/bucket/smooth split (_sparkline_points): a
+    Smart Sensor's daily min/avg/max buckets, 3-day-smoothed; a Manual Sensor's raw, unsmoothed
+    points, sparse enough that even the month window is never large.
+
+    A Smart Sensor's dedupe window is only 5 seconds (see plugins/govee_ble/plugin.py), so it can
+    write a new sensor_reading row every 5-30 seconds continuously — even a month of that raw would
+    be tens of thousands of points for a chart this small, repeated on every Dashboard load. Its
+    Sparkline aggregates into daily buckets regardless of window, so the month window is still only
+    ~30 points, not ~30x the week window's raw row count."""
+    ranges = {key: _sparkline_points(conn, sensor, metric, days) for key, days in _SPARKLINE_RANGES}
     target_min = sensor[metric.min_column]
     target_max = sensor[metric.max_column]
     if metric.converts_f_c:
-        points = [[p[0]] + [_sparkline_c_to_f(v) for v in p[1:]] for p in points]
         target_min = _sparkline_c_to_f(target_min)
         target_max = _sparkline_c_to_f(target_max)
-    return {"points": points, "target_min": target_min, "target_max": target_max}
+    return {"ranges": ranges, "target_min": target_min, "target_max": target_max}
 
 
 def _sparklines(conn, sensor: dict, reading: dict | None) -> dict[str, dict]:

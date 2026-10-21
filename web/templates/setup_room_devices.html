@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Setup</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Room: {{ room.name }}</h1>
+        <nav><a href="/?setup=skip">Skip for now</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Step 1 of 5 — Room sensor &amp; plug (optional)</h2>
+            <p class="setup-intro">
+                Does "{{ room.name }}" have its own thermometer/hygrometer, or a light/heater that covers
+                the whole room rather than one specific enclosure? Add one or both below, or skip this
+                entirely — you can always add these later from the Control Panel.
+            </p>
+
+            {% if room.sensors %}
+            <table class="admin-table">
+                <thead><tr><th>Sensor</th><th>Target</th></tr></thead>
+                <tbody>
+                {% for s in room.sensors %}
+                    <tr>
+                        <td class="admin-table-primary">{{ s.label }}</td>
+                        <td>
+                            {% if s.target_temp_min_c is not none %}{{ "%.0f"|format(s.target_temp_min_c|c_to_f) }}&ndash;{{ "%.0f"|format(s.target_temp_max_c|c_to_f) }}&deg;F{% endif %}
+                            {% if s.target_humidity_min is not none %} / {{ s.target_humidity_min|int }}&ndash;{{ s.target_humidity_max|int }}%{% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            <details>
+                <summary>+ Add a sensor for this room</summary>
+                <form method="post" action="/setup/rooms/{{ room.id }}/sensors" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. by the window" required></label>
+                    <label>Target temp min (F) <input type="number" step="0.1" name="min_temperature_f"></label>
+                    <label>Target temp max (F) <input type="number" step="0.1" name="max_temperature_f"></label>
+                    <label>Target humidity min (%) <input type="number" step="1" name="min_humidity"></label>
+                    <label>Target humidity max (%) <input type="number" step="1" name="max_humidity"></label>
+                    <button type="submit">Add Sensor</button>
+                </form>
+                <p class="empty">Since you'll enter readings by hand, fill in at least one min and max above (temperature or humidity).</p>
+            </details>
+
+            {% if room.plugs %}
+            <table class="admin-table">
+                <thead><tr><th>Plug</th><th>Purpose</th></tr></thead>
+                <tbody>
+                {% for p in room.plugs %}
+                    <tr><td class="admin-table-primary">{{ p.label }}</td><td>{{ p.purpose }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            <details>
+                <summary>+ Add a plug for this room</summary>
+                <form method="post" action="/setup/rooms/{{ room.id }}/plugs" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. rack light" required></label>
+                    <label>Purpose <input type="text" name="purpose" list="purpose-suggestions-room" placeholder="e.g. light" required></label>
+                    <datalist id="purpose-suggestions-room">
+                        <option value="light"><option value="heat"><option value="cooling"><option value="UVB"><option value="pump">
+                    </datalist>
+                    <label class="checkbox"><input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'room-plug-on', 'room-plug-off')"> Always on (no schedule)</label>
+                    <label>On-time <input type="time" id="room-plug-on" name="target_on_time"></label>
+                    <label>Off-time <input type="time" id="room-plug-off" name="target_off_time"></label>
+                    <button type="submit">Add Plug</button>
+                </form>
+            </details>
+
+            <p><a href="/setup/enclosure?room_id={{ room.id }}" class="button-link">Continue — add an enclosure to this room</a></p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

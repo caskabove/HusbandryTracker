@@ -25,133 +25,166 @@ function sparklineIsRealDataset(item) {
 
 
 
-// A week of one Sensor metric's Readings under its "as of" line (see CONTEXT.md: Sparkline; ADR
-// 0023, ADR 0024, ADR 0028) — a compact preview of the same metric's Graphs chart rather than a plain glance
-// glyph: a minimal time/value axis, a shaded Target Range band (when the Sensor has one set) behind
-// the metric's own data, and a hover tooltip. A Smart Sensor's points are a 3-day-smoothed daily
-// [epoch_ms, min, avg, max] band (web/queries.py's _sparkline); a Manual Sensor's are raw, unsmoothed
+// A week or month (viewer's pick — see setSparklineRange below) of one Sensor metric's Readings
+// under its "as of" line (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0028, ADR 0032) — a
+// compact preview of the same metric's Graphs chart rather than a plain glance glyph: a minimal
+// time/value axis, a shaded Target Range band (when the Sensor has one set) behind the metric's
+// own data, and a hover tooltip. A Smart Sensor's points are a 3-day-smoothed daily [epoch_ms,
+// min, avg, max] band (web/queries.py's _sparkline); a Manual Sensor's are raw, unsmoothed
 // [epoch_ms, value] pairs — detected here by point length rather than a separate data attribute,
 // since a canvas's own points are always one shape or the other.
-function initSparklines() {
+//
+// Both windows' points are already embedded on the canvas (data-points-week/data-points-month —
+// web/queries.py fetches both up front), so switching windows is a pure client-side redraw, no
+// request. canvas.dataset.range tracks which one is currently showing; renderSparkline reads it
+// and (re)builds the Chart.js instance, destroying any previous one first since Chart.js refuses
+// to reuse a canvas that already has a live chart on it.
+function renderSparkline(canvas) {
     if (typeof Chart === "undefined") return;
-    document.querySelectorAll("canvas.sparkline").forEach(function (canvas) {
-        let points;
-        try {
-            points = JSON.parse(canvas.dataset.points || "[]");
-        } catch (e) {
-            return;
-        }
-        if (points.length === 0) return;
-        const isBand = points[0].length === 4;
-        // Each metric's own display precision (see schemas/enclosure_types.py's TargetRangeMetric.
-        // decimals) — Specific Gravity needs all 3 decimals (1.025-style) to mean anything.
-        // Defaults to 2 if the attribute's missing/invalid.
-        const decimalsAttr = parseInt(canvas.dataset.decimals, 10);
-        const precision = Number.isFinite(decimalsAttr) ? decimalsAttr : 2;
-        const targetMin = parseFloat(canvas.dataset.targetMin);
-        const targetMax = parseFloat(canvas.dataset.targetMax);
-        const hasTargetRange = Number.isFinite(targetMin) && Number.isFinite(targetMax);
+    const range = canvas.dataset.range === "month" ? "month" : "week";
+    let points;
+    try {
+        points = JSON.parse(canvas.dataset[range === "month" ? "pointsMonth" : "pointsWeek"] || "[]");
+    } catch (e) {
+        points = [];
+    }
+    if (canvas._sparklineChart) {
+        canvas._sparklineChart.destroy();
+        canvas._sparklineChart = null;
+    }
+    const titleAttr = canvas.dataset[range === "month" ? "titleMonth" : "titleWeek"];
+    if (titleAttr) canvas.title = titleAttr;
+    if (points.length === 0) return;
+    renderSparklineChart(canvas, points);
+}
 
-        const firstX = points[0][0];
-        const lastX = points[points.length - 1][0];
-        const datasets = [];
+function setSparklineRange(button, range) {
+    const chartWrap = button.closest(".sparkline-chart");
+    if (!chartWrap) return;
+    chartWrap.querySelectorAll(".sparkline-range-btn").forEach(function (b) {
+        b.classList.toggle("active", b === button);
+    });
+    const canvas = chartWrap.querySelector("canvas.sparkline");
+    if (!canvas) return;
+    canvas.dataset.range = range;
+    renderSparkline(canvas);
+}
 
-        // Target Range band (ADR 0024) — drawn first so the metric's own data band/line below
-        // renders on top of it, same invisible-min/filled-max technique as the data band itself,
-        // just flat across the chart's whole x-range instead of varying with time.
-        if (hasTargetRange) {
-            datasets.push({data: [{x: firstX, y: targetMin}, {x: lastX, y: targetMin}],
-                           borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)"});
-            datasets.push({data: [{x: firstX, y: targetMax}, {x: lastX, y: targetMax}],
-                           borderWidth: 0, pointRadius: 0, fill: "-1",
-                           backgroundColor: SPARKLINE_TARGET_RANGE_COLOR + "26", borderColor: "rgba(0,0,0,0)"});
-        }
+function renderSparklineChart(canvas, points) {
+    const isBand = points[0].length === 4;
+    // Each metric's own display precision (see schemas/enclosure_types.py's TargetRangeMetric.
+    // decimals) — Specific Gravity needs all 3 decimals (1.025-style) to mean anything.
+    // Defaults to 2 if the attribute's missing/invalid.
+    const decimalsAttr = parseInt(canvas.dataset.decimals, 10);
+    const precision = Number.isFinite(decimalsAttr) ? decimalsAttr : 2;
+    const targetMin = parseFloat(canvas.dataset.targetMin);
+    const targetMax = parseFloat(canvas.dataset.targetMax);
+    const hasTargetRange = Number.isFinite(targetMin) && Number.isFinite(targetMax);
 
-        if (isBand) {
-            // Same min/max band technique as buildGraphChart below: an invisible "min" line, then
-            // a "max" line filled back to it, then the real (already 3-day-smoothed) average line
-            // drawn on top of everything, including the Target Range band above.
-            datasets.push({data: points.map(function (p) { return {x: p[0], y: p[1]}; }),
-                           borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)"});
-            datasets.push({data: points.map(function (p) { return {x: p[0], y: p[3]}; }),
-                           borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: SPARKLINE_COLOR + "2a", borderColor: "rgba(0,0,0,0)"});
-            datasets.push({data: points.map(function (p) { return {x: p[0], y: p[2]}; }),
-                           borderColor: SPARKLINE_COLOR, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25});
-        } else {
-            datasets.push({data: points.map(function (p) { return {x: p[0], y: p[1]}; }),
-                           borderColor: SPARKLINE_COLOR, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25});
-        }
+    const firstX = points[0][0];
+    const lastX = points[points.length - 1][0];
+    const datasets = [];
 
-        // y-scale anchors to the Target Range when set (ties the axis to the shaded band) but
-        // always expands to cover the actual data too — an out-of-range Reading, the one thing the
-        // Out of Target Range Alert Condition exists to catch, is never clipped off-chart just to
-        // keep the scale stable (see ADR 0024).
-        const allValues = [];
-        points.forEach(function (p) {
-            for (let i = 1; i < p.length; i++) allValues.push(p[i]);
-        });
-        let yMin = Math.min.apply(null, allValues);
-        let yMax = Math.max.apply(null, allValues);
-        if (hasTargetRange) {
-            yMin = Math.min(yMin, targetMin);
-            yMax = Math.max(yMax, targetMax);
-        }
-        const pad = (yMax - yMin) * 0.08 || Math.pow(10, -precision);
-        yMin -= pad;
-        yMax += pad;
+    // Target Range band (ADR 0024) — drawn first so the metric's own data band/line below
+    // renders on top of it, same invisible-min/filled-max technique as the data band itself,
+    // just flat across the chart's whole x-range instead of varying with time.
+    if (hasTargetRange) {
+        datasets.push({data: [{x: firstX, y: targetMin}, {x: lastX, y: targetMin}],
+                       borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)"});
+        datasets.push({data: [{x: firstX, y: targetMax}, {x: lastX, y: targetMax}],
+                       borderWidth: 0, pointRadius: 0, fill: "-1",
+                       backgroundColor: SPARKLINE_TARGET_RANGE_COLOR + "26", borderColor: "rgba(0,0,0,0)"});
+    }
 
-        new Chart(canvas, {
-            type: "line",
-            data: {datasets: datasets},
-            options: {
-                responsive: false,
-                animation: false,
-                interaction: {mode: "nearest", intersect: false},
-                scales: {
-                    // A few date/value labels, no gridlines — kept sparse so this still reads as a
-                    // compact preview rather than a second full Graphs chart (ADR 0024). The x-axis
-                    // shows exactly the window's start and end date (ADR 0028), not Chart.js's own
-                    // "nice" auto-picked ticks, since a week-long sparkline has little room for more.
-                    x: {
-                        type: "linear",
-                        grid: {display: false},
-                        ticks: {font: {size: 9}, color: SPARKLINE_AXIS_COLOR, callback: formatSparklineDate},
-                        afterBuildTicks: function (axis) {
-                            axis.ticks = firstX === lastX ? [{value: firstX}] : [{value: firstX}, {value: lastX}];
-                        },
-                    },
-                    y: {
-                        min: yMin,
-                        max: yMax,
-                        grid: {display: false},
-                        ticks: {
-                            maxTicksLimit: 3, font: {size: 9}, color: SPARKLINE_AXIS_COLOR,
-                            callback: function (value) { return value.toFixed(precision); },
-                        },
+    if (isBand) {
+        // Same min/max band technique as buildGraphChart below: an invisible "min" line, then
+        // a "max" line filled back to it, then the real (already 3-day-smoothed) average line
+        // drawn on top of everything, including the Target Range band above.
+        datasets.push({data: points.map(function (p) { return {x: p[0], y: p[1]}; }),
+                       borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)"});
+        datasets.push({data: points.map(function (p) { return {x: p[0], y: p[3]}; }),
+                       borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: SPARKLINE_COLOR + "2a", borderColor: "rgba(0,0,0,0)"});
+        datasets.push({data: points.map(function (p) { return {x: p[0], y: p[2]}; }),
+                       borderColor: SPARKLINE_COLOR, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25});
+    } else {
+        datasets.push({data: points.map(function (p) { return {x: p[0], y: p[1]}; }),
+                       borderColor: SPARKLINE_COLOR, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25});
+    }
+
+    // y-scale anchors to the Target Range when set (ties the axis to the shaded band) but
+    // always expands to cover the actual data too — an out-of-range Reading, the one thing the
+    // Out of Target Range Alert Condition exists to catch, is never clipped off-chart just to
+    // keep the scale stable (see ADR 0024).
+    const allValues = [];
+    points.forEach(function (p) {
+        for (let i = 1; i < p.length; i++) allValues.push(p[i]);
+    });
+    let yMin = Math.min.apply(null, allValues);
+    let yMax = Math.max.apply(null, allValues);
+    if (hasTargetRange) {
+        yMin = Math.min(yMin, targetMin);
+        yMax = Math.max(yMax, targetMax);
+    }
+    const pad = (yMax - yMin) * 0.08 || Math.pow(10, -precision);
+    yMin -= pad;
+    yMax += pad;
+
+    canvas._sparklineChart = new Chart(canvas, {
+        type: "line",
+        data: {datasets: datasets},
+        options: {
+            responsive: false,
+            animation: false,
+            interaction: {mode: "nearest", intersect: false},
+            scales: {
+                // A few date/value labels, no gridlines — kept sparse so this still reads as a
+                // compact preview rather than a second full Graphs chart (ADR 0024). The x-axis
+                // shows exactly the window's start and end date (ADR 0028), not Chart.js's own
+                // "nice" auto-picked ticks, since a week-long sparkline has little room for more.
+                x: {
+                    type: "linear",
+                    grid: {display: false},
+                    ticks: {font: {size: 9}, color: SPARKLINE_AXIS_COLOR, callback: formatSparklineDate},
+                    afterBuildTicks: function (axis) {
+                        axis.ticks = firstX === lastX ? [{value: firstX}] : [{value: firstX}, {value: lastX}];
                     },
                 },
-                plugins: {
-                    legend: {display: false},
-                    tooltip: {
-                        filter: sparklineIsRealDataset,
-                        callbacks: {
-                            title: function (items) {
-                                return items.length ? formatSparklineDate(items[0].parsed.x) : "";
-                            },
-                            label: function (context) {
-                                const p = points[context.dataIndex];
-                                if (isBand) {
-                                    return "avg " + p[2].toFixed(precision) +
-                                        " (range " + p[1].toFixed(precision) + "–" + p[3].toFixed(precision) + ")";
-                                }
-                                return p[1].toFixed(precision);
-                            },
+                y: {
+                    min: yMin,
+                    max: yMax,
+                    grid: {display: false},
+                    ticks: {
+                        maxTicksLimit: 3, font: {size: 9}, color: SPARKLINE_AXIS_COLOR,
+                        callback: function (value) { return value.toFixed(precision); },
+                    },
+                },
+            },
+            plugins: {
+                legend: {display: false},
+                tooltip: {
+                    filter: sparklineIsRealDataset,
+                    callbacks: {
+                        title: function (items) {
+                            return items.length ? formatSparklineDate(items[0].parsed.x) : "";
+                        },
+                        label: function (context) {
+                            const p = points[context.dataIndex];
+                            if (isBand) {
+                                return "avg " + p[2].toFixed(precision) +
+                                    " (range " + p[1].toFixed(precision) + "–" + p[3].toFixed(precision) + ")";
+                            }
+                            return p[1].toFixed(precision);
                         },
                     },
                 },
             },
-        });
+        },
     });
+}
+
+function initSparklines() {
+    if (typeof Chart === "undefined") return;
+    document.querySelectorAll("canvas.sparkline").forEach(renderSparkline);
 }
 
 // One Y-axis per distinct unit among a chart's numeric ("line") rows, assigned in first-seen

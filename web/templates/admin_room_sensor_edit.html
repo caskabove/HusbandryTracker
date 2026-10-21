@@ -43,6 +43,10 @@
                 </label>
                 <div id="edit-room-sensor-smart" class="mode-fields" {% if sensor.tracking_mode != "smart" %}style="display:none"{% endif %}>
                     <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <div class="discover-device">
+                        <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
+                        <div class="discover-results" style="display:none"></div>
+                    </div>
                     <label class="checkbox">
                         <input type="checkbox" name="auto_update_enabled" value="true" {% if sensor.auto_update_enabled %}checked{% endif %}>
                         Auto-Update (uncheck to pause background collection without losing this Sensor's setup)

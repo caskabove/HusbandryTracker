@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Setup</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Welcome! Let's get set up.</h1>
+        <nav><a href="/?setup=skip">Skip for now</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <p class="setup-intro">
+                Husbandry Tracker organizes everything around <strong>Rooms</strong> and
+                <strong>Enclosures</strong>. A Room is a physical space — a living room, a reptile rack —
+                that can hold several Enclosures (tanks, tubs, trays). If you only have one enclosure
+                and don't need to track the room around it separately, you can skip this step.
+            </p>
+            <h2>Step 1 of 5 — Room</h2>
+            <p>Does this enclosure share a space with others, or do you want to track a room-wide thermometer or light separately from any one enclosure?</p>
+            <form method="post" action="/setup/rooms" class="admin-form">
+                <label>Room name <input type="text" name="name" placeholder="e.g. Reptile Rack, Living Room" required></label>
+                <button type="submit">Create Room</button>
+            </form>
+            <p><a href="/setup/enclosure" class="button-link">Skip — I just have one enclosure</a></p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

@@ -90,6 +90,16 @@ def _check_external_id_available(conn, plugin: str | None, external_id: str | No
         )
 
 
+def is_fresh_install() -> bool:
+    """True only when the database has zero Rooms and zero Enclosures — the Setup Wizard's trigger
+    condition (see CONTEXT.md: Setup Wizard; ADR 0031). No persistent "dismissed" flag: a user who
+    deliberately deletes every Room and Enclosure later will see the Wizard again."""
+    with get_connection() as conn:
+        (room_count,) = conn.execute("SELECT COUNT(*) FROM room").fetchone()
+        (enclosure_count,) = conn.execute("SELECT COUNT(*) FROM enclosure").fetchone()
+    return room_count == 0 and enclosure_count == 0
+
+
 def list_enclosures() -> list[dict]:
     with get_connection() as conn:
         return [dict(row) for row in conn.execute("SELECT * FROM enclosure ORDER BY name")]
@@ -254,6 +264,23 @@ def update_enclosure(enclosure_id: int, name: str, enclosure_type: str, bioactiv
                                      WHERE id = ?""",
             (name, enclosure_type, int(bioactive), feeding, watering, spot, deep, room_id, fallback_sensor_id,
              int(show_feeding), int(show_watering), int(show_spot_clean), int(show_deep_clean), enclosure_id),
+        )
+
+
+def set_enclosure_room(enclosure_id: int, room_id: int | None) -> None:
+    """Used by the Setup Wizard (see CONTEXT.md: Setup Wizard; ADR 0031) to assign a brand-new
+    Enclosure to a Room right after creation, without re-submitting the rest of Enclosure Settings
+    through update_enclosure()."""
+    with get_connection() as conn:
+        conn.execute("UPDATE enclosure SET room_id = ? WHERE id = ?", (room_id, enclosure_id))
+
+
+def set_enclosure_fallback_sensor(enclosure_id: int, fallback_sensor_id: int | None) -> None:
+    """See CONTEXT.md: Fallback Sensor. Used by the Setup Wizard to offer a Room's existing Sensor
+    as a brand-new Enclosure's Fallback Sensor without the full Enclosure Settings form."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE enclosure SET fallback_sensor_id = ? WHERE id = ?", (fallback_sensor_id, enclosure_id)
         )
 
 

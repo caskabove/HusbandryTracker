@@ -50,20 +50,31 @@
                             {% else %}
                             <span class="reading-meta">as of {{ reading.recorded_at }}</span>
                             {# A Sparkline per metric, stacked under the as-of line (see CONTEXT.md:
-                               Sparkline; ADR 0023, ADR 0024) — clicking one opens the full Graphs
-                               chart for that exact Sensor+metric. #}
+                               Sparkline; ADR 0023, ADR 0024, ADR 0032) — clicking one opens the
+                               full Graphs chart for that exact Sensor+metric. Each chart has its
+                               own Week/Month toggle (both windows are already embedded below; see
+                               web/static/graphs.js's setSparklineRange). #}
                             <div class="sparkline-group">
                             {% for metric in TARGET_RANGE_METRICS %}
                                 {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
-                                {% if spark and spark.points %}
-                                <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
-                                    <canvas class="sparkline" width="260" height="84"
-                                            data-points="{{ spark.points|tojson }}"
-                                            data-decimals="{{ metric.decimals }}"
-                                            data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
-                                            data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                                            title="{{ metric.label }} - last 7 days"></canvas>
-                                </a>
+                                {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                                <div class="sparkline-chart">
+                                    <div class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                                        <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                        <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                    </div>
+                                    <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                        <canvas class="sparkline" width="260" height="84"
+                                                data-points-week="{{ spark.ranges.week|tojson }}"
+                                                data-points-month="{{ spark.ranges.month|tojson }}"
+                                                data-decimals="{{ metric.decimals }}"
+                                                data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                                data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                                data-title-week="{{ metric.label }} - last 7 days"
+                                                data-title-month="{{ metric.label }} - last 30 days"
+                                                data-range="week"></canvas>
+                                    </a>
+                                </div>
                                 {% endif %}
                             {% endfor %}
                             </div>
@@ -256,6 +267,8 @@
             <a href="/admin/rooms/{{ room.id }}/graphs" class="button-link">Graphs</a>
         </p>
     </main>
+    <script src="/static/chart.min.js?v={{ asset_version }}"></script>
+    <script src="/static/graphs.js?v={{ asset_version }}"></script>
     <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

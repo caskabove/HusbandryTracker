@@ -67,20 +67,31 @@
             </span>
             {% if ns.shown %}
             {# A Sparkline per metric, on its own line under the pill/as-of row above (see
-               CONTEXT.md: Sparkline; ADR 0023, ADR 0024) — clicking one opens the full Graphs
-               chart for that exact Sensor+metric. #}
+               CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0032) — clicking one opens the full
+               Graphs chart for that exact Sensor+metric. Each chart has its own Week/Month toggle
+               (both windows are already embedded below; see web/static/graphs.js's
+               setSparklineRange). #}
             <span class="sparkline-group sparkline-group-row">
             {% for metric in TARGET_RANGE_METRICS if only_metric is none or metric.key == only_metric %}
                 {% set spark = sparklines[metric.reading_column] if sparklines and sparklines.get(metric.reading_column) else none %}
-                {% if spark and spark.points %}
-                <a class="sparkline-link" href="{{ graph_link }}#reading-{{ sensor_id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
-                    <canvas class="sparkline" width="260" height="84"
-                            data-points="{{ spark.points|tojson }}"
-                            data-decimals="{{ metric.decimals }}"
-                            data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
-                            data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                            title="{{ metric.label }} - last 7 days"></canvas>
-                </a>
+                {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                <span class="sparkline-chart">
+                    <span class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                        <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                        <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                    </span>
+                    <a class="sparkline-link" href="{{ graph_link }}#reading-{{ sensor_id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                        <canvas class="sparkline" width="260" height="84"
+                                data-points-week="{{ spark.ranges.week|tojson }}"
+                                data-points-month="{{ spark.ranges.month|tojson }}"
+                                data-decimals="{{ metric.decimals }}"
+                                data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                data-title-week="{{ metric.label }} - last 7 days"
+                                data-title-month="{{ metric.label }} - last 30 days"
+                                data-range="week"></canvas>
+                    </a>
+                </span>
                 {% endif %}
             {% endfor %}
             </span>
@@ -335,15 +346,24 @@
                                         </span>
                                         {% if rs and rs.temperature_c is not none %}
                                         <span class="reading-meta">as of {{ rs.recorded_at }}</span>
-                                        {% if temp_spark and temp_spark.points %}
-                                        <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-temperature" title="View full Temperature chart">
-                                            <canvas class="sparkline" width="260" height="84"
-                                                    data-points="{{ temp_spark.points|tojson }}"
-                                                    data-decimals="1"
-                                                    data-target-min="{{ '' if temp_spark.target_min is none else temp_spark.target_min }}"
-                                                    data-target-max="{{ '' if temp_spark.target_max is none else temp_spark.target_max }}"
-                                                    title="Temperature - last 7 days"></canvas>
-                                        </a>
+                                        {% if temp_spark and (temp_spark.ranges.week or temp_spark.ranges.month) %}
+                                        <span class="sparkline-chart">
+                                            <span class="sparkline-range-toggle" role="group" aria-label="Temperature chart range">
+                                                <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                                <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                            </span>
+                                            <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-temperature" title="View full Temperature chart">
+                                                <canvas class="sparkline" width="260" height="84"
+                                                        data-points-week="{{ temp_spark.ranges.week|tojson }}"
+                                                        data-points-month="{{ temp_spark.ranges.month|tojson }}"
+                                                        data-decimals="1"
+                                                        data-target-min="{{ '' if temp_spark.target_min is none else temp_spark.target_min }}"
+                                                        data-target-max="{{ '' if temp_spark.target_max is none else temp_spark.target_max }}"
+                                                        data-title-week="Temperature - last 7 days"
+                                                        data-title-month="Temperature - last 30 days"
+                                                        data-range="week"></canvas>
+                                            </a>
+                                        </span>
                                         {% endif %}
                                         {% endif %}
                                     </span>
@@ -354,15 +374,24 @@
                                         </span>
                                         {% if rs and rs.humidity_pct is not none %}
                                         <span class="reading-meta">as of {{ rs.recorded_at }}</span>
-                                        {% if humidity_spark and humidity_spark.points %}
-                                        <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-humidity" title="View full Humidity chart">
-                                            <canvas class="sparkline" width="260" height="84"
-                                                    data-points="{{ humidity_spark.points|tojson }}"
-                                                    data-decimals="1"
-                                                    data-target-min="{{ '' if humidity_spark.target_min is none else humidity_spark.target_min }}"
-                                                    data-target-max="{{ '' if humidity_spark.target_max is none else humidity_spark.target_max }}"
-                                                    title="Humidity - last 7 days"></canvas>
-                                        </a>
+                                        {% if humidity_spark and (humidity_spark.ranges.week or humidity_spark.ranges.month) %}
+                                        <span class="sparkline-chart">
+                                            <span class="sparkline-range-toggle" role="group" aria-label="Humidity chart range">
+                                                <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                                <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                            </span>
+                                            <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-humidity" title="View full Humidity chart">
+                                                <canvas class="sparkline" width="260" height="84"
+                                                        data-points-week="{{ humidity_spark.ranges.week|tojson }}"
+                                                        data-points-month="{{ humidity_spark.ranges.month|tojson }}"
+                                                        data-decimals="1"
+                                                        data-target-min="{{ '' if humidity_spark.target_min is none else humidity_spark.target_min }}"
+                                                        data-target-max="{{ '' if humidity_spark.target_max is none else humidity_spark.target_max }}"
+                                                        data-title-week="Humidity - last 7 days"
+                                                        data-title-month="Humidity - last 30 days"
+                                                        data-range="week"></canvas>
+                                            </a>
+                                        </span>
                                         {% endif %}
                                         {% endif %}
                                     </span>
@@ -395,15 +424,24 @@
                                         <span class="sparkline-group">
                                         {% for metric in TARGET_RANGE_METRICS %}
                                             {% set spark = sensor.sparklines[metric.reading_column] if sensor.sparklines and sensor.sparklines.get(metric.reading_column) else none %}
-                                            {% if spark and spark.points %}
-                                            <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
-                                                <canvas class="sparkline" width="260" height="84"
-                                                        data-points="{{ spark.points|tojson }}"
-                                                        data-decimals="{{ metric.decimals }}"
-                                                        data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
-                                                        data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                                                        title="{{ metric.label }} - last 7 days"></canvas>
-                                            </a>
+                                            {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                                            <span class="sparkline-chart">
+                                                <span class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                                                    <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                                    <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                                </span>
+                                                <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                                    <canvas class="sparkline" width="260" height="84"
+                                                            data-points-week="{{ spark.ranges.week|tojson }}"
+                                                            data-points-month="{{ spark.ranges.month|tojson }}"
+                                                            data-decimals="{{ metric.decimals }}"
+                                                            data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                                            data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                                            data-title-week="{{ metric.label }} - last 7 days"
+                                                            data-title-month="{{ metric.label }} - last 30 days"
+                                                            data-range="week"></canvas>
+                                                </a>
+                                            </span>
                                             {% endif %}
                                         {% endfor %}
                                         </span>

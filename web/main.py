@@ -31,8 +31,9 @@ from db.db import get_connection, init_db
 from schemas import enclosure_types as et
 from web.govee_refresh import refresh_sensors
 from web.admin import router as admin_router
-from web.admin_queries import get_settings
+from web.admin_queries import get_settings, is_fresh_install
 from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading
+from web.setup import router as setup_router
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = APP_ROOT / "web"
@@ -40,6 +41,7 @@ USER_GUIDE_PATH = APP_ROOT / "docs" / "USER_GUIDE.md"
 
 app = FastAPI(title="Husbandry Tracker")
 app.include_router(admin_router)
+app.include_router(setup_router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["target_range_status"] = target_range_status
@@ -82,6 +84,11 @@ templates.env.filters["tojson"] = json.dumps
 
 @app.get("/")
 def dashboard(request: Request):
+    # Setup Wizard (see CONTEXT.md: Setup Wizard; ADR 0031) — auto-triggers on a database with zero
+    # Rooms and zero Enclosures. ?setup=skip (set by the Wizard's own "Skip for now" link) bypasses
+    # this once so skipping actually lands on the dashboard instead of redirecting straight back.
+    if request.query_params.get("setup") != "skip" and is_fresh_install():
+        return RedirectResponse(url="/setup/", status_code=303)
     data = get_dashboard_data()
     return templates.TemplateResponse(
         request, "dashboard.html",

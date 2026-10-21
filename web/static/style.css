@@ -647,6 +647,13 @@ a.pill:hover { opacity: 0.85; }
 
 .empty { color: var(--text-muted); font-style: italic; font-size: 0.85rem; }
 
+/* Setup Wizard (see CONTEXT.md: Setup Wizard; ADR 0031) — a plain intro paragraph above each
+   step's form, and a muted, low-emphasis "skip this" link that never competes visually with the
+   step's own primary .button-link action. */
+.setup-intro { color: var(--text-muted); max-width: 640px; }
+a.setup-skip-link { color: var(--text-muted); text-decoration: underline; font-size: 0.85rem; }
+a.setup-skip-link:hover { color: var(--text); }
+
 .error-banner {
     grid-column: 1 / -1;
     background: var(--status-red);
@@ -746,8 +753,29 @@ span.button-link.disabled {
    explicit columns the pill/as-of row already fills. */
 .sparkline-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.3rem; }
 .sparkline-group-row { grid-column: 1 / -1; }
+/* .sparkline-chart wraps one canvas plus its own Week/Month toggle (ADR 0032) — each metric's
+   chart picks its window independently, same as it's always drawn independently. */
+.sparkline-chart { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
 /* The whole chart is a real link to its full Graphs chart (ADR 0024) — block so the canvas sizes
    normally inside it, with a quiet hover affordance since nothing else here signals "clickable". */
 .sparkline-link { display: inline-block; border-radius: 6px; transition: background-color 0.15s; }
 .sparkline-link:hover { background-color: var(--border); }
 canvas.sparkline { display: block; }
+
+/* Sparkline's Week/Month window toggle (ADR 0032) — both windows' data are already embedded on
+   the canvas, so clicking one of these just redraws it client-side (graphs.js's
+   setSparklineRange), no request. Sits outside .sparkline-link so a click never also triggers the
+   chart's own click-through to Graphs. */
+.sparkline-range-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.sparkline-range-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    line-height: 1;
+    padding: 0.15rem 0.5rem;
+    cursor: pointer;
+}
+.sparkline-range-btn + .sparkline-range-btn { border-left: 1px solid var(--border); }
+.sparkline-range-btn:hover { color: var(--text); }
+.sparkline-range-btn.active { background: var(--primary); color: var(--text); }

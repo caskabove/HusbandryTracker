@@ -218,6 +218,10 @@ the warm side and one on the cool side, each with its own label and target range
 See [How To: Add a Govee Sensor](HOWTO_ADD_GOVEE_SENSOR.md) for this same walkthrough end to end,
 including pairing the sensor in the Govee Home app first.
 
+**Already have a Manual Sensor and just got the real Govee hardware?** You don't need to re-create
+it — open that Sensor's **Edit** page, switch **Tracking Mode** to **Smart**, and the same
+**Discover Devices** button appears next to the MAC address field there too.
+
 #### Manual Sensor
 
 For a spot-check tool with no Bluetooth of its own (an infrared thermometer, a moisture meter, a
@@ -293,6 +297,10 @@ control the same plug.
 3. Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
    can help.
 4. Set **Belongs to** (above), and click **Create**.
+
+**Already have a Manual Plug and just got the real Gosund hardware?** Open that Plug's **Edit**
+page, switch **Tracking Mode** to **Smart**, and the same **Discover Devices** button appears
+there too (once Tuya Cloud Credentials, above, are saved).
 
 #### Manual Plug
 
