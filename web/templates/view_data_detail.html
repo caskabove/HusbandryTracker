@@ -22,23 +22,25 @@
             <form method="post" action="{{ post_action }}" class="admin-form">
                 <input type="hidden" name="action" value="add">
                 <label>Date
-                    <input type="date" name="date" required>
+                    <input type="date" name="date" value="{{ prefill.date }}" required>
                 </label>
 
                 {% if row_type == "care" %}
                 <label>When
                     <select name="period_slot" onchange="onPeriodSlotChange(this, 'add-care-time')">
-                        <option value="morning">Morning</option>
-                        <option value="afternoon" selected>Afternoon</option>
-                        <option value="night">Night</option>
-                        <option value="exact">Exact time&hellip;</option>
+                        <option value="morning" {% if prefill.period_slot == "morning" %}selected{% endif %}>Morning</option>
+                        <option value="afternoon" {% if prefill.period_slot == "afternoon" %}selected{% endif %}>Afternoon</option>
+                        <option value="night" {% if prefill.period_slot == "night" %}selected{% endif %}>Night</option>
+                        <option value="exact" {% if prefill.period_slot == "exact" %}selected{% endif %}>Exact time&hellip;</option>
                     </select>
                 </label>
                 <label>Time
-                    <input type="time" id="add-care-time" name="time" style="display:none" disabled>
+                    <input type="time" id="add-care-time" name="time" value="{{ prefill.time }}"
+                           style="display:{{ '' if prefill.period_slot == 'exact' else 'none' }}"
+                           {{ '' if prefill.period_slot == 'exact' else 'disabled' }}>
                 </label>
                 <label>Note
-                    <input type="text" name="note" placeholder="note">
+                    <input type="text" name="note" placeholder="note" autofocus>
                 </label>
                 {% if kind == "feeding" and animals %}
                 <label>Animal
@@ -53,9 +55,9 @@
                 {% else %}
                 <label>When
                     <select name="period_slot">
-                        <option value="morning">Morning</option>
-                        <option value="afternoon" selected>Afternoon</option>
-                        <option value="night">Night</option>
+                        <option value="morning" {% if prefill.period_slot == "morning" %}selected{% endif %}>Morning</option>
+                        <option value="afternoon" {% if prefill.period_slot == "afternoon" %}selected{% endif %}>Afternoon</option>
+                        <option value="night" {% if prefill.period_slot == "night" %}selected{% endif %}>Night</option>
                     </select>
                 </label>
                 {% endif %}
@@ -63,15 +65,15 @@
                 {% if row_type == "reading" %}
                 <label>Value
                     <input type="number" step="{{ metric.step }}" name="value" required
-                           placeholder="{{ 'F' if metric.converts_f_c else metric.unit }}">
+                           placeholder="{{ 'F' if metric.converts_f_c else metric.unit }}" autofocus>
                 </label>
                 {% elif row_type == "animal_metric" %}
                 <label>Value
-                    <input type="number" step="{{ step }}" name="value" required placeholder="{{ unit }}">
+                    <input type="number" step="{{ step }}" name="value" required placeholder="{{ unit }}" autofocus>
                 </label>
                 {% elif row_type == "animal_condition" %}
                 <label>Condition
-                    <select name="condition" required>
+                    <select name="condition" required autofocus>
                         <option value="">&mdash;</option>
                         {% for c in animal_conditions %}
                         <option value="{{ c }}">{{ animal_condition_labels[c] }}</option>
@@ -82,7 +84,7 @@
                     <input type="text" name="note" placeholder="note">
                 </label>
                 {% endif %}
-                <button type="submit">Add</button>
+                <button type="submit">{{ "Add Another Day" if prefill.streak else "Add" }}</button>
             </form>
             {% endif %}
 

@@ -71,7 +71,7 @@ That account-linking step happens entirely on Tuya's own website and can't be sk
 2. Create a "Cloud" project, then link it to your Smart Life account — this step usually involves
    scanning a QR code with your phone (in the Smart Life app) to prove it's really your account.
 3. The project's page shows an **Access ID** and **Access Secret**. In Husbandry Tracker, go to the
-   Control Panel's **Tuya Cloud Credentials** card, paste both in, pick your API Region (Americas,
+   Plugs and Sensors page's **Tuya Cloud Credentials** card, paste both in, pick your API Region (Americas,
    Europe, China, or India — matching where your Tuya Cloud project was created), and click **Save**.
 
 **This step's website screens belong to Tuya, not Husbandry Tracker** — their exact wording/layout can

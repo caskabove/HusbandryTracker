@@ -121,8 +121,8 @@ instead of whatever the background listener last happened to hear — real senso
 every 10–60+ seconds, so this can take a little while (the browser just waits; that's normal). Only
 ever refreshes what that Room/Enclosure actually owns — a Room's button never reaches into its
 Enclosures, and an Enclosure showing a Room's Fallback Sensor reading has no button of its own (use
-the Room's instead). How long it waits before giving up is the **Refresh Timeout** setting on the
-Control Panel (default 30s — see [Section 10](#10-getting-notified-when-somethings-wrong)).
+the Room's instead). How long it waits before giving up is the **Refresh Timeout** setting on
+Plugs and Sensors (default 30s — see [Section 10](#10-getting-notified-when-somethings-wrong)).
 
 ### What the colors mean
 
@@ -144,8 +144,8 @@ earlier rather than right now; leave it blank to log it as now.
 
 ## 4. Setting Up Your First Enclosure
 
-Everything below happens on the **Admin** side of the app — click **Control Panel** or **All
-Enclosures** in the top navigation bar (not **Dashboard**, which is view-only).
+Everything below happens on the **Admin** side of the app — click **Rooms and Enclosures** or
+**Plugs and Sensors** in the top navigation bar (not **Dashboard**, which is view-only).
 
 ### 4.1 (Optional) Create a Room first
 
@@ -155,13 +155,13 @@ as you go rather than coming back later. If you only have one or two enclosures 
 ambient sensor between them, feel free to skip this and come back to [Section
 7](#7-rooms-light-schedules-and-fallback-sensors) later — a Room is entirely optional.
 
-1. Go to **Control Panel** (`/admin`).
+1. Go to **Rooms and Enclosures** (`/admin/enclosures`).
 2. In the **Rooms** card, fill out **"+ Add Room"** — just a name (e.g. "Reptile Rack") — and click
    **Create**.
 
 ### 4.2 Add an Enclosure
 
-1. Go to **All Enclosures** (`/admin/enclosures`).
+1. Still on **Rooms and Enclosures** (`/admin/enclosures`).
 2. Fill out the **"+ Add Enclosure"** form at the bottom:
    - **Name** — whatever you call the tank (e.g. "Gargoyl", "The Cape").
    - **Enclosure Type** — **Basic** (snake/lizard/tortoise/insect — the default), **Freshwater**,
@@ -247,7 +247,7 @@ a Manual Sensor for now).
 ### 4.5 Add a Plug
 
 Unlike Animals/Sensors (added from the Enclosure or Room they belong to), Plugs are added from the
-**Control Panel** (`/admin`), in its own **"Plugs"** card — a Plug can belong to more than one
+**Plugs and Sensors** page (`/admin`), in its own **"Plugs"** card — a Plug can belong to more than one
 place, which is why it lives at the top level rather than nested under one Enclosure.
 
 Every Plug is either **Smart** (a real Tuya-controlled Gosund plug, read automatically) or
@@ -273,7 +273,7 @@ linking a free Tuya developer account to the same account you paired the plug wi
 1. Go to [iot.tuya.com](https://iot.tuya.com) and create a free account.
 2. Create a "Cloud" project there and link it to your Smart Life account (usually a QR-code scan
    from your phone).
-3. On Husbandry Tracker's Control Panel, find the **Tuya Cloud Credentials** card and paste in the
+3. On Husbandry Tracker's Plugs and Sensors page, find the **Tuya Cloud Credentials** card and paste in the
    **Access ID** and **Access Secret** the project's page shows you, pick the matching **API
    Region**, and click **Save**. The Access Secret is never shown again once saved.
 
@@ -336,7 +336,7 @@ the physical plug. A Plug lands back in Unassigned on its own if it ever loses i
 
 ### 4.6 Turning a Plug On or Off by Hand
 
-Open a Plug's own edit page (from the Control Panel's or an Enclosure's Plugs list) or, for a
+Open a Plug's own edit page (from Plugs and Sensors' or an Enclosure's Plugs list) or, for a
 Room-owned Plug, go to that Room's own **Schedules** card — either way you'll find **Turn On** /
 **Turn Off** buttons. Clicking one sends the command right away (no confirmation dialog), useful
 for reacting quickly to an alert or just checking a bulb works.
@@ -416,7 +416,7 @@ Settings, at the top of the enclosure's page) if you don't see it.
 A **Room** groups Enclosures that share a physical space (e.g. "Living Room", "Reptile Rack"). It's
 optional — an Enclosure with no Room behaves exactly as before.
 
-On the **Control Panel**, fill out the **"+ Add Room"** form (just a name). Click into the new
+On **Rooms and Enclosures**, fill out the **"+ Add Room"** form (just a name). Click into the new
 Room's own page to add:
 
 - **Sensors** — its own ambient Sensor(s) (Smart or Manual, same forms as an Enclosure's), for
@@ -444,7 +444,7 @@ If you have a multi-outlet Tuya power strip — several independently-switched r
 physical device and one "master" on/off button — a **Plug Group** gives its outlets a shared
 identity in the UI instead of a handful of unrelated-looking Plug rows.
 
-On the **Control Panel**, the **"Plug Groups"** card sits above the plain "Plugs" card.
+On **Plugs and Sensors**, the **"Plug Groups"** card sits above the plain "Plugs" card.
 
 **Creating one**: fill out **"+ Add Plug Group"** — a name, **Belongs to** (same Enclosure/Room
 choice as any Plug), and the strip's one shared Tuya device ID/local key/IP. Today there's one
@@ -523,7 +523,7 @@ app:
    password-protected, so something like `husbandrytracker-yourname-4821` is safer than plain
    `husbandrytracker`). This is like a private radio channel: whoever subscribes to the same topic
    name gets the same notifications.
-3. On the **Control Panel**, in the **Settings** card at the top, enter:
+3. On **Plugs and Sensors**, in the **Settings** card at the top, enter:
    - **ntfy Server URL**: `https://ntfy.sh` (unless you're self-hosting your own ntfy server)
    - **ntfy Topic**: the exact topic name you subscribed to
    - **Alert Debounce (minutes)**: how long a problem has to persist before you're notified
@@ -544,7 +544,7 @@ Separately from Send Alert, a Smart Plug's own edit page shows its **Detected Sc
 actual on-time and off-time Husbandry Tracker has observed from watching it, once it's seen at
 least one full on/off cycle (until then it says "no data yet," which is expected, not an error).
 If the Detected times drift from the Target Schedule you declared by more than the **Schedule
-Drift Threshold** (an app-wide setting in the Control Panel's Settings card, default 15 minutes),
+Drift Threshold** (an app-wide setting in Plugs and Sensors' Settings card, default 15 minutes),
 the drifting time shows in red with a **Timer Warning** pill, visible there and wherever that Plug
 is listed. Click **Clear warning** once you've acknowledged it — it goes neutral again until the
 schedule drifts to a genuinely different time.

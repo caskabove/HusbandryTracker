@@ -41,7 +41,6 @@ from schemas import enclosure_types as et
 from web.queries import ANIMAL_CONDITION_LABELS, CARE_EVENT_KINDS, PERIOD_SLOTS
 from web.view_data_queries import _metric_shown
 
-_PLUG_TELEMETRY_FIELDS = (("watts", "W"), ("volts", "V"), ("amps", "A"))
 _ANIMAL_METRIC_FIELDS = (("weight_g", "Weight", "g"), ("length_cm", "Length", "cm"), ("count", "Count", ""))
 
 # Week=7 and Month=30 (see view_data_queries.py's RANGE_OPTIONS) stay raw for auto-collected series;
@@ -175,25 +174,6 @@ def _reading_line_row(conn: sqlite3.Connection, sensor: dict, metric: et.TargetR
     }
 
 
-def _plug_telemetry_line_row(conn: sqlite3.Connection, plug: dict, field: str, unit: str,
-                              start: date, end: date, days: int) -> dict:
-    if _is_raw_tier(days):
-        series = _raw_numeric_series(conn, "plug_reading", "plug_id", plug["id"], "recorded_at", field, start, end)
-        shape = "raw"
-    else:
-        series = _bucketed_numeric_series(conn, "plug_reading", "plug_id", plug["id"], "recorded_at", field, start, end, days)
-        shape = "band"
-    return {
-        "key": f"plug-telemetry-{plug['id']}-{field}",
-        "label": f"{plug['label']} — {field.capitalize()}",
-        "chart_type": "line",
-        "shape": shape,
-        "unit": unit,
-        "series": series,
-        "decimals": 2,
-    }
-
-
 def _plug_status_marker_row(conn: sqlite3.Connection, plug: dict, start: date, end: date) -> dict:
     start_s, end_s = _utc_bounds(start, end)
     if plug["tracking_mode"] == "smart":
@@ -219,11 +199,12 @@ def _plug_status_marker_row(conn: sqlite3.Connection, plug: dict, start: date, e
     }
 
 
-def _plug_rows(conn: sqlite3.Connection, plug: dict, start: date, end: date, days: int) -> list[dict]:
-    rows = [_plug_status_marker_row(conn, plug, start, end)]
-    if plug["tracking_mode"] == "smart":
-        rows += [_plug_telemetry_line_row(conn, plug, field, unit, start, end, days) for field, unit in _PLUG_TELEMETRY_FIELDS]
-    return rows
+def _plug_rows(conn: sqlite3.Connection, plug: dict, start: date, end: date) -> list[dict]:
+    # Watts/Volts/Amps charts removed for now — no registered Plug in this collection's real-world
+    # use actually reports them (see plugins/tuya_lan/plugin.py's module docstring), so every such
+    # chart was permanently empty. Data Capture itself (plug_reading, View Data's own telemetry
+    # rows) is untouched — only the Graphs-page chart is gone.
+    return [_plug_status_marker_row(conn, plug, start, end)]
 
 
 def _care_event_marker_row(conn: sqlite3.Connection, enclosure_id: int, kind: str, start: date, end: date,
@@ -317,7 +298,7 @@ def build_room_graph_sections(room_id: int, start: date, end: date, days: int) -
             for metric in et.TARGET_RANGE_METRICS
             if _metric_shown(conn, sensor, metric)
         ]
-        plug_rows = [row for plug in plugs for row in _plug_rows(conn, plug, start, end, days)]
+        plug_rows = [row for plug in plugs for row in _plug_rows(conn, plug, start, end)]
 
     sections = []
     if reading_rows:
@@ -346,7 +327,7 @@ def build_enclosure_graph_sections(enclosure_id: int, start: date, end: date, da
         # All four Care Event kinds always show, even with nothing logged yet — same precedent as
         # View Data's own Care Events section.
         care_rows = [_care_event_marker_row(conn, enclosure_id, kind, start, end, days) for kind in CARE_EVENT_KINDS]
-        plug_rows = [row for plug in plugs for row in _plug_rows(conn, plug, start, end, days)]
+        plug_rows = [row for plug in plugs for row in _plug_rows(conn, plug, start, end)]
         animal_rows = [row for animal in animals for row in _animal_graph_rows(conn, animal, start, end)]
 
     sections = []

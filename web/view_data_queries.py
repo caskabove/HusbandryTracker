@@ -292,6 +292,48 @@ def _utc_to_local_parts(stamp: str) -> tuple[str, str]:
     return local.date().isoformat(), local.strftime("%H:%M")
 
 
+_HHMM_TO_SLOT = {hhmm: name for name, hhmm in PERIOD_SLOT_HHMM.items()}
+
+
+def entry_prefill(entries: list[dict], retry: dict | None = None, allow_exact: bool = False) -> dict:
+    """The Add form's next date/period-slot/time (see CONTEXT.md: View Data, Period Slot; ADR 0026,
+    ADR 0027, ADR 0034) — makes catching up a backlog fast without needing any state beyond what's
+    already loaded for this page: `entries` is newest-first, so entries[0] is the most recent real
+    row, and the next thing to backfill is the day right after it.
+
+    `retry` carries back an attempted add that just failed validation (date/period_slot/time from
+    the submitted form, via web/admin.py's redirect query params) — nothing was saved, so there's
+    no entry to derive from; show the attempt back instead of the derived guess, so a typo doesn't
+    lose the user's place mid-streak.
+
+    Capped at today: once the most recent real (or just-attempted) date is today or later, or there
+    are no entries yet, the suggested date reverts to today and `streak` goes False — the Add button
+    quietly stops claiming to be mid-streak once there's no gap left to close, and a Reading/Animal
+    Log/Care Event is never pre-filled into the future.
+
+    `allow_exact` — Care Event's Period Slot selector has a 4th option, "Exact time…", with its own
+    `time` field; Reading/Animal Metric/Animal Condition don't, so for those an inferred-but-unmatched
+    time falls back to Afternoon instead of a selection their own <select> doesn't offer."""
+    today = datetime.now().date().isoformat()
+    if retry and retry.get("date"):
+        day = retry["date"]
+        return {
+            "date": day,
+            "period_slot": retry.get("period_slot") or "afternoon",
+            "time": retry.get("time", ""),
+            "streak": day < today,
+        }
+    latest = entries[0] if entries else None
+    if latest is None or latest["date"] >= today:
+        return {"date": today, "period_slot": "afternoon", "time": "", "streak": False}
+    next_date = (date.fromisoformat(latest["date"]) + timedelta(days=1)).isoformat()
+    time_value = latest.get("time", "")
+    slot = _HHMM_TO_SLOT.get(time_value)
+    if slot is None:
+        slot = "exact" if allow_exact else "afternoon"
+    return {"date": next_date, "period_slot": slot, "time": time_value, "streak": True}
+
+
 # ---- Reading entries (sensor_reading) ----
 
 def list_reading_entries(sensor_id: int, metric_key: str) -> list[dict]:

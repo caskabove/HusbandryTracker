@@ -3,18 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Husbandry Tracker Enclosures</title>
+    <title>Husbandry Tracker Rooms and Enclosures</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
-        <h1>Husbandry Tracker Enclosures</h1>
+        <h1>Husbandry Tracker Rooms and Enclosures</h1>
         {% set nav_current = "enclosures" %}{% include "_nav.html" %}
     </header>
 
     <main class="admin-main">
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+
+        <section class="admin-card">
+            <h2>Rooms</h2>
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Enclosures</th><th>Light Schedule</th><th></th></tr></thead>
+                <tbody>
+                {% for r in rooms %}
+                    <tr>
+                        <td class="admin-table-primary"><a href="/admin/rooms/{{ r.id }}">{{ r.name }}</a></td>
+                        <td>{{ enclosure_count_by_room.get(r.id, 0) }}</td>
+                        <td>{% if r.light_on_time and r.light_off_time %}{{ r.light_on_time }}&ndash;{{ r.light_off_time }}{% else %}not set{% endif %}</td>
+                        <td><a href="/admin/rooms/{{ r.id }}">edit</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="empty">No rooms yet — add one below.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="admin-card">
+            <details>
+                <summary>+ Add Room</summary>
+                <form method="post" action="/admin/rooms" class="admin-form">
+                    <label>Name <input type="text" name="name" placeholder="e.g. Living Room" required></label>
+                    <button type="submit">Create</button>
+                </form>
+            </details>
+        </section>
 
         <section class="admin-card">
             <h2>Enclosures</h2>
