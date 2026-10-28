@@ -80,6 +80,10 @@ function renderSparklineChart(canvas, points) {
     const targetMin = parseFloat(canvas.dataset.targetMin);
     const targetMax = parseFloat(canvas.dataset.targetMax);
     const hasTargetRange = Number.isFinite(targetMin) && Number.isFinite(targetMax);
+    // pH's day/night band (ADR 0037) — same [epoch_ms, morning, afternoon, night] band shape as a
+    // Smart Sensor's min/avg/max, just with Period Slot identity instead of statistics behind the
+    // three values, so the tooltip below names them instead of saying "range"/"avg".
+    const slotBand = canvas.dataset.slotBand === "1";
 
     const firstX = points[0][0];
     const lastX = points[points.length - 1][0];
@@ -169,6 +173,10 @@ function renderSparklineChart(canvas, points) {
                         },
                         label: function (context) {
                             const p = points[context.dataIndex];
+                            if (isBand && slotBand) {
+                                return "Afternoon " + p[2].toFixed(precision) +
+                                    " (Morning " + p[1].toFixed(precision) + " – Night " + p[3].toFixed(precision) + ")";
+                            }
                             if (isBand) {
                                 return "avg " + p[2].toFixed(precision) +
                                     " (range " + p[1].toFixed(precision) + "–" + p[3].toFixed(precision) + ")";
@@ -204,6 +212,29 @@ function isRealDataset(item, data) {
     return data.datasets[item.datasetIndex].borderWidth !== 0;
 }
 
+// The chart-wide x domain (across every row's series, line or marker) — a row's Target Range band
+// (see below) is flat across the whole visible window, so it needs the same two x endpoints every
+// other row's data spans, not just its own row's range.
+function seriesXExtent(rows) {
+    let first = Infinity, last = -Infinity;
+    rows.forEach(function (row) {
+        row.series.forEach(function (p) {
+            if (p[0] < first) first = p[0];
+            if (p[0] > last) last = p[0];
+        });
+    });
+    return [first, last];
+}
+
+// At least 2 of a metric's own units above/below its Target Range (see CONTEXT.md: Target Range;
+// ADR 0035) — never less, but never clipped tighter than the real data either (an out-of-range
+// Reading, the one thing the Out of Target Range Alert Condition exists to catch, must stay
+// visible), same "pad the Target Range, then still expand to data" rule Sparkline already uses
+// (ADR 0024, graphs.js's renderSparklineChart). A metric whose values sit far below 2 (Specific
+// Gravity, ~1.02) overrides this flat default via its own row.target_pad/tick_step (ADR 0036) —
+// see the axisExtent loop below.
+const TARGET_RANGE_AXIS_PAD = 2;
+
 function buildGraphChart(canvas, rows) {
     const unitAxisIds = new Map();
     const scales = {
@@ -212,6 +243,10 @@ function buildGraphChart(canvas, rows) {
             ticks: {callback: formatGraphTick, autoSkip: true, maxRotation: 0},
         },
     };
+    const [firstX, lastX] = seriesXExtent(rows);
+    // Per-axis running extent, so an axis gets an explicit min/max only when at least one of its
+    // rows actually has a Target Range — an axis with none keeps today's plain Chart.js auto-scale.
+    const axisExtent = new Map();
     const datasets = [];
     rows.forEach(function (row, index) {
         const color = GRAPH_PALETTE[index % GRAPH_PALETTE.length];
@@ -225,19 +260,55 @@ function buildGraphChart(canvas, rows) {
                     grid: {drawOnChartArea: unitAxisIds.size === 1},
                 };
             }
+            const hasTargetRange = row.target_min != null && row.target_max != null;
+            if (hasTargetRange) {
+                if (!axisExtent.has(axisId)) axisExtent.set(axisId, {});
+                const extent = axisExtent.get(axisId);
+                extent.targetMin = extent.targetMin === undefined ? row.target_min : Math.min(extent.targetMin, row.target_min);
+                extent.targetMax = extent.targetMax === undefined ? row.target_max : Math.max(extent.targetMax, row.target_max);
+                // A metric whose values sit far below 2 (Specific Gravity, ~1.02) overrides the
+                // flat default pad/ticks via its own axis_pad/step (ADR 0036) — otherwise every
+                // row on this axis shares the same metric anyway, so the last one wins.
+                if (row.target_pad != null) extent.pad = row.target_pad;
+                if (row.tick_step != null) extent.tickStep = row.tick_step;
+                // Drawn before the row's own dataset(s) below, same "band first, data on top"
+                // ordering Sparkline uses — also keeps each dataset's fill: "-1" pointed at the
+                // sibling pushed just before it, rather than accidentally filling back to this
+                // row's own average/raw line instead.
+                datasets.push({label: row.label, data: [{x: firstX, y: row.target_min}, {x: lastX, y: row.target_min}],
+                               yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)"});
+                datasets.push({label: row.label, data: [{x: firstX, y: row.target_max}, {x: lastX, y: row.target_max}],
+                               yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: "-1",
+                               backgroundColor: color + "26", borderColor: "rgba(0,0,0,0)"});
+            }
             // decimals rides along on the dataset itself (not just the row) so the tooltip label
             // callback below — which only ever sees one dataset at a time — knows how many digits
             // this particular row's values need (see graphs_queries.py's module docstring).
             const decimals = Number.isFinite(row.decimals) ? row.decimals : 2;
+            const rowValues = [];
+            row.series.forEach(function (p) { for (let i = 1; i < p.length; i++) rowValues.push(p[i]); });
+            if (rowValues.length) {
+                if (!axisExtent.has(axisId)) axisExtent.set(axisId, {});
+                const extent = axisExtent.get(axisId);
+                const rowMin = Math.min.apply(null, rowValues), rowMax = Math.max.apply(null, rowValues);
+                extent.dataMin = extent.dataMin === undefined ? rowMin : Math.min(extent.dataMin, rowMin);
+                extent.dataMax = extent.dataMax === undefined ? rowMax : Math.max(extent.dataMax, rowMax);
+            }
             if (row.shape === "band") {
                 // Classic Chart.js min/max band: an invisible "min" line, then a "max" line filled
-                // back to it (fill: "-1"), then the real average line drawn on top.
-                datasets.push({label: row.label, data: row.series.map(function (p) { return {x: p[0], y: p[1]}; }),
+                // back to it (fill: "-1"), then the real average line drawn on top. row.slot_labels
+                // (pH's day/night band — ADR 0037) names these three by Period Slot identity
+                // instead of statistics, so the tooltip says "Morning"/"Afternoon"/"Night" instead
+                // of a bare value — every other band row keeps the plain shared label.
+                const bottomLabel = row.slot_labels ? row.label + " — " + row.slot_labels[0] : row.label;
+                const topLabel = row.slot_labels ? row.label + " — " + row.slot_labels[2] : row.label;
+                const midLabel = row.slot_labels ? row.label + " — " + row.slot_labels[1] : row.label;
+                datasets.push({label: bottomLabel, data: row.series.map(function (p) { return {x: p[0], y: p[1]}; }),
                                yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)", decimals: decimals});
-                datasets.push({label: row.label, data: row.series.map(function (p) { return {x: p[0], y: p[3]}; }),
+                datasets.push({label: topLabel, data: row.series.map(function (p) { return {x: p[0], y: p[3]}; }),
                                yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: color + "2a",
                                borderColor: "rgba(0,0,0,0)", decimals: decimals});
-                datasets.push({label: row.label, data: row.series.map(function (p) { return {x: p[0], y: p[2]}; }),
+                datasets.push({label: midLabel, data: row.series.map(function (p) { return {x: p[0], y: p[2]}; }),
                                yAxisID: axisId, borderColor: color, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.2, decimals: decimals});
             } else {
                 datasets.push({label: row.label, data: row.series.map(function (p) { return {x: p[0], y: p[1]}; }),
@@ -265,7 +336,26 @@ function buildGraphChart(canvas, rows) {
         }
     });
 
-    new Chart(canvas, {
+    // Apply the padded min/max to every axis that had at least one row with a Target Range —
+    // an axis with none is left alone, keeping today's plain Chart.js auto-scale.
+    axisExtent.forEach(function (extent, axisId) {
+        if (extent.targetMin === undefined) return;
+        // No real data yet on this axis (e.g. a Target Range set before any Reading is logged) —
+        // fall back to just the padded Target Range itself rather than Math.min/max-ing against
+        // an undefined dataMin/dataMax, which would otherwise poison the axis with NaN.
+        const dataMin = extent.dataMin === undefined ? extent.targetMin : extent.dataMin;
+        const dataMax = extent.dataMax === undefined ? extent.targetMax : extent.dataMax;
+        const pad = extent.pad != null ? extent.pad : TARGET_RANGE_AXIS_PAD;
+        scales[axisId].min = Math.min(dataMin, extent.targetMin - pad);
+        scales[axisId].max = Math.max(dataMax, extent.targetMax + pad);
+        // Tick the axis in exact steps instead of auto-picking "nice" numbers — only set when the
+        // metric overrode its pad too (ADR 0036); every other axis keeps its normal auto ticks.
+        if (extent.tickStep != null) {
+            scales[axisId].ticks = Object.assign({}, scales[axisId].ticks, {stepSize: extent.tickStep});
+        }
+    });
+
+    return new Chart(canvas, {
         type: "line",
         data: {datasets: datasets},
 
@@ -310,7 +400,54 @@ function initGraphCharts() {
     });
 }
 
+// Enlarged chart view (see CONTEXT.md: Graphs) — one shared <dialog>, re-filled from whichever
+// card's own already-rendered canvas the clicked button points at (its data-chart JSON, already
+// on the page — enlarging never needs a round trip). The modal's own chart is a second, separate
+// Chart.js instance on its own canvas, not a CSS zoom of the small one, rebuilt fresh every open
+// and destroyed on close (a canvas can't be reused by a second live Chart.js instance).
+let graphModalChart = null;
+
+function closeGraphModal() {
+    if (graphModalChart) {
+        graphModalChart.destroy();
+        graphModalChart = null;
+    }
+    const dialog = document.getElementById("graph-modal");
+    if (dialog && dialog.open) dialog.close();
+}
+
+function openGraphModal(button) {
+    if (typeof Chart === "undefined") return;
+    const target = document.getElementById(button.dataset.target);
+    const sourceCanvas = target ? target.querySelector("canvas.graph-canvas") : null;
+    if (!sourceCanvas) return;
+    let rows;
+    try {
+        rows = JSON.parse(sourceCanvas.dataset.chart || "[]");
+    } catch (e) {
+        return;
+    }
+    const dialog = document.getElementById("graph-modal");
+    const heading = target.querySelector("h2, h3");
+    document.getElementById("graph-modal-title").textContent = heading ? heading.firstChild.textContent.trim() : "";
+    if (graphModalChart) {
+        graphModalChart.destroy();
+        graphModalChart = null;
+    }
+    dialog.showModal();
+    graphModalChart = buildGraphChart(document.getElementById("graph-modal-canvas"), rows);
+}
+
 document.addEventListener("DOMContentLoaded", function () {
     initSparklines();
     initGraphCharts();
+    const modal = document.getElementById("graph-modal");
+    if (modal) {
+        modal.addEventListener("close", closeGraphModal);
+        // A click directly on the <dialog> element itself (not anything inside it) landed on the
+        // ::backdrop — dismiss like clicking outside any other modal.
+        modal.addEventListener("click", function (e) {
+            if (e.target === modal) closeGraphModal();
+        });
+    }
 });

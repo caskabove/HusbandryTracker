@@ -41,8 +41,8 @@
         </form>
 
         {% if overlay_rows %}
-        <section class="admin-card view-data-section">
-            <h2>Overlay</h2>
+        <section class="admin-card view-data-section" id="overlay-chart">
+            <h2>Overlay <button type="button" class="graph-expand-btn" aria-label="Enlarge Overlay chart" data-target="overlay-chart" onclick="openGraphModal(this)">&#10530;</button></h2>
             <div class="graph-card-wrap graph-card-wrap-overlay">
                 <canvas class="graph-canvas" data-chart='{{ overlay_rows|tojson }}'></canvas>
             </div>
@@ -80,7 +80,11 @@
                    builds, since both sides come from the same f"reading-{sensor_id}-{metric_key}"
                    shape (graphs_queries.py). #}
                 <div class="graph-card" id="{{ row.key }}">
-                    <h3>{{ row.label }}</h3>
+                    <h3>{{ row.label }}
+                        {% if row.series %}
+                        <button type="button" class="graph-expand-btn" aria-label="Enlarge {{ row.label }} chart" data-target="{{ row.key }}" onclick="openGraphModal(this)">&#10530;</button>
+                        {% endif %}
+                    </h3>
                     {% if row.series %}
                     <div class="graph-card-wrap">
                         <canvas class="graph-canvas" data-chart='{{ [row]|tojson }}'></canvas>
@@ -96,6 +100,20 @@
         </section>
         {% endfor %}
     </main>
+
+    {# Enlarged chart view (see CONTEXT.md: Graphs) — one shared dialog, re-filled from whichever
+       card's own already-embedded data-chart JSON the clicked button points at (data-target), so
+       enlarging never needs a round trip. #}
+    <dialog id="graph-modal" class="graph-modal">
+        <div class="graph-modal-header">
+            <h3 id="graph-modal-title"></h3>
+            <button type="button" class="graph-modal-close" aria-label="Close" onclick="closeGraphModal()">&times;</button>
+        </div>
+        <div class="graph-modal-chart-wrap">
+            <canvas id="graph-modal-canvas" class="graph-canvas"></canvas>
+        </div>
+    </dialog>
+
     <script src="/static/chart.min.js?v={{ asset_version }}"></script>
     <script src="/static/graphs.js?v={{ asset_version }}"></script>
     <script src="/static/app.js?v={{ asset_version }}"></script>

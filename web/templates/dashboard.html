@@ -87,6 +87,7 @@
                                 data-decimals="{{ metric.decimals }}"
                                 data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
                                 data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
                                 data-title-week="{{ metric.label }} - last 7 days"
                                 data-title-month="{{ metric.label }} - last 30 days"
                                 data-range="week"></canvas>
@@ -437,6 +438,7 @@
                                                             data-decimals="{{ metric.decimals }}"
                                                             data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
                                                             data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                                            data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
                                                             data-title-week="{{ metric.label }} - last 7 days"
                                                             data-title-month="{{ metric.label }} - last 30 days"
                                                             data-range="week"></canvas>

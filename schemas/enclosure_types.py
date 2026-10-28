@@ -53,6 +53,18 @@ class TargetRangeMetric:
                                        # Volatility override — see CONTEXT.md: Volatility; ADR 0025
     default_volatility: str = "fast"  # "fast" or "slow" — used when a Sensor has no override set
                                        # on volatility_column; see effective_volatility() below
+    axis_pad: float | None = None     # Graphs/Overlay y-axis padding past the Target Range, in this
+                                       # metric's own display units (see ADR 0035, ADR 0036) — None
+                                       # means the flat 2-unit default, which is fine for a metric
+                                       # whose values sit well above 2 (°F, pH, ppm, dKH). Specific
+                                       # Gravity's values sit at ~1.02 — "2 units" of padding there
+                                       # would run the axis from roughly -1 to 3 — so it overrides
+                                       # this to 2 of its own steps instead.
+    period_slot_band: bool = False    # True only for pH (see ADR 0037) — Sparkline/Graphs show it
+                                       # as a daily Morning/Afternoon/Night band (web/queries.py's
+                                       # period_slot_daily_series) instead of a raw/statistically-
+                                       # bucketed line, since pH's day/night swing is itself the
+                                       # signal, not noise to average away.
 
 
 # Ordered for display — core environmental metrics first, then water chemistry roughly in the
@@ -83,7 +95,7 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
     TargetRangeMetric("ph", "pH", "",
                        "target_ph_min", "target_ph_max", "ph",
                        ("freshwater", "saltwater", "amphibian"),
-                       step="0.01", decimals=2,
+                       step="0.01", decimals=2, period_slot_band=True,
                        volatility_column="volatility_ph"),
     TargetRangeMetric("ammonia", "Ammonia", "ppm",
                        "target_ammonia_ppm_min", "target_ammonia_ppm_max", "ammonia_ppm",
@@ -99,7 +111,7 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
                        volatility_column="volatility_nitrate", default_volatility="slow"),
     TargetRangeMetric("specific_gravity", "SG", "",
                        "target_specific_gravity_min", "target_specific_gravity_max", "specific_gravity",
-                       ("saltwater",), step="0.001", decimals=3,
+                       ("saltwater",), step="0.001", decimals=3, axis_pad=0.002,
                        volatility_column="volatility_specific_gravity", default_volatility="slow"),
     TargetRangeMetric("salinity", "Salinity", "ppm",
                        "target_salinity_ppm_min", "target_salinity_ppm_max", "salinity_ppm",

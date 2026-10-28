@@ -728,6 +728,50 @@ span.button-link.disabled {
 .graph-card-wrap { position: relative; height: 14rem; }
 .graph-card-wrap-overlay { height: 20rem; }
 .graph-canvas { width: 100% !important; height: 100% !important; }
+
+/* Enlarged chart view (see CONTEXT.md: Graphs) — a small per-card button opens a shared modal
+   with the same chart rebuilt at a much larger size. */
+.graph-expand-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    line-height: 1;
+    padding: 0.15rem 0.4rem;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+}
+.graph-expand-btn:hover { color: var(--text); border-color: var(--primary-bright); }
+.graph-modal {
+    width: min(92vw, 1100px);
+    height: min(88vh, 720px);
+    padding: 1rem 1.2rem;
+    background: var(--panel-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.graph-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+.graph-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.6rem;
+}
+.graph-modal-header h3 { margin: 0; font-size: 1rem; }
+.graph-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+}
+.graph-modal-close:hover { color: var(--text); }
+.graph-modal-chart-wrap { position: relative; height: calc(100% - 2.4rem); }
 .overlay-picker { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; }
 .overlay-picker fieldset {
     border: 1px solid var(--border);

@@ -6,7 +6,7 @@ behavior simple instead of holding a long-lived handle open across a bind-mounte
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -29,6 +29,62 @@ ANIMAL_CONDITION_LABELS = {
 # hours only ever live in one place.
 PERIOD_SLOTS: tuple[tuple[str, int], ...] = (("morning", 8), ("afternoon", 14), ("night", 20))
 PERIOD_SLOT_HHMM: dict[str, str] = {name: f"{hour:02d}:00" for name, hour in PERIOD_SLOTS}
+
+# Local-hour windows a logged timestamp's hour falls into for Period Slot display-snap purposes —
+# wide enough to classify a Smart Sensor's continuous readings, not just a Manual entry's exact
+# anchor hour (8/14/20 above, always inside its own window). Shared by Graphs' Care Event marker
+# snapping (web/graphs_queries.py's _PERIOD_SLOT_ANCHORS) and pH's day/night band below, so these
+# three ranges only ever live in one place too.
+PERIOD_SLOT_HOUR_RANGES: tuple[tuple[str, int, int], ...] = (("morning", 0, 11), ("afternoon", 12, 17), ("night", 18, 23))
+
+
+def period_slot_for_hour(hour: int) -> str:
+    for name, lo, hi in PERIOD_SLOT_HOUR_RANGES:
+        if lo <= hour <= hi:
+            return name
+    return "afternoon"  # unreachable — the three ranges above cover every hour 0-23
+
+
+def period_slot_daily_series(conn, table: str, id_column: str, id_value: int, ts_column: str,
+                              value_column: str, start: date, end: date) -> list[list]:
+    """pH's day/night band (see CONTEXT.md: Period Slot, pH Band; ADR 0037) — groups a Sensor's
+    readings (Manual or Smart, ts_column a true-UTC stamp) by local calendar day, averaging
+    whatever falls in each Period Slot's hour window that day. A day's missing slot(s) resolve to
+    its Afternoon value — or the average of whatever's left, if Afternoon itself is missing —
+    rather than inventing a value or dropping the day; a day with nothing logged at all is left
+    out entirely. Returns [epoch_ms, morning, afternoon, night] rows, oldest first, each anchored
+    to that day's Afternoon slot hour (PERIOD_SLOT_HHMM) — reused by both Sparkline
+    (_sparkline_points below) and Graphs (web/graphs_queries.py's _reading_line_row) for any
+    TargetRangeMetric with period_slot_band=True."""
+    start_s = (datetime.combine(start, datetime.min.time()) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+    end_s = (datetime.combine(end, datetime.min.time()) + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = conn.execute(
+        f"SELECT {ts_column} AS ts, {value_column} AS value FROM {table} "
+        f"WHERE {id_column} = ? AND {value_column} IS NOT NULL AND {ts_column} BETWEEN ? AND ? "
+        f"ORDER BY {ts_column} ASC",
+        (id_value, start_s, end_s),
+    ).fetchall()
+
+    by_day: dict[str, dict[str, list[float]]] = {}
+    for row in rows:
+        utc_dt = datetime.strptime(row["ts"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        local_dt = utc_dt.astimezone()
+        day_key = local_dt.date().isoformat()
+        slot = period_slot_for_hour(local_dt.hour)
+        by_day.setdefault(day_key, {"morning": [], "afternoon": [], "night": []})[slot].append(row["value"])
+
+    series = []
+    for day_key in sorted(by_day):
+        averaged = {name: (sum(vals) / len(vals) if vals else None) for name, vals in by_day[day_key].items()}
+        present = [v for v in averaged.values() if v is not None]
+        if not present:
+            continue
+        center = averaged["afternoon"] if averaged["afternoon"] is not None else sum(present) / len(present)
+        morning = averaged["morning"] if averaged["morning"] is not None else center
+        night = averaged["night"] if averaged["night"] is not None else center
+        anchor = datetime.strptime(f"{day_key} {PERIOD_SLOT_HHMM['afternoon']}:00", "%Y-%m-%d %H:%M:%S").astimezone()
+        series.append([int(anchor.timestamp() * 1000), morning, center, night])
+    return series
 
 
 def days_since(occurred_at: str | None) -> int | None:
@@ -118,8 +174,15 @@ def _sparkline_points(conn, sensor: dict, metric, days: int) -> list[list]:
     worth of the same metric (ADR 0032) without duplicating that reasoning per window.
     sensor_reading.recorded_at is true UTC with no backdating path (see view_data_queries.py's
     module docstring) — converted here so epoch_ms lines up with the viewer's actual wall-clock,
-    same as every other chart in this app."""
+    same as every other chart in this app.
+
+    pH (metric.period_slot_band — see ADR 0037) skips all of this: it's always a day/night band,
+    Manual or Smart alike, never smoothed — see period_slot_daily_series above."""
     column = metric.reading_column
+    if metric.period_slot_band:
+        end = datetime.now().date()
+        return period_slot_daily_series(conn, "sensor_reading", "sensor_id", sensor["id"], "recorded_at",
+                                         column, end - timedelta(days=days), end)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     if sensor["tracking_mode"] == "manual":
         rows = conn.execute(

@@ -13,11 +13,20 @@ those two to server-side aggregated buckets (min/avg/max per bucket — hourly t
 for Year). A Manual Sensor's Readings, Care Events, and Animal Log entries are never high-volume
 enough to need this and always plot raw, regardless of range.
 
-Each row is a dict: {key, label, chart_type, unit, series, shape/decimals (line rows only)}.
+Each row is a dict: {key, label, chart_type, unit, series, shape/decimals/target_min/target_max
+(line rows only)}.
 - chart_type "line": a numeric series. shape "raw" -> series is [[epoch_ms, value], ...];
   shape "band" -> series is [[epoch_ms, min, avg, max], ...]. decimals is the tooltip's display
   precision — a Sensor Reading row uses its own TargetRangeMetric.decimals (Specific Gravity needs
   all 3 to mean anything; a flat 2 everywhere used to clip it), everything else defaults to 2.
+  target_min/target_max are a Sensor Reading row's own Target Range (already °F-converted when the
+  metric converts), None/None when unset (always None/None for an Animal Metric row, which has no
+  Target Range concept) — see ADR 0035, graphs.js's buildGraphChart. target_pad/tick_step are the
+  metric's own axis_pad/step (schemas/enclosure_types.py's TargetRangeMetric) when axis_pad is set
+  (Specific Gravity only, so far) — None/None otherwise, meaning graphs.js's flat 2-unit default
+  applies and the axis keeps its normal auto-picked ticks — see ADR 0036. slot_labels is
+  ("Morning", "Afternoon", "Night") only for a metric with period_slot_band set (pH, so far),
+  None for every other row — see ADR 0037.
 - chart_type "marker": series is [[epoch_ms, label_text], ...] — a Care Event, a Plug Status
   change, or an Animal Log Condition has a moment but no Y-value of its own (see CONTEXT.md: Graphs).
 
@@ -38,7 +47,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
 from schemas import enclosure_types as et
-from web.queries import ANIMAL_CONDITION_LABELS, CARE_EVENT_KINDS, PERIOD_SLOTS
+from web.queries import (
+    ANIMAL_CONDITION_LABELS, CARE_EVENT_KINDS, PERIOD_SLOT_HOUR_RANGES, PERIOD_SLOTS,
+    period_slot_daily_series,
+)
 from web.view_data_queries import _metric_shown
 
 _ANIMAL_METRIC_FIELDS = (("weight_g", "Weight", "g"), ("length_cm", "Length", "cm"), ("count", "Count", ""))
@@ -73,14 +85,11 @@ def _epoch_ms_local(ts: str) -> int:
 # Period Slot anchor hours (see CONTEXT.md: Period Slot; ADR 0025, ADR 0026) — a Care Event's
 # marker snaps to one of these at Week/Month range instead of its exact logged minute, which doesn't
 # matter for a hand-logged feeding/watering/cleaning the way it does for a Reading. The anchor hours
-# themselves come from PERIOD_SLOTS (web/queries.py), shared with View Data's entry-side use of the
-# same three slots — only the hour-range columns below are specific to this display-snap use.
+# come from PERIOD_SLOTS, the hour-range boundaries from PERIOD_SLOT_HOUR_RANGES (both web/queries.py
+# — ADR 0037 centralized the latter there too, since pH's day/night band needs the identical
+# classification).
 _SLOT_HOURS = dict(PERIOD_SLOTS)
-_PERIOD_SLOT_ANCHORS = (
-    ("morning", 0, 11, _SLOT_HOURS["morning"]),
-    ("afternoon", 12, 17, _SLOT_HOURS["afternoon"]),
-    ("night", 18, 23, _SLOT_HOURS["night"]),
-)
+_PERIOD_SLOT_ANCHORS = tuple((name, lo, hi, _SLOT_HOURS[name]) for name, lo, hi in PERIOD_SLOT_HOUR_RANGES)
 
 
 def _period_slot_epoch_ms(ts: str) -> int:
@@ -147,13 +156,24 @@ def _bucketed_numeric_series(conn: sqlite3.Connection, table: str, id_column: st
 def _reading_line_row(conn: sqlite3.Connection, sensor: dict, metric: et.TargetRangeMetric,
                        start: date, end: date, days: int) -> dict:
     """A Manual Sensor's Readings always plot raw (sparse by nature — see module docstring); a Smart
-    Sensor's follow the Week/Month-raw, longer-aggregated split."""
+    Sensor's follow the Week/Month-raw, longer-aggregated split. pH (metric.period_slot_band — see
+    ADR 0037) skips this split entirely: Manual or Smart alike, it's always a one-point-per-day
+    Morning/Afternoon/Night band, at every Range, via queries.period_slot_daily_series."""
     column = metric.reading_column
     manual = sensor["tracking_mode"] == "manual"
-    raw = manual or _is_raw_tier(days)
     label_suffix = metric.label or metric.key.replace("_", " ").title()
     unit = "°F" if metric.converts_f_c else metric.unit
-    if raw:
+    target_min = sensor[metric.min_column]
+    target_max = sensor[metric.max_column]
+    if metric.converts_f_c:
+        target_min, target_max = _c_to_f(target_min), _c_to_f(target_max)
+    slot_labels = None
+    if metric.period_slot_band:
+        series = period_slot_daily_series(conn, "sensor_reading", "sensor_id", sensor["id"],
+                                           "recorded_at", column, start, end)
+        shape = "band"
+        slot_labels = ("Morning", "Afternoon", "Night")
+    elif manual or _is_raw_tier(days):
         series = _raw_numeric_series(conn, "sensor_reading", "sensor_id", sensor["id"], "recorded_at", column, start, end)
         if metric.converts_f_c:
             series = [[t, _c_to_f(v)] for t, v in series]
@@ -171,6 +191,20 @@ def _reading_line_row(conn: sqlite3.Connection, sensor: dict, metric: et.TargetR
         "unit": unit,
         "series": series,
         "decimals": metric.decimals,
+        # Target Range (see CONTEXT.md: Target Range; ADR 0035) — None/None when unset, same as
+        # Sparkline's own target_min/target_max (web/queries.py), so graphs.js can shade the
+        # accepted band and pad the axis around it the same way for both.
+        "target_min": target_min,
+        "target_max": target_max,
+        # Per-metric axis pad/tick override (ADR 0036) — None/None unless the metric sets axis_pad
+        # (Specific Gravity only), in which case graphs.js uses this instead of the flat 2-unit pad
+        # and ticks the axis in exact steps instead of auto-picking "nice" numbers.
+        "target_pad": metric.axis_pad,
+        "tick_step": float(metric.step) if metric.axis_pad is not None else None,
+        # pH's day/night band (ADR 0037) — ("Morning", "Afternoon", "Night") only when
+        # metric.period_slot_band; None for every other band row (Temp/Humidity's own
+        # statistical min/avg/max keeps its generic, unlabeled tooltip).
+        "slot_labels": slot_labels,
     }
 
 
