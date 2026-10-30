@@ -3,18 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Husbandry Tracker Admin - Edit Room Sensor</title>
+    <title>Husbandry Tracker - Edit Room Sensor</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>Edit Room Sensor</h1>
-        <nav>
-            <a href="/admin">All Enclosures</a>
-            <a href="/">Dashboard</a>
-            <a href="/guide">Guide</a>
-        </nav>
+        {% set nav_current = "control" %}{% include "_nav.html" %}
     </header>
 
     <main class="admin-main">
@@ -47,6 +43,10 @@
                 </label>
                 <div id="edit-room-sensor-smart" class="mode-fields" {% if sensor.tracking_mode != "smart" %}style="display:none"{% endif %}>
                     <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <div class="discover-device">
+                        <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
+                        <div class="discover-results" style="display:none"></div>
+                    </div>
                     <label class="checkbox">
                         <input type="checkbox" name="auto_update_enabled" value="true" {% if sensor.auto_update_enabled %}checked{% endif %}>
                         Auto-Update (uncheck to pause background collection without losing this Sensor's setup)
@@ -65,6 +65,22 @@
                 <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f" value="{{ sensor.target_temp_max_f if sensor.target_temp_max_f is not none else '' }}"></label>
                 <label>Target humidity min (%) <input type="number" step="1" name="humidity_min" value="{{ sensor.target_humidity_min if sensor.target_humidity_min is not none else '' }}"></label>
                 <label>Target humidity max (%) <input type="number" step="1" name="humidity_max" value="{{ sensor.target_humidity_max if sensor.target_humidity_max is not none else '' }}"></label>
+                {% if sensor.tracking_mode == "manual" %}
+                <label>Temperature Volatility
+                    <select name="volatility_temperature">
+                        <option value="" {% if not sensor.volatility_temperature %}selected{% endif %}>Default (Fast)</option>
+                        <option value="fast" {% if sensor.volatility_temperature == "fast" %}selected{% endif %}>Fast</option>
+                        <option value="slow" {% if sensor.volatility_temperature == "slow" %}selected{% endif %}>Slow</option>
+                    </select>
+                </label>
+                <label>Humidity Volatility
+                    <select name="volatility_humidity">
+                        <option value="" {% if not sensor.volatility_humidity %}selected{% endif %}>Default (Fast)</option>
+                        <option value="fast" {% if sensor.volatility_humidity == "fast" %}selected{% endif %}>Fast</option>
+                        <option value="slow" {% if sensor.volatility_humidity == "slow" %}selected{% endif %}>Slow</option>
+                    </select>
+                </label>
+                {% endif %}
                 <button type="submit">Save</button>
             </form>
         </section>

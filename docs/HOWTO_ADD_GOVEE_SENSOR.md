@@ -13,9 +13,8 @@ type Husbandry Tracker already reads fully automatically.
 **Contents**
 1. [What You Need](#1-what-you-need)
 2. [Add Govee Device (One-Time, in the Govee App)](#2-add-govee-device-one-time-in-the-govee-app)
-3. [Finding the Sensor's ID](#3-finding-the-sensors-id)
-4. [Adding It to Husbandry Tracker](#4-adding-it-to-husbandry-tracker)
-5. [Using It Day to Day](#5-using-it-day-to-day)
+3. [Finding the Sensor's ID, and Adding It to Husbandry Tracker](#3-finding-the-sensors-id-and-adding-it-to-husbandry-tracker)
+4. [Using It Day to Day](#4-using-it-day-to-day)
 
 ---
 
@@ -49,39 +48,28 @@ and I'd rather fix it than leave it wrong.)*
 
 ---
 
-## 3. Finding the Sensor's ID
+## 3. Finding the Sensor's ID, and Adding It to Husbandry Tracker
 
-This is the one step that needs a short detour into a Command Prompt, because finding a Govee
-sensor's ID isn't something the Husbandry Tracker website can do on its own yet.
-
-1. Open a Command Prompt in the Husbandry Tracker folder, and run:
-   ```
-   .venv\Scripts\activate
-   python tools\govee_discover.py 20
-   ```
-2. Wait 20 seconds. It'll print a list of nearby Govee sensors, each with a code like
-   `E3:60:59:23:50:A6` — that's the sensor's ID (its "MAC address").
-3. To figure out *which* sensor belongs to *which* enclosure: check the current reading it prints
-   against what the Govee Home app (or the sensor's own little screen) shows for that enclosure —
-   they should match.
-
----
-
-## 4. Adding It to Husbandry Tracker
+No Command Prompt detour needed — the website finds it for you:
 
 1. On Husbandry Tracker's Admin page, go to the enclosure this sensor belongs in.
 2. In the **"Add Sensor"** form, leave **Tracking Mode** on **Smart**.
-3. Paste in the sensor's ID from step 3 above, and give it a label (e.g. "warm side").
-4. Optionally set a target temperature/humidity range — that's what turns the Temp/Humidity numbers
+3. Click **Discover Devices**, next to the MAC address field, and wait about 20 seconds while it
+   listens for nearby Govee sensors.
+4. It lists each one it heard, with a live temperature/humidity reading next to it — check that
+   against what the Govee Home app (or the sensor's own little screen) shows for that enclosure to
+   confirm which sensor is which, then click it. That fills in the MAC address field for you.
+5. Give it a label (e.g. "warm side").
+6. Optionally set a target temperature/humidity range — that's what turns the Temp/Humidity numbers
    green or red on the dashboard.
-5. Click **Create**.
+7. Click **Create**.
 
 ---
 
-## 5. Using It Day to Day
+## 4. Using It Day to Day
 
 Nothing to do — once added, Husbandry Tracker listens for this sensor's Bluetooth broadcasts in the
 background and updates its reading automatically, no app needed. Use the dashboard's **"↻
 Refresh"** button if you want a fresh reading right now instead of waiting for the next automatic
-one (see `docs/USER_GUIDE.md` section 4). If you have Send Alert set up, you'll also get notified if
+one (see `docs/USER_GUIDE.md` section 3). If you have Send Alert set up, you'll also get notified if
 this sensor's reading goes out of range or it stops reporting altogether.

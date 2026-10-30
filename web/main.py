@@ -1,15 +1,19 @@
 """Husbandry Tracker dashboard — FastAPI app, served by uvicorn on localhost:22255 (see docker-compose.yml).
 
-Phase 2, v1 scope only (see CONTEXT.md decisions): dashboard + logbook, no charts, no auth,
-no alerting. The dashboard is mostly a glance-only view — Schedules and Care logging live on the
-Enclosure's Admin page instead (see web/admin.py), with the dashboard's Care pill linking straight
-there. Three actions do live here directly rather than redirecting to Admin, because they're
-tightly bound to what's already on screen: Refresh (a live BLE read), a Manual Sensor's Log Reading
-form, and dragging an Enclosure panel onto a Room to reassign it (see CONTEXT.md: Room) — the drop
-handlers are in web/static/app.js, persisted via assign_enclosure_room below.
+Phase 2, v1 scope (see CONTEXT.md decisions): dashboard + logbook, no auth, no alerting. The
+dashboard is mostly a glance-only view — Schedules and Care logging live on the Enclosure's Admin
+page instead (see web/admin.py), with the dashboard's Care pill linking straight there. One
+deliberate exception to "glance-only": every Reading pill also carries a small Sparkline (see
+CONTEXT.md: Sparkline; ADR 0022) — the full Graphs page itself lives only on the Admin side (see
+web/admin.py), reached the same way as View Data. Three actions do live here directly rather than
+redirecting to Admin, because they're tightly bound to what's already on screen: Refresh (a live BLE
+read), a Manual Sensor's Log Reading form, and dragging an Enclosure panel onto a Room to reassign it
+(see CONTEXT.md: Room) — the drop handlers are in web/static/app.js, persisted via
+assign_enclosure_room below.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from urllib.parse import quote
@@ -17,7 +21,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import markdown
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,8 +31,9 @@ from db.db import get_connection, init_db
 from schemas import enclosure_types as et
 from web.govee_refresh import refresh_sensors
 from web.admin import router as admin_router
-from web.admin_queries import get_settings
+from web.admin_queries import get_settings, is_fresh_install
 from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading
+from web.setup import router as setup_router
 from web.status import care_interval_status, target_range_status
 
 BASE_DIR = APP_ROOT / "web"
@@ -36,6 +41,7 @@ USER_GUIDE_PATH = APP_ROOT / "docs" / "USER_GUIDE.md"
 
 app = FastAPI(title="Husbandry Tracker")
 app.include_router(admin_router)
+app.include_router(setup_router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["target_range_status"] = target_range_status
@@ -69,10 +75,20 @@ def _f_to_c(fahrenheit: float | None) -> float | None:
 
 
 templates.env.filters["c_to_f"] = _c_to_f
+# Embeds a Sparkline's points as a <canvas data-points="..."> attribute (see CONTEXT.md: Sparkline;
+# ADR 0022) — Jinja2Templates has no built-in tojson (that's Flask-specific); plain json.dumps here
+# still comes out HTML-attribute-safe because Jinja's default autoescaping still applies to a
+# filter's string output, same as any other {{ }} expression.
+templates.env.filters["tojson"] = json.dumps
 
 
 @app.get("/")
 def dashboard(request: Request):
+    # Setup Wizard (see CONTEXT.md: Setup Wizard; ADR 0031) — auto-triggers on a database with zero
+    # Rooms and zero Enclosures. ?setup=skip (set by the Wizard's own "Skip for now" link) bypasses
+    # this once so skipping actually lands on the dashboard instead of redirecting straight back.
+    if request.query_params.get("setup") != "skip" and is_fresh_install():
+        return RedirectResponse(url="/setup/", status_code=303)
     data = get_dashboard_data()
     return templates.TemplateResponse(
         request, "dashboard.html",
@@ -88,6 +104,35 @@ def guide(request: Request):
     text = USER_GUIDE_PATH.read_text(encoding="utf-8")
     content_html = markdown.markdown(text, extensions=["tables", "fenced_code", "toc"])
     return templates.TemplateResponse(request, "guide.html", {"content_html": content_html})
+
+
+# Help (see CONTEXT.md: Help; ADR 0039) — a separate, visual "what does this page show/do"
+# reference, one topic per main screen, distinct from the Guide's own setup-walkthrough content.
+# Each topic's actual write-up is a standalone HTML fragment (docs/help/{slug}.html, no Jinja
+# inside it) so "the contents" stay reusable on their own, not entangled with this app's chrome.
+HELP_DIR = APP_ROOT / "docs" / "help"
+HELP_TOPICS: list[dict] = [
+    {"slug": "dashboard", "title": "Dashboard", "summary": "Your Rooms and Enclosures at a glance — Readings, Sparklines, and quick actions."},
+    {"slug": "rooms", "title": "Rooms", "summary": "Grouping Enclosures together, plus any shared ambient Sensors/Plugs."},
+    {"slug": "enclosures", "title": "Enclosures", "summary": "The core unit — one per animal or tank, with its own Animals, Sensors, and Plugs."},
+    {"slug": "plugs", "title": "Plugs", "summary": "Smart or manual outlets controlling heat, light, humidity, and more."},
+    {"slug": "sensors", "title": "Sensors", "summary": "Tracking Temperature, Humidity, pH, and other metrics over time."},
+]
+_HELP_TOPICS_BY_SLUG = {topic["slug"]: topic for topic in HELP_TOPICS}
+
+
+@app.get("/help")
+def help_index(request: Request):
+    return templates.TemplateResponse(request, "help_index.html", {"topics": HELP_TOPICS})
+
+
+@app.get("/help/{slug}")
+def help_topic(request: Request, slug: str):
+    topic = _HELP_TOPICS_BY_SLUG.get(slug)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Unknown Help topic.")
+    content_html = (HELP_DIR / f"{slug}.html").read_text(encoding="utf-8")
+    return templates.TemplateResponse(request, "help.html", {"title": topic["title"], "content_html": content_html})
 
 
 async def _refresh_smart_sensors(column: str, entity_id: int) -> str | None:

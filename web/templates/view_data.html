@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker Data - {{ owner_label }}</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ owner_label }} &mdash; Data</h1>
+        {% set nav_current = "control" if owner_kind == "room" else "enclosures" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <p><a href="{{ back_url }}">&larr; Back to {{ owner_label }}</a></p>
+
+        {% for section in sections %}
+        <section class="admin-card">
+            <h2>{{ section.title }}</h2>
+            <ul class="view-data-row-list">
+                {% for row in section.rows %}
+                {% if row.type == "reading" %}
+                {% set href = "/admin/sensors/" ~ row.sensor_id ~ "/readings/" ~ row.metric_key %}
+                {% elif row.type == "care" %}
+                {% set href = "/admin/enclosures/" ~ row.enclosure_id ~ "/care-events/" ~ row.kind %}
+                {% elif row.type == "animal_metric" %}
+                {% set href = "/admin/animals/" ~ row.animal_id ~ "/log/metric/" ~ row.field %}
+                {% elif row.type == "animal_condition" %}
+                {% set href = "/admin/animals/" ~ row.animal_id ~ "/log/condition" %}
+                {% elif row.type == "plug_status" %}
+                {% set href = "/admin/plugs/" ~ row.plug_id ~ "/status" %}
+                {% elif row.type == "plug_telemetry" %}
+                {% set href = "/admin/plugs/" ~ row.plug_id ~ "/telemetry/" ~ row.field %}
+                {% endif %}
+                <li class="view-data-row-item">
+                    <a class="view-data-row-link" href="{{ href }}">{{ row.label }}</a>
+                    {% if not row.editable %}<span class="pill status-unknown">Read-only</span>{% endif %}
+                </li>
+                {% endfor %}
+                {% if not section.rows %}
+                <li class="empty">Nothing tracked here yet</li>
+                {% endif %}
+            </ul>
+        </section>
+        {% endfor %}
+    </main>
+</body>
+</html>

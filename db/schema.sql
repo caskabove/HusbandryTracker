@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS app_setting (
     ntfy_server_url                TEXT,                         -- e.g. "https://ntfy.sh"; NULL/empty disables Send Alert delivery
     ntfy_topic                     TEXT,
     schedule_drift_threshold_minutes INTEGER NOT NULL DEFAULT 15, -- see CONTEXT.md: Timer Warning, ADR 0012
-    ingest_scan_interval_seconds   INTEGER NOT NULL DEFAULT 5    -- see CONTEXT.md: Ingest; ADR 0013
+    ingest_scan_interval_seconds   INTEGER NOT NULL DEFAULT 5,   -- see CONTEXT.md: Ingest; ADR 0013
+    tuya_access_id                 TEXT,                         -- Tuya IoT Cloud project credentials — see ADR 0030
+    tuya_access_secret             TEXT,                         -- never echoed back into any rendered page
+    tuya_api_region                TEXT NOT NULL DEFAULT 'us'    -- one of: us, eu, cn, in
 );
 INSERT OR IGNORE INTO app_setting (id) VALUES (1);
 
@@ -52,6 +55,20 @@ CREATE TABLE IF NOT EXISTS enclosure (
     show_watering_on_dashboard    INTEGER NOT NULL DEFAULT 1,
     show_spot_clean_on_dashboard  INTEGER NOT NULL DEFAULT 1,
     show_deep_clean_on_dashboard  INTEGER NOT NULL DEFAULT 1,
+    -- Care Setup Prompt escalation (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) —
+    -- *_nag_count counts the separate calendar days a kind has been nagged about while still
+    -- unlogged; once it reaches CARE_NAG_RED_THRESHOLD (web/status.py) the kind's Unknown ("no
+    -- data") pill escalates to Red. *_nag_last_date dedupes same-day visits from double-counting.
+    -- Both reset back to 0/NULL the moment that kind gets real data (see
+    -- web/admin_queries.py's record_care_nags()).
+    feeding_nag_count         INTEGER NOT NULL DEFAULT 0,
+    feeding_nag_last_date     TEXT,
+    watering_nag_count        INTEGER NOT NULL DEFAULT 0,
+    watering_nag_last_date    TEXT,
+    spot_clean_nag_count      INTEGER NOT NULL DEFAULT 0,
+    spot_clean_nag_last_date  TEXT,
+    deep_clean_nag_count      INTEGER NOT NULL DEFAULT 0,
+    deep_clean_nag_last_date  TEXT,
     created_at                TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -93,6 +110,23 @@ CREATE TABLE IF NOT EXISTS animal (
     -- CONTEXT.md: Animal) — after that, a new Animal defaults off until the user picks it.
     show_on_dashboard   INTEGER NOT NULL DEFAULT 1
 );
+
+-- A manually-logged, backdatable Animal Log entry (see CONTEXT.md: Animal Log) — Weight/Length/
+-- Count/Condition are self-reported and independent of each other: a given entry normally fills in
+-- just one of them (one metric, one occurrence), so all four stay nullable on one shared row rather
+-- than splitting into four tables, same "many nullable metric columns, one row" shape as
+-- sensor_reading. note is free text, usable on its own or alongside a Condition pick.
+CREATE TABLE IF NOT EXISTS animal_log (
+    id           INTEGER PRIMARY KEY,
+    animal_id    INTEGER NOT NULL REFERENCES animal(id) ON DELETE CASCADE,
+    weight_g     REAL,
+    length_cm    REAL,
+    count        INTEGER,
+    condition    TEXT CHECK (condition IN ('poor', 'ok', 'good', 'really_good')),
+    note         TEXT,
+    occurred_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_animal_log_animal_time ON animal_log (animal_id, occurred_at);
 
 -- A Sensor assigned to either an Enclosure or a Room, never both. See CONTEXT.md: Sensor,
 -- Tracking Mode, Target Range, Room, Plugin, External ID, Plugin Config; ADR 0013.
@@ -156,6 +190,23 @@ CREATE TABLE IF NOT EXISTS sensor (
     target_magnesium_ppm_max    REAL,
     target_phosphate_ppm_min    REAL,
     target_phosphate_ppm_max    REAL,
+    -- Volatility (see CONTEXT.md: Volatility; ADR 0025) — Manual Sensor only, one nullable
+    -- override per Target Range metric. NULL means "use that metric's own default_volatility"
+    -- (schemas/enclosure_types.py's TargetRangeMetric) rather than defaulting here, so a fresh
+    -- install's un-overridden Sensors still reflect a future code-level default change.
+    volatility_temperature      TEXT CHECK (volatility_temperature IS NULL OR volatility_temperature IN ('fast', 'slow')),
+    volatility_humidity         TEXT CHECK (volatility_humidity IS NULL OR volatility_humidity IN ('fast', 'slow')),
+    volatility_uvb              TEXT CHECK (volatility_uvb IS NULL OR volatility_uvb IN ('fast', 'slow')),
+    volatility_ph                TEXT CHECK (volatility_ph IS NULL OR volatility_ph IN ('fast', 'slow')),
+    volatility_ammonia          TEXT CHECK (volatility_ammonia IS NULL OR volatility_ammonia IN ('fast', 'slow')),
+    volatility_nitrite          TEXT CHECK (volatility_nitrite IS NULL OR volatility_nitrite IN ('fast', 'slow')),
+    volatility_nitrate          TEXT CHECK (volatility_nitrate IS NULL OR volatility_nitrate IN ('fast', 'slow')),
+    volatility_specific_gravity TEXT CHECK (volatility_specific_gravity IS NULL OR volatility_specific_gravity IN ('fast', 'slow')),
+    volatility_salinity         TEXT CHECK (volatility_salinity IS NULL OR volatility_salinity IN ('fast', 'slow')),
+    volatility_alkalinity       TEXT CHECK (volatility_alkalinity IS NULL OR volatility_alkalinity IN ('fast', 'slow')),
+    volatility_calcium          TEXT CHECK (volatility_calcium IS NULL OR volatility_calcium IN ('fast', 'slow')),
+    volatility_magnesium        TEXT CHECK (volatility_magnesium IS NULL OR volatility_magnesium IN ('fast', 'slow')),
+    volatility_phosphate        TEXT CHECK (volatility_phosphate IS NULL OR volatility_phosphate IN ('fast', 'slow')),
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (plugin, external_id),
     CHECK (
@@ -262,6 +313,12 @@ CREATE TABLE IF NOT EXISTS plug (
     -- split as this table's other cross-column Plug rules: enforced in web/admin_queries.py, not
     -- a CHECK here.
     always_on           INTEGER NOT NULL DEFAULT 0,
+    -- Timer Warning acknowledgement (see CONTEXT.md: Timer Warning) — the Detected Schedule time the
+    -- user cleared the warning against, per on/off time. NULL = never cleared. update_plug() resets
+    -- both to NULL whenever the Target Schedule changes, since a cleared warning only means
+    -- something against the target it was cleared under.
+    timer_ack_on_time   TEXT,
+    timer_ack_off_time  TEXT,
     controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'thermostat', 'hydrostat')),  -- see CONTEXT.md: Controller Kind, ADR 0008 (supersedes ADR 0007's is_thermostat_controlled)
     target_temp_c       REAL,                           -- required together with controller_kind = 'thermostat'; enforced in web/admin_queries.py, not here
     target_humidity_pct REAL,                           -- required together with controller_kind = 'hydrostat'; enforced in web/admin_queries.py, not here

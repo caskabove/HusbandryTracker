@@ -5,7 +5,7 @@ for scripting/bulk setup.
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,7 +15,10 @@ from plugins.govee_ble import identity as govee_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
 from web.outbox import write_command
-from web.queries import CARE_EVENT_KINDS, _latest_reading, _normalize_datetime_local, days_since
+from web.queries import (
+    ANIMAL_CONDITIONS, CARE_EVENT_KINDS, _latest_reading, _normalize_datetime_local, _sparklines, days_since,
+    log_care_event,
+)
 
 
 def _decode_sensor(row_dict: dict) -> dict:
@@ -88,6 +91,16 @@ def _check_external_id_available(conn, plugin: str | None, external_id: str | No
         )
 
 
+def is_fresh_install() -> bool:
+    """True only when the database has zero Rooms and zero Enclosures — the Setup Wizard's trigger
+    condition (see CONTEXT.md: Setup Wizard; ADR 0031). No persistent "dismissed" flag: a user who
+    deliberately deletes every Room and Enclosure later will see the Wizard again."""
+    with get_connection() as conn:
+        (room_count,) = conn.execute("SELECT COUNT(*) FROM room").fetchone()
+        (enclosure_count,) = conn.execute("SELECT COUNT(*) FROM enclosure").fetchone()
+    return room_count == 0 and enclosure_count == 0
+
+
 def list_enclosures() -> list[dict]:
     with get_connection() as conn:
         return [dict(row) for row in conn.execute("SELECT * FROM enclosure ORDER BY name")]
@@ -107,6 +120,7 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         for sensor in enclosure["sensors"]:
             # Each metric's own newest value — see web/queries.py's _latest_reading (CONTEXT.md: Reading).
             sensor["latest_reading"] = _latest_reading(conn, sensor)
+            sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
         enclosure["plugs"] = [_decode_plug(dict(r)) for r in conn.execute(
             """SELECT p.* FROM plug p JOIN plug_enclosure pe ON pe.plug_id = p.id
                WHERE pe.enclosure_id = ? ORDER BY p.label""",
@@ -154,6 +168,55 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         )]
 
         return enclosure
+
+
+def record_care_nags(enclosure_id: int) -> None:
+    """Care Setup Prompt bookkeeping (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) —
+    called once per GET of the Enclosure's own Admin page, the only place the prompt appears. For
+    each Care kind still unlogged, bumps its nag count at most once per calendar day (dedupe via
+    *_nag_last_date) so repeat visits in one sitting don't inflate it. For a kind that already has
+    real data, clears any stale nag state instead, so a future revert to no-data (every entry later
+    deleted) starts the grace period fresh rather than reading an old count."""
+    today = date.today().isoformat()
+    with get_connection() as conn:
+        for kind in CARE_EVENT_KINDS:
+            has_data = conn.execute(
+                "SELECT 1 FROM care_event WHERE enclosure_id = ? AND kind = ? LIMIT 1",
+                (enclosure_id, kind),
+            ).fetchone() is not None
+            if has_data:
+                conn.execute(
+                    f"UPDATE enclosure SET {kind}_nag_count = 0, {kind}_nag_last_date = NULL "
+                    f"WHERE id = ? AND {kind}_nag_count != 0",
+                    (enclosure_id,),
+                )
+                continue
+            last_date = conn.execute(
+                f"SELECT {kind}_nag_last_date FROM enclosure WHERE id = ?", (enclosure_id,)
+            ).fetchone()[0]
+            if last_date == today:
+                continue
+            conn.execute(
+                f"UPDATE enclosure SET {kind}_nag_count = {kind}_nag_count + 1, "
+                f"{kind}_nag_last_date = ? WHERE id = ?",
+                (today, enclosure_id),
+            )
+
+
+def start_care_events_from_today(enclosure_id: int) -> list[str]:
+    """Care Setup Prompt's "Start from Today" (see CONTEXT.md) — logs today for every currently-
+    unlogged Care kind on this Enclosure; a kind that already has history is left untouched. Returns
+    the kinds actually logged."""
+    with get_connection() as conn:
+        unlogged = [
+            kind for kind in CARE_EVENT_KINDS
+            if conn.execute(
+                "SELECT 1 FROM care_event WHERE enclosure_id = ? AND kind = ? LIMIT 1", (enclosure_id, kind)
+            ).fetchone() is None
+        ]
+    for kind in unlogged:
+        log_care_event(enclosure_id, kind)
+    return unlogged
 
 
 def create_plant(enclosure_id: int, name: str, species: str | None) -> None:
@@ -254,6 +317,23 @@ def update_enclosure(enclosure_id: int, name: str, enclosure_type: str, bioactiv
         )
 
 
+def set_enclosure_room(enclosure_id: int, room_id: int | None) -> None:
+    """Used by the Setup Wizard (see CONTEXT.md: Setup Wizard; ADR 0031) to assign a brand-new
+    Enclosure to a Room right after creation, without re-submitting the rest of Enclosure Settings
+    through update_enclosure()."""
+    with get_connection() as conn:
+        conn.execute("UPDATE enclosure SET room_id = ? WHERE id = ?", (room_id, enclosure_id))
+
+
+def set_enclosure_fallback_sensor(enclosure_id: int, fallback_sensor_id: int | None) -> None:
+    """See CONTEXT.md: Fallback Sensor. Used by the Setup Wizard to offer a Room's existing Sensor
+    as a brand-new Enclosure's Fallback Sensor without the full Enclosure Settings form."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE enclosure SET fallback_sensor_id = ? WHERE id = ?", (fallback_sensor_id, enclosure_id)
+        )
+
+
 def _get_or_create_unassigned_enclosure(conn, exclude_id: int | None = None) -> int:
     """See CONTEXT.md: Unassigned. exclude_id skips a row by that id — used when the Enclosure
     literally named "Unassigned" is itself the one being deleted, so a fresh one gets created
@@ -332,6 +412,56 @@ def set_animal_dashboard_visibility(animal_id: int, show_on_dashboard: bool) -> 
         )
 
 
+def list_animal_logs(animal_id: int, limit: int = 20) -> list[dict]:
+    """Most-recent-first Animal Log history (see CONTEXT.md: Animal Log) for the Animal's own Edit
+    page — mirrors get_enclosure()'s plant_health_log fetch (most recent N, not the full history)."""
+    with get_connection() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM animal_log WHERE animal_id = ? ORDER BY occurred_at DESC LIMIT ?",
+            (animal_id, limit),
+        )]
+
+
+def _insert_animal_log(animal_id: int, occurred_at: str | None, **fields) -> None:
+    occurred_at = _normalize_datetime_local(occurred_at)
+    columns = list(fields.keys())
+    values = list(fields.values())
+    if occurred_at:
+        columns.append("occurred_at")
+        values.append(occurred_at)
+    placeholders = ", ".join("?" for _ in columns)
+    with get_connection() as conn:
+        conn.execute(
+            f"INSERT INTO animal_log (animal_id, {', '.join(columns)}) VALUES (?, {placeholders})",
+            (animal_id, *values),
+        )
+
+
+def log_animal_weight(animal_id: int, weight_g: float, occurred_at: str | None = None) -> None:
+    if weight_g <= 0:
+        raise ValueError("Weight must be greater than zero.")
+    _insert_animal_log(animal_id, occurred_at, weight_g=weight_g)
+
+
+def log_animal_length(animal_id: int, length_cm: float, occurred_at: str | None = None) -> None:
+    if length_cm <= 0:
+        raise ValueError("Length must be greater than zero.")
+    _insert_animal_log(animal_id, occurred_at, length_cm=length_cm)
+
+
+def log_animal_count(animal_id: int, count: int, occurred_at: str | None = None) -> None:
+    if count < 0:
+        raise ValueError("Count can't be negative.")
+    _insert_animal_log(animal_id, occurred_at, count=count)
+
+
+def log_animal_condition(animal_id: int, condition: str, note: str | None = None,
+                          occurred_at: str | None = None) -> None:
+    if condition not in ANIMAL_CONDITIONS:
+        raise ValueError(f"Unknown Condition: {condition!r}")
+    _insert_animal_log(animal_id, occurred_at, condition=condition, note=note or None)
+
+
 TargetRanges = dict[str, tuple[float | None, float | None]]
 
 
@@ -362,6 +492,24 @@ def _validate_sensor(tracking_mode: str, mac_address: str | None, target_ranges:
     if enclosure_type is not None:
         provided = [key for key, (mn, mx) in target_ranges.items() if mn is not None or mx is not None]
         et.validate_target_ranges(enclosure_type, provided)
+
+
+Volatility = dict[str, str | None]  # metric key -> "fast" / "slow" / None (None = use metric default)
+
+
+def _volatility_sql(volatility: Volatility) -> tuple[list[str], list[str | None]]:
+    """Column names + values for every Target Range metric's Volatility override (see CONTEXT.md:
+    Volatility; ADR 0025), in schemas.enclosure_types' fixed order — same shape as
+    _target_range_sql() below, and for the same reason (a single source of truth for the column
+    list). A metric missing from volatility (every caller but admin_create_sensor/admin_update_sensor
+    only ever supplies temperature/humidity) is written as NULL, meaning "use that metric's own
+    default_volatility" rather than forcing a choice."""
+    columns: list[str] = []
+    values: list[str | None] = []
+    for metric in et.TARGET_RANGE_METRICS:
+        columns.append(metric.volatility_column)
+        values.append(volatility.get(metric.key) or None)
+    return columns, values
 
 
 def _target_range_sql(target_ranges: TargetRanges) -> tuple[list[str], list[float | None]]:
@@ -419,10 +567,12 @@ def _check_sensor_external_id_available(conn, plugin: str | None, external_id: s
 
 
 def create_sensor(enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
-                   target_ranges: TargetRanges) -> None:
+                   target_ranges: TargetRanges, volatility: Volatility | None = None) -> None:
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
+    v_columns, v_values = _volatility_sql(volatility or {})
+    columns, values = columns + v_columns, values + v_values
     with get_connection() as conn:
         _check_sensor_external_id_available(conn, plugin, external_id)
         show_on_dashboard = _next_show_on_dashboard(conn, "enclosure_id", enclosure_id)
@@ -464,12 +614,15 @@ def set_sensor_dashboard_visibility(sensor_id: int, show_on_dashboard: bool) -> 
 
 
 def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: str, mac_address: str | None,
-                   target_ranges: TargetRanges, auto_update_enabled: bool = True) -> None:
+                   target_ranges: TargetRanges, auto_update_enabled: bool = True,
+                   volatility: Volatility | None = None) -> None:
     """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Sensor
     (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     _validate_sensor(tracking_mode, mac_address, target_ranges, _get_enclosure_type(enclosure_id))
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
     columns, values = _target_range_sql(target_ranges)
+    v_columns, v_values = _volatility_sql(volatility or {})
+    columns, values = columns + v_columns, values + v_values
     set_clause = ", ".join(f"{c} = ?" for c in columns)
     with get_connection() as conn:
         _check_sensor_external_id_available(conn, plugin, external_id, exclude_sensor_id=sensor_id)
@@ -482,7 +635,8 @@ def update_sensor(sensor_id: int, enclosure_id: int, label: str, tracking_mode: 
 
 
 def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address: str | None, temp_min: float | None,
-                        temp_max: float | None, humidity_min: float | None, humidity_max: float | None) -> None:
+                        temp_max: float | None, humidity_min: float | None, humidity_max: float | None,
+                        temp_volatility: str | None = None, humidity_volatility: str | None = None) -> None:
     """A Room's ambient Sensor — same Sensor concept, Room instead of Enclosure as parent. See
     CONTEXT.md: Room, Sensor. Room Sensors aren't gated by Enclosure Type (a Room has none) — only
     temperature/humidity are ever offered here, matching what ambient room comfort needs."""
@@ -494,16 +648,18 @@ def create_room_sensor(room_id: int, label: str, tracking_mode: str, mac_address
         show_on_dashboard = _next_show_on_dashboard(conn, "room_id", room_id)
         conn.execute(
             """INSERT INTO sensor (room_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
-                                    target_temp_min_c, target_temp_max_c, target_humidity_min, target_humidity_max)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                    target_temp_min_c, target_temp_max_c, target_humidity_min, target_humidity_max,
+                                    volatility_temperature, volatility_humidity)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (room_id, label, tracking_mode, plugin, external_id, show_on_dashboard,
-             temp_min, temp_max, humidity_min, humidity_max),
+             temp_min, temp_max, humidity_min, humidity_max, temp_volatility or None, humidity_volatility or None),
         )
 
 
 def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: str, mac_address: str | None,
                         temp_min: float | None, temp_max: float | None, humidity_min: float | None,
-                        humidity_max: float | None, auto_update_enabled: bool = True) -> None:
+                        humidity_max: float | None, auto_update_enabled: bool = True,
+                        temp_volatility: str | None = None, humidity_volatility: str | None = None) -> None:
     target_ranges: TargetRanges = {"temperature": (temp_min, temp_max), "humidity": (humidity_min, humidity_max)}
     _validate_sensor(tracking_mode, mac_address, target_ranges, enclosure_type=None)
     plugin, external_id = _encode_sensor_identity(tracking_mode, mac_address)
@@ -513,9 +669,11 @@ def update_room_sensor(sensor_id: int, room_id: int, label: str, tracking_mode: 
             """UPDATE sensor SET room_id = ?, label = ?, tracking_mode = ?, plugin = ?, external_id = ?,
                                   auto_update_enabled = ?,
                                   target_temp_min_c = ?, target_temp_max_c = ?, target_humidity_min = ?,
-                                  target_humidity_max = ? WHERE id = ?""",
+                                  target_humidity_max = ?, volatility_temperature = ?, volatility_humidity = ?
+                                  WHERE id = ?""",
             (room_id, label, tracking_mode, plugin, external_id,
-             int(auto_update_enabled), temp_min, temp_max, humidity_min, humidity_max, sensor_id),
+             int(auto_update_enabled), temp_min, temp_max, humidity_min, humidity_max,
+             temp_volatility or None, humidity_volatility or None, sensor_id),
         )
 
 
@@ -676,11 +834,19 @@ def _latest_plug_reading(conn, plug_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def utc_clock_to_local(recorded_at: str) -> str:
+    """plug_state_transition.recorded_at is written in UTC (see plugins/common.py's
+    now_observed_at()), so its time-of-day has to be converted to this machine's local time before
+    it's compared with a Target Schedule or shown next to one. Returns "HH:MM"."""
+    utc = datetime.strptime(recorded_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    return utc.astimezone().strftime("%H:%M")
+
+
 def _detect_schedule(conn, plug_id: int) -> dict:
     """Detected Schedule (see CONTEXT.md) — the time-of-day of the most recent transition to on,
-    and separately to off, for a Smart Plug. Not an average across days, just the latest observed
-    instance of each (see ADR 0012). Either/both come back None if that kind of transition has never
-    been seen. Computed on demand from plug_state_transition, not stored."""
+    and separately to off, for a Smart Plug, in local time. Not an average across days, just the
+    latest observed instance of each (see ADR 0012). Either/both come back None if that kind of
+    transition has never been seen. Computed on demand from plug_state_transition, not stored."""
     on_row = conn.execute(
         """SELECT recorded_at FROM plug_state_transition WHERE plug_id = ? AND is_on = 1
            ORDER BY recorded_at DESC LIMIT 1""",
@@ -692,8 +858,8 @@ def _detect_schedule(conn, plug_id: int) -> dict:
         (plug_id,),
     ).fetchone()
     return {
-        "on_time": on_row["recorded_at"][11:16] if on_row else None,
-        "off_time": off_row["recorded_at"][11:16] if off_row else None,
+        "on_time": utc_clock_to_local(on_row["recorded_at"]) if on_row else None,
+        "off_time": utc_clock_to_local(off_row["recorded_at"]) if off_row else None,
     }
 
 
@@ -855,19 +1021,43 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
     )
     with get_connection() as conn:
         _check_external_id_available(conn, plugin, external_id, exclude_plug_id=plug_id)
+        current = conn.execute(
+            "SELECT target_on_time, target_off_time, timer_ack_on_time, timer_ack_off_time FROM plug WHERE id = ?",
+            (plug_id,),
+        ).fetchone()
+        new_targets = (target_on_time or None, target_off_time or None)
+        # A cleared Timer Warning only holds against the Target Schedule it was cleared under — see
+        # CONTEXT.md: Timer Warning — so changing the target re-arms it.
+        if current is not None and (current["target_on_time"], current["target_off_time"]) != new_targets:
+            ack_on, ack_off = None, None
+        else:
+            ack_on, ack_off = (current["timer_ack_on_time"], current["timer_ack_off_time"]) if current else (None, None)
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?,
                                 plugin = ?, external_id = ?, plugin_config = ?,
                                 target_on_time = ?, target_off_time = ?, always_on = ?, auto_update_enabled = ?,
-                                controller_kind = ?, target_temp_c = ?, target_humidity_pct = ? WHERE id = ?""",
+                                controller_kind = ?, target_temp_c = ?, target_humidity_pct = ?,
+                                timer_ack_on_time = ?, timer_ack_off_time = ? WHERE id = ?""",
             (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-             target_on_time or None, target_off_time or None, int(always_on),
+             new_targets[0], new_targets[1], int(always_on),
              int(auto_update_enabled), controller_kind, target_temp_c, target_humidity_pct,
-             plug_id),
+             ack_on, ack_off, plug_id),
         )
         conn.execute("DELETE FROM plug_enclosure WHERE plug_id = ?", (plug_id,))
         for eid in enclosure_ids:
             conn.execute("INSERT INTO plug_enclosure (plug_id, enclosure_id) VALUES (?, ?)", (plug_id, eid))
+
+
+def clear_timer_warning(plug_id: int) -> None:
+    """Clears the Timer Warning (see CONTEXT.md: Timer Warning) for whatever Detected Schedule the
+    Plug has right now — stores both detected times as acknowledged. The warning stays hidden until
+    a different time gets detected, or the Target Schedule changes (update_plug() resets this)."""
+    with get_connection() as conn:
+        detected = _detect_schedule(conn, plug_id)
+        conn.execute(
+            "UPDATE plug SET timer_ack_on_time = ?, timer_ack_off_time = ? WHERE id = ?",
+            (detected["on_time"], detected["off_time"], plug_id),
+        )
 
 
 def list_plug_groups() -> list[dict]:
@@ -1142,6 +1332,7 @@ def get_room(room_id: int) -> dict | None:
             # Same helper as get_enclosure() above — a Room Sensor only ever tracks temp/humidity in
             # practice (create_room_sensor() never writes the others), so this stays uniform with it.
             sensor["latest_reading"] = _latest_reading(conn, sensor)
+            sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
         room["plugs"] = [_decode_plug(dict(r)) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
         for plug in room["plugs"]:
             # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
@@ -1206,3 +1397,28 @@ def update_settings(ble_refresh_timeout_seconds: int, alert_debounce_minutes: in
             (ble_refresh_timeout_seconds, alert_debounce_minutes, ntfy_server_url or None, ntfy_topic or None,
              schedule_drift_threshold_minutes),
         )
+
+
+def update_tuya_credentials(access_id: str | None, access_secret: str | None, api_region: str) -> None:
+    """See ADR 0030. access_secret blank means "keep the existing one" — the rendered Settings form
+    never echoes the saved secret back, so there's nothing for a blank submission to legitimately
+    overwrite. Pass an empty access_id (not access_secret) to actually clear both at once."""
+    if api_region not in ("us", "eu", "cn", "in"):
+        raise ValueError("Tuya API Region must be one of: us, eu, cn, in.")
+    with get_connection() as conn:
+        if not access_id:
+            conn.execute(
+                "UPDATE app_setting SET tuya_access_id = NULL, tuya_access_secret = NULL, tuya_api_region = ? WHERE id = 1",
+                (api_region,),
+            )
+            return
+        if access_secret:
+            conn.execute(
+                "UPDATE app_setting SET tuya_access_id = ?, tuya_access_secret = ?, tuya_api_region = ? WHERE id = 1",
+                (access_id, access_secret, api_region),
+            )
+        else:
+            conn.execute(
+                "UPDATE app_setting SET tuya_access_id = ?, tuya_api_region = ? WHERE id = 1",
+                (access_id, api_region),
+            )

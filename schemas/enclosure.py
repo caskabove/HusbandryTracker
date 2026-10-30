@@ -47,6 +47,10 @@ class EnclosureBase(BaseModel):
     watering_interval_days: int = 3
     spot_clean_interval_days: int = 7
     deep_clean_interval_days: int = 30
+    show_feeding_on_dashboard: bool = True      # see CONTEXT.md: Care Interval
+    show_watering_on_dashboard: bool = True
+    show_spot_clean_on_dashboard: bool = True
+    show_deep_clean_on_dashboard: bool = True
 
     @model_validator(mode="after")
     def _check_enclosure_type(self) -> EnclosureBase:
@@ -69,6 +73,17 @@ class EnclosureUpdate(EnclosureCreate):
 
 
 class EnclosureRead(EnclosureBase):
-    """Full row as stored — adds the DB-assigned id/created_at on top of EnclosureBase."""
+    """Full row as stored — adds the DB-assigned id/created_at on top of EnclosureBase, plus the
+    Care Setup Prompt's nag-tracking columns (see CONTEXT.md: Care Setup Prompt, Care Interval;
+    ADR 0040), which are DB-managed bookkeeping (web/admin_queries.py's record_care_nags()), not
+    something a caller sets at create/update time — same reasoning as id/created_at itself."""
     id: int
     created_at: str
+    feeding_nag_count: int = 0
+    feeding_nag_last_date: str | None = None
+    watering_nag_count: int = 0
+    watering_nag_last_date: str | None = None
+    spot_clean_nag_count: int = 0
+    spot_clean_nag_last_date: str | None = None
+    deep_clean_nag_count: int = 0
+    deep_clean_nag_last_date: str | None = None

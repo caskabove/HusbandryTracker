@@ -22,6 +22,18 @@ function onTrackingModeChange(select, smartBlockId, manualBlockId) {
     onToggleChange(select, "smart", smartBlockId, manualBlockId);
 }
 
+// View Data's Care Event cell (see CONTEXT.md: Period Slot; ADR 0026): the time input only applies
+// — and is only submitted — when "Exact time" is picked; any Period Slot name overrides it
+// server-side with that slot's own fixed hour, so hiding+disabling it here is just UX clarity, not
+// load-bearing correctness.
+function onPeriodSlotChange(select, timeInputId) {
+    const input = document.getElementById(timeInputId);
+    if (!input) return;
+    const exact = select.value === "exact";
+    input.style.display = exact ? "" : "none";
+    input.disabled = !exact;
+}
+
 // Plug form only: Controller Kind (see CONTEXT.md) is an independent three-way select — none /
 // thermostat / hydrostat — not a second value of Tracking Mode; a Plug can be Smart or Manual
 // *and* Thermostat-/Hydrostat-Controlled at once (see ADR 0008). The Target Schedule block's
@@ -163,4 +175,356 @@ async function onRoomDrop(event) {
     } catch (err) {
         alert("Couldn't move that enclosure — try again.");
     }
+}
+
+// Add Sensor forms' "Discover Devices" button (see ADR 0029, CONTEXT.md: Device Registration) —
+// scans for ~20s and lists whatever Govee-looking devices answered, each as its own button that
+// fills in *this same form's* MAC address field. Deliberately does NOT reload the page afterward,
+// unlike every other action in this app (see onRoomDrop above) — the surrounding form may already
+// be partway filled in (Label, Target Range, Volatility), and a reload would discard all of that
+// for a result that's only ever used once, to fill in one field.
+async function onDiscoverGoveeClick(button) {
+    const macField = button.closest("form").querySelector('[name="mac_address"]');
+    const results = button.parentElement.querySelector(".discover-results");
+    results.style.display = "";
+    results.innerHTML = '<p class="empty">Scanning for Govee sensors (about 20s)…</p>';
+    button.disabled = true;
+    try {
+        const response = await fetch("/admin/sensors/discover", {method: "POST"});
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            results.innerHTML = `<p class="empty">${data.error || "Discovery failed — try again."}</p>`;
+            return;
+        }
+        if (!data.devices.length) {
+            results.innerHTML = '<p class="empty">No Govee sensors found — check Bluetooth is on, '
+                + 'and the sensor is powered and in range.</p>';
+            return;
+        }
+        results.innerHTML = "";
+        data.devices.forEach(function (device) {
+            const tempF = (device.temperature_c * 9 / 5 + 32).toFixed(1);
+            const pick = document.createElement("button");
+            pick.type = "button";
+            pick.textContent = `${device.mac} — ${tempF}°F / ${device.humidity_pct.toFixed(0)}% RH`;
+            pick.onclick = function () {
+                macField.value = device.mac;
+                results.style.display = "none";
+            };
+            results.appendChild(pick);
+        });
+    } catch (err) {
+        results.innerHTML = '<p class="empty">Discovery failed — try again.</p>';
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// Care Setup Prompt (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) — a dialog
+// server-rendered only when at least one Care kind has no data yet (admin_enclosure.html), so this
+// just opens it as a real modal on load; nothing to do when the dialog isn't on the page (every
+// kind already resolved). "Start from Today" is a plain form submit, same as every other action in
+// this app. "Set your own" dismisses the prompt and expands exactly the unlogged kinds' own
+// Advanced dropdowns (marked data-unlogged by the template) instead of forcing a choice, showing
+// one shared instruction once rather than forcing the user to discover the existing Log forms.
+function openCarePromptIfNeeded() {
+    const dialog = document.getElementById("care-prompt-modal");
+    if (!dialog) return;
+    // A click directly on the <dialog> element itself (not anything inside it) landed on the
+    // ::backdrop — dismiss like clicking the X (same convention as graphs.js's graph modal).
+    dialog.addEventListener("click", function (e) {
+        if (e.target === dialog) dismissCarePrompt();
+    });
+    if (!dialog.open) dialog.showModal();
+}
+
+function dismissCarePrompt() {
+    const dialog = document.getElementById("care-prompt-modal");
+    if (dialog && dialog.open) dialog.close();
+}
+
+function useOwnCareDates() {
+    dismissCarePrompt();
+    document.querySelectorAll('.care-row[data-unlogged="true"] .care-advanced').forEach(function (details) {
+        details.open = true;
+    });
+    const hint = document.getElementById("care-advanced-hint");
+    if (hint) hint.hidden = false;
+}
+
+function dismissCareAdvancedHint() {
+    const hint = document.getElementById("care-advanced-hint");
+    if (hint) hint.hidden = true;
+}
+
+openCarePromptIfNeeded();
+
+async function onDiscoverTuyaClick(button) {
+    const form = button.closest("form");
+    const deviceIdField = form.querySelector('[name="tuya_device_id"]');
+    const localKeyField = form.querySelector('[name="tuya_local_key"]');
+    const switchKeyField = form.querySelector('[name="switch_dps_key"]');
+    const results = button.parentElement.querySelector(".discover-results");
+    results.style.display = "";
+    results.innerHTML = '<p class="empty">Asking Tuya’s cloud for your linked devices…</p>';
+    button.disabled = true;
+    try {
+        const response = await fetch("/admin/plugs/discover-tuya", {method: "POST"});
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            results.innerHTML = `<p class="empty">${data.error || "Discovery failed — try again."}</p>`;
+            return;
+        }
+        if (!data.devices.length) {
+            results.innerHTML = '<p class="empty">No devices found on that Tuya account.</p>';
+            return;
+        }
+        results.innerHTML = "";
+        data.devices.forEach(function (device) {
+            const pick = document.createElement("button");
+            pick.type = "button";
+            pick.textContent = `${device.name} (${device.category || "device"})`;
+            pick.onclick = function () {
+                deviceIdField.value = device.id;
+                localKeyField.value = device.local_key;
+                if (switchKeyField && device.switch_key_guess) {
+                    switchKeyField.value = device.switch_key_guess;
+                }
+                results.style.display = "none";
+            };
+            results.appendChild(pick);
+        });
+    } catch (err) {
+        results.innerHTML = '<p class="empty">Discovery failed — try again.</p>';
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// Species Profile (see CONTEXT.md: Species Profile) — an optional, never-persisted picker on the
+// Add-Enclosure and Add-Sensor forms (Setup Wizard and ordinary Admin alike) that only pre-fills
+// other fields with suggested starting values; the pick itself is never submitted anywhere. Ranges
+// sourced from docs/reference/Reptile Care Parameters Knowledge Base.md. `basking`/`cool`/`night`
+// are [min, max] °F; `humidity` is [min, max] %; `scientific` is the species' Latin name — present
+// only on a real, specific species (never the "(other/unlisted)" catch-alls, Tortoise, Insect, or
+// an aquatic value), so it doubles as the signal that this entry is specific enough to also carry
+// forward onto the Setup Wizard's Animal step (see prefillAnimalSpecies below). `feeding` is
+// {baby, adult} feeding_interval_days —
+// a KB range like "every 5-7 days" is stored here already collapsed to its rounded midpoint (an
+// omnivore/herbivore lizard with two parallel feeding tracks, e.g. a bearded dragon's daily salad
+// alongside twice-weekly insects, is stored as whichever track recurs more often). A profile with no
+// numeric fields at all (the "(other/unlisted)" catch-alls, Tortoise, Insect, and every aquatic
+// value today) exists only so the dropdown represents everything its Enclosure Type can hold —
+// picking one pre-fills nothing, same as picking no profile. "Lizard (other/unlisted)" in particular
+// is deliberately never given an averaged number: the ten listed lizards alone span a 78-135°F
+// basking range, so a single blanket "Lizard" figure would be badly wrong for most individual
+// species, not just imprecise.
+const SPECIES_PROFILES = {
+    ball_python: { label: "Ball Python", scientific: "Python regius", basking: [88, 95], cool: [75, 80], night: [72, 78], humidity: [50, 70], feeding: { baby: 6, adult: 21 } },
+    corn_snake: { label: "Corn Snake", scientific: "Pantherophis guttatus", basking: [85, 90], cool: [72, 78], night: [65, 70], humidity: [40, 60], feeding: { baby: 6, adult: 16 } },
+    california_kingsnake: { label: "California Kingsnake", scientific: "Lampropeltis californiae", basking: [85, 90], cool: [70, 80], night: [65, 70], humidity: [40, 60], feeding: { baby: 6, adult: 11 } },
+    western_hognose: { label: "Western Hognose Snake", scientific: "Heterodon nasicus", basking: [90, 95], cool: [70, 75], night: [60, 75], humidity: [30, 50], feeding: { baby: 6, adult: 12 } },
+    boa_constrictor: { label: "Boa Constrictor", scientific: "Boa constrictor, Boa imperator", basking: [88, 95], cool: [75, 80], night: [72, 78], humidity: [60, 70], feeding: { baby: 9, adult: 21 } },
+    honduran_milk_snake: { label: "Honduran Milk Snake", scientific: "Lampropeltis hondurensis", basking: [85, 88], cool: [72, 78], night: [65, 75], humidity: [40, 60], feeding: { baby: 6, adult: 11 } },
+    rosy_boa: { label: "Rosy Boa", scientific: "Lichanura trivirgata", basking: [90, 95], cool: [75, 85], night: [65, 70], humidity: [30, 50], feeding: { baby: 9, adult: 16 } },
+    kenyan_sand_boa: { label: "Kenyan Sand Boa", scientific: "Eryx colubrinus", basking: [90, 95], cool: [75, 80], night: [70, 75], humidity: [30, 50], feeding: { baby: 6, adult: 21 } },
+    gopher_snake: { label: "Gopher Snake / Bullsnake", scientific: "Pituophis catenifer", basking: [85, 90], cool: [75, 80], night: [65, 70], humidity: [30, 50], feeding: { baby: 6, adult: 11 } },
+    carpet_python: { label: "Carpet Python", scientific: "Morelia spilota", basking: [88, 95], cool: [75, 80], night: [70, 75], humidity: [50, 60], feeding: { baby: 9, adult: 18 } },
+    snake_other: { label: "Snake (other/unlisted)", basking: [85, 95], cool: [70, 80], night: [65, 75], humidity: [30, 70], feeding: { baby: 7, adult: 14 } },
+    bearded_dragon: { label: "Bearded Dragon", scientific: "Pogona vitticeps", basking: [105, 115], cool: [70, 85], night: [60, 72], humidity: [30, 40], feeding: { baby: 1, adult: 1 } },
+    leopard_gecko: { label: "Leopard Gecko", scientific: "Eublepharis macularius", basking: [90, 95], cool: [70, 80], night: [60, 75], humidity: [30, 40], feeding: { baby: 1, adult: 3 } },
+    crested_gecko: { label: "Crested Gecko", scientific: "Correlophus ciliatus", basking: [78, 82], cool: [70, 75], night: [65, 72], humidity: [60, 80], feeding: { baby: 1, adult: 2 } },
+    blue_tongue_skink: { label: "Blue-Tongued Skink", scientific: "Tiliqua scincoides intermedia", basking: [105, 115], cool: [70, 80], night: [65, 75], humidity: [40, 60], feeding: { baby: 1, adult: 2 } },
+    african_fat_tailed_gecko: { label: "African Fat-Tailed Gecko", scientific: "Hemitheconyx caudicinctus", basking: [88, 92], cool: [70, 80], night: [70, 75], humidity: [50, 70], feeding: { baby: 1, adult: 2 } },
+    veiled_chameleon: { label: "Veiled Chameleon", scientific: "Chamaeleo calyptratus", basking: [85, 90], cool: [72, 78], night: [55, 65], humidity: [30, 50], feeding: { baby: 1, adult: 2 } },
+    gargoyle_gecko: { label: "Gargoyle Gecko", scientific: "Rhacodactylus auriculatus", basking: [82, 85], cool: [70, 75], night: [65, 72], humidity: [50, 70], feeding: { baby: 1, adult: 2 } },
+    tegu: { label: "Argentine Black and White Tegu", scientific: "Salvator merianae", basking: [120, 135], cool: [75, 85], night: [70, 75], humidity: [60, 80], feeding: { baby: 1, adult: 3 } },
+    green_iguana: { label: "Green Iguana", scientific: "Iguana iguana", basking: [115, 125], cool: [75, 85], night: [73, 80], humidity: [60, 80], feeding: { baby: 1, adult: 1 } },
+    uromastyx: { label: "Uromastyx", scientific: "Uromastyx spp.", basking: [120, 130], cool: [80, 85], night: [70, 80], humidity: [10, 35], feeding: { baby: 1, adult: 1 } },
+    lizard_other: { label: "Lizard (other/unlisted)" },
+    tortoise: { label: "Tortoise" },
+    insect: { label: "Insect" },
+    freshwater: { label: "Freshwater" },
+    freshwater_planted: { label: "Freshwater (planted)" },
+    saltwater_fish_only: { label: "Saltwater — Fish-Only" },
+    saltwater_mixed: { label: "Saltwater — Mixed" },
+    saltwater_reef: { label: "Saltwater — Reef" },
+};
+
+// Which profile keys are offered for each Enclosure Type, grouped for display — see CONTEXT.md:
+// Species Profile. Amphibian has none yet (no reference data), same reason the aquatic groups below
+// carry no numbers: the picker still exists everywhere so the dropdown's shape never changes as
+// data gets added later, it's just empty for Amphibian today.
+const SPECIES_PROFILE_GROUPS = {
+    basic: [
+        { label: "Snakes", keys: ["ball_python", "corn_snake", "california_kingsnake", "western_hognose", "boa_constrictor", "honduran_milk_snake", "rosy_boa", "kenyan_sand_boa", "gopher_snake", "carpet_python", "snake_other"] },
+        { label: "Lizards", keys: ["bearded_dragon", "leopard_gecko", "crested_gecko", "blue_tongue_skink", "african_fat_tailed_gecko", "veiled_chameleon", "gargoyle_gecko", "tegu", "green_iguana", "uromastyx", "lizard_other"] },
+        { label: "Other", keys: ["tortoise", "insect"] },
+    ],
+    freshwater: [
+        { label: "", keys: ["freshwater", "freshwater_planted"] },
+    ],
+    saltwater: [
+        { label: "", keys: ["saltwater_fish_only", "saltwater_mixed", "saltwater_reef"] },
+    ],
+    amphibian: [],
+};
+
+// Rebuilds a Species Profile <select>'s options for the given Enclosure Type, keeping its current
+// selection if that profile is still offered under the new type. Called once on page load (Sensor
+// forms, whose Enclosure Type is fixed) and again on every Enclosure Type change (Enclosure forms,
+// where the user can still switch it).
+function populateSpeciesProfileSelect(select, enclosureType) {
+    if (!select) return;
+    const groups = SPECIES_PROFILE_GROUPS[enclosureType] || [];
+    const previous = select.value;
+    select.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "— none / I'll enter my own —";
+    select.appendChild(none);
+    let stillOffered = false;
+    groups.forEach(function (group) {
+        const container = group.label ? document.createElement("optgroup") : select;
+        if (group.label) container.label = group.label;
+        group.keys.forEach(function (key) {
+            const opt = document.createElement("option");
+            opt.value = key;
+            opt.textContent = SPECIES_PROFILES[key].label;
+            container.appendChild(opt);
+            if (key === previous) stillOffered = true;
+        });
+        if (group.label) select.appendChild(container);
+    });
+    select.value = stillOffered ? previous : "";
+}
+
+// Opens every ancestor <details> of a field that was just filled, so a pre-filled value under e.g.
+// Setup Sensor's collapsed "+ more metrics" is visible instead of hidden.
+function revealField(input) {
+    if (!input) return;
+    let details = input.closest ? input.closest("details") : null;
+    while (details) {
+        details.open = true;
+        details = details.parentElement ? details.parentElement.closest("details") : null;
+    }
+}
+
+function _setNamedField(form, name, value) {
+    if (!form || value == null) return;
+    const field = form.elements.namedItem(name);
+    if (field) {
+        field.value = value;
+        revealField(field);
+    }
+}
+
+// Enclosure Type changed on an Add-Enclosure form: rebuild the Species Profile options to match
+// (e.g. switching from Basic to Saltwater swaps the snake/lizard list for Fish-Only/Mixed/Reef), and
+// re-run the Species Profile change handler so Life Stage hides again if the new type's reset
+// selection ("— none —") has no feeding data — same as picking "— none —" by hand would.
+function onEnclosureTypeChangeForProfile(typeSelect, profileSelectId, lifeStageWrapId, lifeStageSelectId, feedingFieldName) {
+    const profileSelect = document.getElementById(profileSelectId);
+    populateSpeciesProfileSelect(profileSelect, typeSelect.value);
+    onEnclosureSpeciesProfileChange(profileSelect, lifeStageWrapId, lifeStageSelectId, feedingFieldName);
+}
+
+// Species Profile changed on an Add-Enclosure form — see CONTEXT.md: Species Profile. Shows the
+// Life Stage control only when the picked profile actually has feeding data (the "(other/unlisted)"/
+// Tortoise/Insect/aquatic placeholders don't), and pre-fills feeding_interval_days from it.
+function onEnclosureSpeciesProfileChange(select, lifeStageWrapId, lifeStageSelectId, feedingFieldName) {
+    const profile = SPECIES_PROFILES[select.value];
+    const hasFeeding = !!(profile && profile.feeding);
+    const lifeStageWrap = lifeStageWrapId ? document.getElementById(lifeStageWrapId) : null;
+    if (lifeStageWrap) setToggleBlock(lifeStageWrap, hasFeeding);
+    if (hasFeeding && lifeStageSelectId && feedingFieldName) {
+        const lifeStage = document.getElementById(lifeStageSelectId).value;
+        _setNamedField(select.form, feedingFieldName, profile.feeding[lifeStage]);
+    }
+}
+
+// Life Stage changed on an Add-Enclosure form — recomputes feeding_interval_days from whichever
+// Species Profile is currently picked.
+function onEnclosureLifeStageChange(lifeStageSelect, speciesSelectId, feedingFieldName) {
+    const speciesSelect = document.getElementById(speciesSelectId);
+    const profile = SPECIES_PROFILES[speciesSelect.value];
+    if (profile && profile.feeding) {
+        _setNamedField(speciesSelect.form, feedingFieldName, profile.feeding[lifeStageSelect.value]);
+    }
+}
+
+// Collapses a Species Profile's three KB temperature figures (basking, cool side, night low) into
+// the single min/max pair a Sensor's Target Range actually stores — see CONTEXT.md: Species
+// Profile. Warm side reads the basking range as-is; Cool side and a single ambient Sensor both read
+// the cool-side range with the night low as their floor, since neither placement should be expected
+// to ever read a basking-level temperature.
+function _tempRangeForZone(profile, zone) {
+    if (!profile || !profile.basking) return null;
+    if (zone === "warm") return profile.basking;
+    return [profile.night[0], profile.cool[1]];
+}
+
+// Species Profile changed on an Add-Sensor form — see CONTEXT.md: Species Profile. Shows the zone
+// question only when the picked profile has temperature data, pre-fills Target Temperature from the
+// current zone, and pre-fills Target Humidity (zone-independent) unconditionally.
+function onSensorSpeciesProfileChange(select, zoneWrapId, zoneSelectId, tempMinName, tempMaxName, humidityMinName, humidityMaxName) {
+    const profile = SPECIES_PROFILES[select.value];
+    const hasTemp = !!(profile && profile.basking);
+    const zoneWrap = zoneWrapId ? document.getElementById(zoneWrapId) : null;
+    if (zoneWrap) setToggleBlock(zoneWrap, hasTemp);
+    if (hasTemp) {
+        const zone = zoneSelectId ? document.getElementById(zoneSelectId).value : "ambient";
+        const range = _tempRangeForZone(profile, zone);
+        _setNamedField(select.form, tempMinName, range[0]);
+        _setNamedField(select.form, tempMaxName, range[1]);
+    }
+    if (profile && profile.humidity) {
+        _setNamedField(select.form, humidityMinName, profile.humidity[0]);
+        _setNamedField(select.form, humidityMaxName, profile.humidity[1]);
+    }
+}
+
+// Zone changed on an Add-Sensor form — recomputes Target Temperature from whichever Species Profile
+// is currently picked.
+function onSensorZoneChange(zoneSelect, speciesSelectId, tempMinName, tempMaxName) {
+    const speciesSelect = document.getElementById(speciesSelectId);
+    const profile = SPECIES_PROFILES[speciesSelect.value];
+    const range = _tempRangeForZone(profile, zoneSelect.value);
+    if (range) {
+        _setNamedField(speciesSelect.form, tempMinName, range[0]);
+        _setNamedField(speciesSelect.form, tempMaxName, range[1]);
+    }
+}
+
+// Setup Wizard only: the Species Profile picked on the Enclosure step carries forward through the
+// wizard's own query-string chain (never persisted — same "never stored" rule as the picker itself,
+// see CONTEXT.md: Species Profile; Setup Wizard) to pre-fill the Animal step's Common/Scientific
+// fields. Only fires for a profile with a `scientific` name — the catch-alls/placeholders are never
+// specific enough to be worth stamping onto an Animal row.
+function prefillAnimalSpecies(speciesKey) {
+    const profile = SPECIES_PROFILES[speciesKey];
+    if (!profile || !profile.scientific) return;
+    const commonField = document.querySelector('input[name="common"]');
+    const scientificField = document.querySelector('input[name="scientific"]');
+    if (commonField) commonField.value = profile.label;
+    if (scientificField) scientificField.value = profile.scientific;
+}
+
+// Setup Wizard's Plug step only: "I'm done with this enclosure" is a plain navigation link sitting
+// right next to "Add Plug" — easy to click by mistake instead of submitting first, which silently
+// discards whatever was typed (no partial-save, same as every other Setup Wizard form). Warns
+// instead of leaving silently whenever the Plug form has anything typed/checked into it.
+function onSetupDoneClick(event, formId) {
+    const form = document.getElementById(formId);
+    if (!form) return true;
+    const hasUnsavedData = Array.prototype.some.call(form.elements, function (el) {
+        if (el.disabled || !el.name || el.type === "submit" || el.type === "button") return false;
+        if (el.type === "checkbox" || el.type === "radio") return el.checked;
+        return el.value != null && el.value.trim() !== "";
+    });
+    if (hasUnsavedData && !confirm('You’ve entered Plug details above but haven’t clicked "Add Plug" yet — they’ll be lost if you leave now. Continue without saving them?')) {
+        event.preventDefault();
+        return false;
+    }
+    return true;
 }

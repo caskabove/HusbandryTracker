@@ -6,7 +6,7 @@ behavior simple instead of holding a long-lived handle open across a bind-mounte
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,6 +15,76 @@ from db.db import get_connection
 from schemas import enclosure_types as et
 
 CARE_EVENT_KINDS = ["feeding", "watering", "spot_clean", "deep_clean"]
+
+# animal_log.condition's allowed values — see CONTEXT.md: Animal Log. Must match the CHECK
+# constraint in db/schema.sql.
+ANIMAL_CONDITIONS = ["poor", "ok", "good", "really_good"]
+ANIMAL_CONDITION_LABELS = {
+    "poor": "Poor", "ok": "OK", "good": "Good", "really_good": "Really Good",
+}
+
+# Morning/Afternoon/Night anchor hours — see CONTEXT.md: Period Slot; ADR 0026. Shared by both this
+# concept's uses: View Data's cell editors (entry — see web/view_data_queries.py) and Graphs' Care
+# Event marker snapping (display — see web/graphs_queries.py's _PERIOD_SLOT_ANCHORS), so the three
+# hours only ever live in one place.
+PERIOD_SLOTS: tuple[tuple[str, int], ...] = (("morning", 8), ("afternoon", 14), ("night", 20))
+PERIOD_SLOT_HHMM: dict[str, str] = {name: f"{hour:02d}:00" for name, hour in PERIOD_SLOTS}
+
+# Local-hour windows a logged timestamp's hour falls into for Period Slot display-snap purposes —
+# wide enough to classify a Smart Sensor's continuous readings, not just a Manual entry's exact
+# anchor hour (8/14/20 above, always inside its own window). Shared by Graphs' Care Event marker
+# snapping (web/graphs_queries.py's _PERIOD_SLOT_ANCHORS) and pH's day/night band below, so these
+# three ranges only ever live in one place too.
+PERIOD_SLOT_HOUR_RANGES: tuple[tuple[str, int, int], ...] = (("morning", 0, 11), ("afternoon", 12, 17), ("night", 18, 23))
+
+
+def period_slot_for_hour(hour: int) -> str:
+    for name, lo, hi in PERIOD_SLOT_HOUR_RANGES:
+        if lo <= hour <= hi:
+            return name
+    return "afternoon"  # unreachable — the three ranges above cover every hour 0-23
+
+
+def period_slot_daily_series(conn, table: str, id_column: str, id_value: int, ts_column: str,
+                              value_column: str, start: date, end: date) -> list[list]:
+    """pH's day/night band (see CONTEXT.md: Period Slot, pH Band; ADR 0037) — groups a Sensor's
+    readings (Manual or Smart, ts_column a true-UTC stamp) by local calendar day, averaging
+    whatever falls in each Period Slot's hour window that day. A day's missing slot(s) resolve to
+    its Afternoon value — or the average of whatever's left, if Afternoon itself is missing —
+    rather than inventing a value or dropping the day; a day with nothing logged at all is left
+    out entirely. Returns [epoch_ms, morning, afternoon, night] rows, oldest first, each anchored
+    to that day's Afternoon slot hour (PERIOD_SLOT_HHMM) — reused by both Sparkline
+    (_sparkline_points below) and Graphs (web/graphs_queries.py's _reading_line_row) for any
+    TargetRangeMetric with period_slot_band=True."""
+    start_s = (datetime.combine(start, datetime.min.time()) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+    end_s = (datetime.combine(end, datetime.min.time()) + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = conn.execute(
+        f"SELECT {ts_column} AS ts, {value_column} AS value FROM {table} "
+        f"WHERE {id_column} = ? AND {value_column} IS NOT NULL AND {ts_column} BETWEEN ? AND ? "
+        f"ORDER BY {ts_column} ASC",
+        (id_value, start_s, end_s),
+    ).fetchall()
+
+    by_day: dict[str, dict[str, list[float]]] = {}
+    for row in rows:
+        utc_dt = datetime.strptime(row["ts"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        local_dt = utc_dt.astimezone()
+        day_key = local_dt.date().isoformat()
+        slot = period_slot_for_hour(local_dt.hour)
+        by_day.setdefault(day_key, {"morning": [], "afternoon": [], "night": []})[slot].append(row["value"])
+
+    series = []
+    for day_key in sorted(by_day):
+        averaged = {name: (sum(vals) / len(vals) if vals else None) for name, vals in by_day[day_key].items()}
+        present = [v for v in averaged.values() if v is not None]
+        if not present:
+            continue
+        center = averaged["afternoon"] if averaged["afternoon"] is not None else sum(present) / len(present)
+        morning = averaged["morning"] if averaged["morning"] is not None else center
+        night = averaged["night"] if averaged["night"] is not None else center
+        anchor = datetime.strptime(f"{day_key} {PERIOD_SLOT_HHMM['afternoon']}:00", "%Y-%m-%d %H:%M:%S").astimezone()
+        series.append([int(anchor.timestamp() * 1000), morning, center, night])
+    return series
 
 
 def days_since(occurred_at: str | None) -> int | None:
@@ -63,6 +133,117 @@ def _latest_reading(conn, sensor: dict) -> dict | None:
         ).fetchone()
         reading[column] = row[column] if row else None
     return reading
+
+
+# Every window Sparkline offers, keyed by the name used in templates/graphs.js (ADR 0032) — a
+# viewer picks one per chart, client-side, from data this already fetches both of up front.
+_SPARKLINE_RANGES: tuple[tuple[str, int], ...] = (("week", 7), ("month", 30))
+
+# Trailing buckets averaged into each smoothed point (see CONTEXT.md: Sparkline; ADR 0024) — a
+# Smart Sensor's daily min/avg/max buckets get this before drawing, so a Sparkline reads as a trend
+# rather than a day-to-day zigzag. Index-based, not calendar-based: a bucket only exists for a day
+# that actually had a Reading, so this is "the last 3 buckets", not "the last 3 calendar days".
+_SPARKLINE_SMOOTHING_WINDOW = 3
+
+
+def _sparkline_c_to_f(celsius: float | None) -> float | None:
+    return None if celsius is None else celsius * 9 / 5 + 32
+
+
+def _sparkline_epoch_ms(ts: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> int:
+    return int(datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def _sparkline_smoothed(points: list[list]) -> list[list]:
+    """A trailing _SPARKLINE_SMOOTHING_WINDOW-bucket moving average over every numeric column but
+    the leading epoch_ms one, applied to a Smart Sensor's bucketed [epoch_ms, min, avg, max] rows
+    (see CONTEXT.md: Sparkline; ADR 0024) — min/avg/max all get the same treatment so the band's
+    edges stay consistent with the line drawn inside it."""
+    smoothed = []
+    for i, point in enumerate(points):
+        window = points[max(0, i - _SPARKLINE_SMOOTHING_WINDOW + 1):i + 1]
+        smoothed.append([point[0]] + [sum(p[c] for p in window) / len(window) for c in range(1, len(point))])
+    return smoothed
+
+
+def _sparkline_points(conn, sensor: dict, metric, days: int) -> list[list]:
+    """One window's worth of points for one metric, already in the metric's display unit
+    (Fahrenheit for Temperature, same as every pill) — [epoch_ms, value] pairs for a Manual Sensor,
+    [epoch_ms, min, avg, max] rows for a Smart Sensor. Factored out of _sparkline (see its
+    docstring for the raw/bucket/smooth reasoning) so Sparkline can fetch more than one window's
+    worth of the same metric (ADR 0032) without duplicating that reasoning per window.
+    sensor_reading.recorded_at is true UTC with no backdating path (see view_data_queries.py's
+    module docstring) — converted here so epoch_ms lines up with the viewer's actual wall-clock,
+    same as every other chart in this app.
+
+    pH (metric.period_slot_band — see ADR 0037) skips all of this: it's always a day/night band,
+    Manual or Smart alike, never smoothed — see period_slot_daily_series above."""
+    column = metric.reading_column
+    if metric.period_slot_band:
+        end = datetime.now().date()
+        return period_slot_daily_series(conn, "sensor_reading", "sensor_id", sensor["id"], "recorded_at",
+                                         column, end - timedelta(days=days), end)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    if sensor["tracking_mode"] == "manual":
+        rows = conn.execute(
+            f"SELECT recorded_at, {column} AS value FROM sensor_reading "
+            f"WHERE sensor_id = ? AND {column} IS NOT NULL AND recorded_at >= ? ORDER BY recorded_at ASC",
+            (sensor["id"], cutoff),
+        ).fetchall()
+        points = [[_sparkline_epoch_ms(row["recorded_at"]), row["value"]] for row in rows]
+    else:
+        rows = conn.execute(
+            f"SELECT strftime('%Y-%m-%d', recorded_at) AS bucket, "
+            f"MIN({column}) AS lo, AVG({column}) AS avg, MAX({column}) AS hi FROM sensor_reading "
+            f"WHERE sensor_id = ? AND {column} IS NOT NULL AND recorded_at >= ? "
+            f"GROUP BY bucket ORDER BY bucket ASC",
+            (sensor["id"], cutoff),
+        ).fetchall()
+        points = [
+            [_sparkline_epoch_ms(row["bucket"], "%Y-%m-%d"), row["lo"], row["avg"], row["hi"]]
+            for row in rows
+        ]
+        points = _sparkline_smoothed(points)
+    if metric.converts_f_c:
+        points = [[p[0]] + [_sparkline_c_to_f(v) for v in p[1:]] for p in points]
+    return points
+
+
+def _sparkline(conn, sensor: dict, metric) -> dict:
+    """A Sparkline's points for one metric, in every window Sparkline offers, plus the Sensor's
+    own Target Range for that metric (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0028, ADR
+    0032) — {"ranges": {"week": [...], "month": [...]}, "target_min": float | None, "target_max":
+    float | None}. A viewer picks the window client-side (graphs.js's setSparklineRange) from
+    whichever of these two this already fetched, rather than round-tripping to the server per
+    click — both windows reuse the same per-window raw/bucket/smooth split (_sparkline_points): a
+    Smart Sensor's daily min/avg/max buckets, 3-day-smoothed; a Manual Sensor's raw, unsmoothed
+    points, sparse enough that even the month window is never large.
+
+    A Smart Sensor's dedupe window is only 5 seconds (see plugins/govee_ble/plugin.py), so it can
+    write a new sensor_reading row every 5-30 seconds continuously — even a month of that raw would
+    be tens of thousands of points for a chart this small, repeated on every Dashboard load. Its
+    Sparkline aggregates into daily buckets regardless of window, so the month window is still only
+    ~30 points, not ~30x the week window's raw row count."""
+    ranges = {key: _sparkline_points(conn, sensor, metric, days) for key, days in _SPARKLINE_RANGES}
+    target_min = sensor[metric.min_column]
+    target_max = sensor[metric.max_column]
+    if metric.converts_f_c:
+        target_min = _sparkline_c_to_f(target_min)
+        target_max = _sparkline_c_to_f(target_max)
+    return {"ranges": ranges, "target_min": target_min, "target_max": target_max}
+
+
+def _sparklines(conn, sensor: dict, reading: dict | None) -> dict[str, dict]:
+    """Only fetches a Sparkline for a metric this Sensor's Reading pill is actually showing right
+    now (reading[column] is not None) — same restriction _latest_reading already applies to which
+    metrics it looks up at all, so this never scans a column this Sensor has never reported."""
+    if reading is None:
+        return {}
+    return {
+        metric.reading_column: _sparkline(conn, sensor, metric)
+        for metric in et.TARGET_RANGE_METRICS
+        if reading.get(metric.reading_column) is not None
+    }
 
 
 def _current_plug_status(conn, plug: dict) -> dict:
@@ -121,6 +302,7 @@ def get_dashboard_data() -> dict:
             sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ?", (eid,))]
             for sensor in sensors:
                 sensor["latest_reading"] = _latest_reading(conn, sensor)
+                sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
             enclosure["sensor_count"] = len(sensors)
             enclosure["sensors"] = [s for s in sensors if s["show_on_dashboard"]]
 
@@ -128,11 +310,13 @@ def get_dashboard_data() -> dict:
             # own; its Reading is never colored (no Target Range comparison), see ADR 0004.
             enclosure["fallback_sensor"] = None
             enclosure["fallback_reading"] = None
+            enclosure["fallback_sparklines"] = {}
             if not sensors and enclosure["fallback_sensor_id"]:
                 fb_row = conn.execute("SELECT * FROM sensor WHERE id = ?", (enclosure["fallback_sensor_id"],)).fetchone()
                 if fb_row:
                     enclosure["fallback_sensor"] = dict(fb_row)
                     enclosure["fallback_reading"] = _latest_reading(conn, dict(fb_row))
+                    enclosure["fallback_sparklines"] = _sparklines(conn, fb_row, enclosure["fallback_reading"])
 
             # Schedules aren't rendered on the dashboard (glance-only — see web/main.py's module
             # docstring); that stays Admin-only, fetched there via web/admin_queries.py. A Plug's
@@ -164,6 +348,7 @@ def get_dashboard_data() -> dict:
             room_sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE room_id = ?", (room["id"],))]
             for sensor in room_sensors:
                 sensor["latest_reading"] = _latest_reading(conn, sensor)
+                sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
             room["sensor_count"] = len(room_sensors)  # unfiltered — see the Enclosure loop above
             room["sensors"] = [s for s in room_sensors if s["show_on_dashboard"]]
 

@@ -3,17 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Husbandry Tracker Admin</title>
+    <title>Husbandry Tracker Plugs and Sensors</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
-        <h1>Husbandry Tracker Admin</h1>
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="/guide">Guide</a>
-        </nav>
+        <h1>Husbandry Tracker Plugs and Sensors</h1>
+        {% set nav_current = "control" %}{% include "_nav.html" %}
     </header>
 
     <main class="admin-main">
@@ -44,77 +41,39 @@
                 Schedule Drift Threshold is how far a Smart Plug's Target and Detected Schedule can disagree before a Timer Warning shows (see CONTEXT.md: Timer Warning).</p>
         </section>
 
-        <section class="admin-card">
-            <h2>Enclosures</h2>
-            <table class="admin-table">
-                <thead><tr><th>Name</th><th>Type</th><th>Room</th><th>Bioactive</th><th>Feed</th><th>Water</th><th>Spot</th><th>Deep</th><th></th></tr></thead>
-                <tbody>
-                {% for e in enclosures %}
-                    <tr>
-                        <td class="admin-table-primary"><a href="/admin/enclosures/{{ e.id }}">{{ e.name }}</a></td>
-                        <td>{{ ENCLOSURE_TYPE_LABELS[e.enclosure_type] }}</td>
-                        <td>{% if e.room_id %}<a href="/admin/rooms/{{ e.room_id }}">{{ rooms_by_id[e.room_id] }}</a>{% else %}—{% endif %}</td>
-                        <td>{{ "yes" if e.bioactive else "no" }}</td>
-                        <td>{{ e.feeding_interval_days }}d</td>
-                        <td>{{ e.watering_interval_days }}d</td>
-                        <td>{{ e.spot_clean_interval_days }}d</td>
-                        <td>{{ e.deep_clean_interval_days }}d</td>
-                        <td><a href="/admin/enclosures/{{ e.id }}">edit</a></td>
-                    </tr>
-                {% else %}
-                    <tr><td colspan="9" class="empty">No enclosures yet — add one below.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </section>
-
-        <section class="admin-card">
-            <details>
-                <summary>+ Add Enclosure</summary>
-                <form method="post" action="/admin/enclosures" class="admin-form">
-                    <label>Name <input type="text" name="name" required></label>
-                    <label>Enclosure Type
-                        <select name="enclosure_type">
-                            {% for t in ENCLOSURE_TYPES %}
-                            <option value="{{ t }}" {% if t == "basic" %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
-                    <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
-                    <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
-                    <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="7" min="1"></label>
-                    <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="30" min="1"></label>
-                    <button type="submit">Create</button>
-                </form>
-                <p class="empty">Room assignment happens on the Enclosure's own page after it's created.</p>
-            </details>
-        </section>
-
-        <section class="admin-card">
-            <h2>Rooms</h2>
-            <table class="admin-table">
-                <thead><tr><th>Name</th><th>Enclosures</th><th>Light Schedule</th><th></th></tr></thead>
-                <tbody>
-                {% for r in rooms %}
-                    <tr>
-                        <td class="admin-table-primary"><a href="/admin/rooms/{{ r.id }}">{{ r.name }}</a></td>
-                        <td>{{ enclosure_count_by_room.get(r.id, 0) }}</td>
-                        <td>{% if r.light_on_time and r.light_off_time %}{{ r.light_on_time }}&ndash;{{ r.light_off_time }}{% else %}not set{% endif %}</td>
-                        <td><a href="/admin/rooms/{{ r.id }}">edit</a></td>
-                    </tr>
-                {% else %}
-                    <tr><td colspan="4" class="empty">No rooms yet — add one below.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            <details>
-                <summary>+ Add Room</summary>
-                <form method="post" action="/admin/rooms" class="admin-form">
-                    <label>Name <input type="text" name="name" placeholder="e.g. Living Room" required></label>
-                    <button type="submit">Create</button>
-                </form>
-            </details>
+        <section class="admin-card" id="tuya-cloud-credentials">
+            <h2>Tuya Cloud Credentials</h2>
+            {# Powers every Add Plug/Add Plug Group form's "Discover Devices" button (see ADR 0030).
+               Instructions here are self-contained, not a cross-reference to
+               docs/HOWTO_ADD_GOSUND_PLUG.md — that file isn't bundled into the installer (see
+               packaging/husbandrytracker.spec, which only bundles USER_GUIDE.md), so an
+               installer-only user would have no way to open it. #}
+            <p class="empty">Where to get these — a one-time setup, done once no matter how many Tuya
+                plugs you add afterward:</p>
+            <ol class="empty">
+                <li>Go to <a href="https://iot.tuya.com" target="_blank" rel="noopener">iot.tuya.com</a> and create a free account.</li>
+                <li>Create a "Cloud" project there, then link it to your Smart Life (or Tuya Smart) account — this usually means scanning a QR code with your phone, in that app.</li>
+                <li>The project's page shows an <strong>Access ID</strong> and <strong>Access Secret</strong> — paste them in below.</li>
+            </ol>
+            <form method="post" action="/admin/settings/tuya-credentials" class="admin-form">
+                <label>Access ID
+                    <input type="text" name="tuya_access_id" value="{{ settings.tuya_access_id or '' }}" placeholder="from your Tuya IoT Cloud project">
+                </label>
+                <label>Access Secret
+                    <input type="password" name="tuya_access_secret" placeholder="{% if settings.tuya_access_secret %}(already set — leave blank to keep it){% else %}from your Tuya IoT Cloud project{% endif %}">
+                </label>
+                <label>API Region
+                    <select name="tuya_api_region">
+                        {% for region, region_label in [("us", "Americas"), ("eu", "Europe"), ("cn", "China"), ("in", "India")] %}
+                        <option value="{{ region }}" {% if settings.tuya_api_region == region %}selected{% endif %}>{{ region_label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit">Save</button>
+            </form>
+            <p class="empty">Needed only for the Discover Devices button on Add Plug/Add Plug Group, below
+                — see <a href="/guide#a-one-time-account-linking-step-for-a-smart-plug">the full walkthrough</a>
+                if you get stuck. Access Secret is never shown again once saved.</p>
         </section>
 
         <section class="admin-card">
@@ -187,6 +146,10 @@
                 <form method="post" action="/admin/sensors" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
                     <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+                    <div class="discover-device">
+                        <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
+                        <div class="discover-results" style="display:none"></div>
+                    </div>
                     <label>Belongs to
                         <select name="parent_type" onchange="onToggleChange(this, 'enclosure', 'add-sensor-global-enclosure', 'add-sensor-global-room')">
                             <option value="enclosure" selected>Enclosure</option>
@@ -283,6 +246,10 @@
 
                     <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
                     <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
+                    <div class="discover-device">
+                        <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                        <div class="discover-results" style="display:none"></div>
+                    </div>
                     <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
 
                     <p class="empty"><strong>3 relay-controlled outlets</strong> (DPS keys default 1/2/3 — confirm with Probe if unsure):</p>
@@ -324,7 +291,7 @@
         <section class="admin-card">
             <h2>Plugs</h2>
             <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th>Schedule</th><th>Control</th><th></th></tr></thead>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Belongs to</th><th>Schedule</th><th></th></tr></thead>
                 <tbody>
                 {% for p in plugs %}
                     <tr>
@@ -334,57 +301,32 @@
                         <td>{{ p.parent_label }}</td>
                         <td>
                             {% if p.controller_kind == "thermostat" %}
-                            <span class="pill status-unknown">Target: {% if p.target_temp_c is not none %}{{ "%.0f"|format(p.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
+                            <span class="pill status-unknown">Target: {% if p.target_temp_c is not none %}{{ "%.0f"|format(p.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</span>
                             {% elif p.controller_kind == "hydrostat" %}
-                            <span class="pill status-unknown">Target: {% if p.target_humidity_pct is not none %}{{ "%.0f"|format(p.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
+                            <span class="pill status-unknown">Target: {% if p.target_humidity_pct is not none %}{{ "%.0f"|format(p.target_humidity_pct) }}%{% else %}not set{% endif %}</span>
                             {% elif p.always_on %}
                             <span class="pill status-green">Always On</span>
                             {% elif p.tracking_mode == "manual" %}
                                 {% if p.target_on_time and p.target_off_time %}
-                                <span class="pill status-unknown">{{ p.target_on_time }}&ndash;{{ p.target_off_time }}</span>
+                                <span class="pill status-unknown">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
                                 {% else %}
                                 <span class="pill status-unknown">no target schedule set</span>
                                 {% endif %}
-                            {% elif not p.target_on_time and not p.target_off_time and not p.detected_on_time and not p.detected_off_time %}
-                            <span class="pill status-unknown">no schedule data yet</span>
                             {% else %}
-                                {% set on_drift = schedule_drift_status(p.target_on_time, p.detected_on_time, settings.schedule_drift_threshold_minutes) %}
-                                {% set off_drift = schedule_drift_status(p.target_off_time, p.detected_off_time, settings.schedule_drift_threshold_minutes) %}
-                                {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown") %}
-                                <span class="pill status-{{ pill_status }}" title="target/detected — see Edit Plug for a Timer Warning breakdown">
-                                    On <span class="schedule-target">{{ p.target_on_time or "—" }}</span>/{{ p.detected_on_time or "—" }}
-                                    · Off <span class="schedule-target">{{ p.target_off_time or "—" }}</span>/{{ p.detected_off_time or "—" }}
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {# On/off Command control — see CONTEXT.md: Command, Interruption;
-                               ADR 0014. No confirmation dialog by design (see ADR 0014's
-                               Considered Options); note field only appears when the Plug has a
-                               determined setting — that's the only case that's an Interruption. #}
-                            {% if p.last_command %}
-                                {% if p.last_command.status == "confirming" %}
-                                <span class="pill status-unknown">Commanded {{ "ON" if p.last_command.is_on else "OFF" }} {{ p.last_command.requested_at[11:16] }} — confirming…{% if p.last_command.note %} ({{ p.last_command.note }}){% endif %}</span>
-                                {% elif p.last_command.status == "failed" %}
-                                <span class="pill status-red">Command failed — no response{% if p.last_command.note %} ({{ p.last_command.note }}){% endif %}</span>
-                                {% elif p.tracking_mode == "manual" %}
-                                <span class="pill status-unknown">Logged {{ "ON" if p.last_command.is_on else "OFF" }} {{ p.last_command.requested_at[11:16] }}{% if p.last_command.note %} — {{ p.last_command.note }}{% endif %}</span>
+                                {% set on_drift = acknowledged_drift_status(p.target_on_time, p.detected_on_time, p.timer_ack_on_time, settings.schedule_drift_threshold_minutes) %}
+                                {% set off_drift = acknowledged_drift_status(p.target_off_time, p.detected_off_time, p.timer_ack_off_time, settings.schedule_drift_threshold_minutes) %}
+                                {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("yellow" if (on_drift.value == "yellow" or off_drift.value == "yellow") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown")) %}
+                                {% if p.target_on_time and p.target_off_time %}
+                                <span class="pill status-{{ pill_status }}">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
                                 {% else %}
-                                <span class="pill status-green">{{ "ON" if p.last_command.is_on else "OFF" }} (commanded {{ p.last_command.requested_at[11:16] }}){% if p.last_command.note %} — {{ p.last_command.note }}{% endif %}</span>
+                                <span class="pill status-unknown">no target schedule set</span>
                                 {% endif %}
                             {% endif %}
-                            <form method="post" action="/admin/plugs/{{ p.id }}/command" class="admin-form plug-command-form">
-                                <button type="submit" name="is_on" value="true">Turn On</button>
-                                <button type="submit" name="is_on" value="false">Turn Off</button>
-                                {% if p.controller_kind != "none" or p.always_on or (p.target_on_time and p.target_off_time) %}
-                                <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
-                                {% endif %}
-                            </form>
                         </td>
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="empty">No plugs yet — add one below.</td></tr>
+                    <tr><td colspan="6" class="empty">No plugs yet — add one below.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -453,6 +395,10 @@
                         <div id="add-plug-tuya-creds">
                             <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
                             <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                            <div class="discover-device">
+                                <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                                <div class="discover-results" style="display:none"></div>
+                            </div>
                             <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
                         </div>
                         <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>

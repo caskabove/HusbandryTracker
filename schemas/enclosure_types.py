@@ -49,6 +49,22 @@ class TargetRangeMetric:
                                        # Range min–max text — Specific Gravity needs all 3 decimals
                                        # (1.026-style) to distinguish readings a hydrometer actually
                                        # resolves.
+    volatility_column: str = ""       # db/schema.sql column name (on `sensor`) for this metric's
+                                       # Volatility override — see CONTEXT.md: Volatility; ADR 0025
+    default_volatility: str = "fast"  # "fast" or "slow" — used when a Sensor has no override set
+                                       # on volatility_column; see effective_volatility() below
+    axis_pad: float | None = None     # Graphs/Overlay y-axis padding past the Target Range, in this
+                                       # metric's own display units (see ADR 0035, ADR 0036) — None
+                                       # means the flat 2-unit default, which is fine for a metric
+                                       # whose values sit well above 2 (°F, pH, ppm, dKH). Specific
+                                       # Gravity's values sit at ~1.02 — "2 units" of padding there
+                                       # would run the axis from roughly -1 to 3 — so it overrides
+                                       # this to 2 of its own steps instead.
+    period_slot_band: bool = False    # True only for pH (see ADR 0037) — Sparkline/Graphs show it
+                                       # as a daily Morning/Afternoon/Night band (web/queries.py's
+                                       # period_slot_daily_series) instead of a raw/statistically-
+                                       # bucketed line, since pH's day/night swing is itself the
+                                       # signal, not noise to average away.
 
 
 # Ordered for display — core environmental metrics first, then water chemistry roughly in the
@@ -56,49 +72,67 @@ class TargetRangeMetric:
 # low as possible" (min left at 0) — still a real min/max pair for the same shape as every other
 # metric (see db/schema.sql's comment on the sensor table).
 TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
+    # Volatility defaults (see CONTEXT.md: Volatility; ADR 0025) split along the same line the
+    # grill session settled on: an environmental parameter that swings day-to-night stays "fast"
+    # (the dataclass default); a water-chemistry parameter realistically tested about weekly, with
+    # no daily swing worth resolving, is explicitly "slow" below.
     TargetRangeMetric("temperature", "Temperature", "F",
                        "target_temp_min_c", "target_temp_max_c", "temperature_c",
-                       ENCLOSURE_TYPES, converts_f_c=True, decimals=1),
+                       ENCLOSURE_TYPES, converts_f_c=True, decimals=1,
+                       volatility_column="volatility_temperature"),
     TargetRangeMetric("humidity", "Humidity", "%",
                        "target_humidity_min", "target_humidity_max", "humidity_pct",
-                       ("basic", "amphibian"), decimals=1),
+                       ("basic", "amphibian"), decimals=1,
+                       volatility_column="volatility_humidity"),
     # UV Index, not raw irradiance (uW/cm^2) — matches what a consumer meter (e.g. Solarmeter
     # 6.5R) displays directly and the Ferguson-zone target ranges most keepers already think in.
     # Basic + Amphibian only (Amphibian includes aquatic turtles, which do bask under UVB — see
     # CONTEXT.md: Enclosure Type) — never Freshwater/Saltwater, which have no basking area.
     TargetRangeMetric("uvb", "", " UVI",
                        "target_uvb_index_min", "target_uvb_index_max", "uvb_index",
-                       ("basic", "amphibian")),
+                       ("basic", "amphibian"),
+                       volatility_column="volatility_uvb"),
     TargetRangeMetric("ph", "pH", "",
                        "target_ph_min", "target_ph_max", "ph",
-                       ("freshwater", "saltwater", "amphibian")),
+                       ("freshwater", "saltwater", "amphibian"),
+                       step="0.01", decimals=2, period_slot_band=True,
+                       volatility_column="volatility_ph"),
     TargetRangeMetric("ammonia", "Ammonia", "ppm",
                        "target_ammonia_ppm_min", "target_ammonia_ppm_max", "ammonia_ppm",
-                       ("freshwater", "saltwater", "amphibian")),
+                       ("freshwater", "saltwater", "amphibian"),
+                       volatility_column="volatility_ammonia", default_volatility="slow"),
     TargetRangeMetric("nitrite", "Nitrite", "ppm",
                        "target_nitrite_ppm_min", "target_nitrite_ppm_max", "nitrite_ppm",
-                       ("freshwater", "saltwater", "amphibian")),
-    TargetRangeMetric("nitrate", "Nitrate", "ppm",
+                       ("freshwater", "saltwater", "amphibian"),
+                       volatility_column="volatility_nitrite", default_volatility="slow"),
+    TargetRangeMetric("nitrate", "NO₃", "ppm",
                        "target_nitrate_ppm_min", "target_nitrate_ppm_max", "nitrate_ppm",
-                       ("freshwater", "saltwater", "amphibian")),
+                       ("freshwater", "saltwater", "amphibian"),
+                       volatility_column="volatility_nitrate", default_volatility="slow"),
     TargetRangeMetric("specific_gravity", "SG", "",
                        "target_specific_gravity_min", "target_specific_gravity_max", "specific_gravity",
-                       ("saltwater",), step="0.001", decimals=3),
+                       ("saltwater",), step="0.001", decimals=3, axis_pad=0.002,
+                       volatility_column="volatility_specific_gravity", default_volatility="slow"),
     TargetRangeMetric("salinity", "Salinity", "ppm",
                        "target_salinity_ppm_min", "target_salinity_ppm_max", "salinity_ppm",
-                       ("saltwater",)),
+                       ("saltwater",),
+                       volatility_column="volatility_salinity", default_volatility="slow"),
     TargetRangeMetric("alkalinity", "Alkalinity", "dKH",
                        "target_alkalinity_dkh_min", "target_alkalinity_dkh_max", "alkalinity_dkh",
-                       ("saltwater",)),
-    TargetRangeMetric("calcium", "Calcium", "ppm",
+                       ("saltwater",),
+                       volatility_column="volatility_alkalinity"),
+    TargetRangeMetric("calcium", "Ca", "ppm",
                        "target_calcium_ppm_min", "target_calcium_ppm_max", "calcium_ppm",
-                       ("saltwater",)),
-    TargetRangeMetric("magnesium", "Magnesium", "ppm",
+                       ("saltwater",),
+                       volatility_column="volatility_calcium", default_volatility="slow"),
+    TargetRangeMetric("magnesium", "Mg", "ppm",
                        "target_magnesium_ppm_min", "target_magnesium_ppm_max", "magnesium_ppm",
-                       ("saltwater",)),
+                       ("saltwater",), step="1", decimals=0,
+                       volatility_column="volatility_magnesium", default_volatility="slow"),
     TargetRangeMetric("phosphate", "Phosphate", "ppm",
                        "target_phosphate_ppm_min", "target_phosphate_ppm_max", "phosphate_ppm",
-                       ("saltwater",)),
+                       ("saltwater",),
+                       volatility_column="volatility_phosphate", default_volatility="slow"),
 )
 
 _METRICS_BY_KEY = {m.key: m for m in TARGET_RANGE_METRICS}
@@ -128,10 +162,25 @@ def target_range_metrics_for(enclosure_type: str) -> tuple[TargetRangeMetric, ..
 
 def is_metric_applicable(enclosure_type: str, metric_key: str) -> bool:
     _check_enclosure_type(enclosure_type)
-    metric = _METRICS_BY_KEY.get(metric_key)
-    if metric is None:
-        raise ValueError(f"Unknown Target Range metric: {metric_key!r}")
+    metric = metric_by_key(metric_key)
     return enclosure_type in metric.enclosure_types
+
+
+def metric_by_key(key: str) -> TargetRangeMetric:
+    """The TargetRangeMetric for a given key (see TARGET_RANGE_METRICS) — e.g. for a caller (like
+    web/view_data_queries.py) that only has the key string, not the whole tuple, in hand."""
+    metric = _METRICS_BY_KEY.get(key)
+    if metric is None:
+        raise ValueError(f"Unknown Target Range metric: {key!r}")
+    return metric
+
+
+def effective_volatility(sensor: dict, metric: TargetRangeMetric) -> str:
+    """"fast" or "slow" for this Sensor+metric (see CONTEXT.md: Volatility; ADR 0025) — the
+    Sensor's own override (volatility_column) if set, else the metric's code-level default.
+    Only meaningful for a Manual Sensor; a caller should gate on tracking_mode itself, same as
+    Target Range's own "only Manual needs one" rule — this function doesn't re-check it."""
+    return sensor.get(metric.volatility_column) or metric.default_volatility
 
 
 def allowed_controller_kinds(enclosure_type: str) -> tuple[str, ...]:

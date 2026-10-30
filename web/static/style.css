@@ -1,14 +1,24 @@
 :root {
-    --bg: #0d1913;
-    --panel-bg: #16261e;
-    --panel-header-bg: #1c3327;
-    --room-bg: #0a140f;      /* a shade darker than --bg itself — the Room "frame" around its Enclosures */
-    --room-header-bg: #14241b; /* darker than --panel-header-bg, so a Room's header reads apart from an Enclosure's */
-    --primary: #2f6b4f;
-    --primary-bright: #4f9d76;
-    --text: #e8f0ec;
-    --text-muted: #93a89c;
-    --border: #24402f;
+    /*--bg: #0d1913;*/
+    /*--panel-bg: #16261e;*/
+    /*--panel-header-bg: #1c3327;*/
+    /*--room-bg: #0a140f;      !* a shade darker than --bg itself — the Room "frame" around its Enclosures *!*/
+    /*--room-header-bg: #14241b; !* darker than --panel-header-bg, so a Room's header reads apart from an Enclosure's *!*/
+    /*--primary: #2f6b4f;*/
+    /*--primary-bright: #4f9d76;*/
+    /*--text: #e8f0ec;*/
+    /*--text-muted: #93a89c;*/
+    /*--border: #24402f;*/
+    --bg: #0d161a;             /* Deep oceanic abyss */
+    --panel-bg: #162226;       /* Dark midnight blue */
+    --panel-header-bg: #1c2d33;/* Deep sea ridge */
+    --room-bg: #0a1114;        /* A shade darker than --bg — Trench dark */
+    --room-header-bg: #142024; /* Darker than panel header, distinct room frame */
+    --primary: #2f566b;        /* Classic ocean blue accent */
+    --primary-bright: #4f829d; /* Cresting wave / bright sea foam */
+    --text: #e8eef0;           /* Soft icy blue-white */
+    --text-muted: #93a2a8;     /* Muted sea spray gray */
+    --border: #243740;
 
     --status-green: #4caf72;
     --status-yellow: #dcb24c;
@@ -34,15 +44,20 @@ body {
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 1rem;
+    /*box-shadow: 2px 8px 20px rgba(0, 0, 0, 0.15);*/
+    padding-top: 50px;    /* Adds space inside the top of the header */
+    padding-bottom: 50px; /* Adds space inside the bottom of the header */
+    /*position: fixed;*/
+    /*top: 0;*/
 }
 .header-logo {
-    height: 44px;
+    height: 88px;
     width: auto;
     display: block;
 }
 .page-header h1 {
     margin: 0;
-    font-size: 1.4rem;
+    font-size: 2.4rem;
     letter-spacing: 0.02em;
     text-align: center;
 }
@@ -60,6 +75,7 @@ body {
     opacity: 0.85;
 }
 .page-header nav a:hover { opacity: 1; text-decoration: underline; }
+.page-header nav a[aria-current="page"] { opacity: 1; font-weight: 700; }
 
 .admin-main {
     max-width: 900px;
@@ -101,6 +117,17 @@ body {
     letter-spacing: 0.04em;
 }
 .admin-table a { color: var(--primary-bright); }
+/* Enclosure page: the Plugs and Schedules tables share these column widths so their columns line
+   up when stacked in the same card column. table-layout: fixed makes the widths hold regardless of
+   each table's content. */
+.admin-table-aligned { table-layout: fixed; }
+.admin-table-aligned .col-label { width: 17%; }
+.admin-table-aligned .col-purpose { width: 13%; }
+.admin-table-aligned .col-tracking { width: 10%; }
+.admin-table-aligned .col-status { width: 14%; }
+.admin-table-aligned .col-schedule { width: 22%; }
+.admin-table-aligned .col-dashboard { width: 13%; }
+.admin-table-aligned .col-edit { width: 11%; }
 .admin-table-primary {
     font-weight: 700;
     font-size: 1.05em;
@@ -162,8 +189,12 @@ body {
     height: fit-content;
 }
 .admin-form button:hover { background: var(--primary-bright); color: #0d1913; }
+.discover-device { display: flex; flex-direction: column; gap: 0.4rem; }
+.discover-results { display: flex; flex-direction: column; gap: 0.3rem; max-width: 320px; }
+.discover-results button { font-size: 0.8rem; text-align: left; }
 
 .danger-form { margin-top: 0.75rem; }
+.animal-log-form + .animal-log-form { margin-top: 0.75rem; }
 button.danger {
     background: var(--status-red);
     border-color: var(--status-red);
@@ -241,6 +272,35 @@ button.danger {
     color: var(--text-muted);
 }
 
+/* Help (see CONTEXT.md: Help; ADR 0039) — a per-page reference distinct from the Guide, reusing
+   .guide-main/.guide-content's "prose box" shell. .help-content only adds what's specific to it:
+   the sample screenshot and the index's topic list. An image that hasn't been dropped in yet
+   (web/static/images/help/{slug}.png) just shows its alt text in that same box — no broken-image
+   styling needed. */
+.help-content figure.help-screenshot { margin: 0 0 1.2em; }
+.help-content .help-screenshot img {
+    max-width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: block;
+}
+.help-content .help-screenshot figcaption {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 0.4em;
+}
+.help-topic-list { list-style: none; padding: 0; margin: 0; }
+.help-topic-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+}
+.help-topic-item:last-child { border-bottom: none; }
+.help-topic-link { color: var(--primary-bright); font-size: 1rem; }
+.help-topic-summary { color: var(--text-muted); font-size: 0.85rem; }
+
 .dashboard-main {
     padding: 1.5rem 1.5rem 0.5rem;
 }
@@ -292,12 +352,14 @@ button.danger {
     justify-content: space-between;
     gap: 0.75rem;
 }
+/* Wraps the "edit this Room" link and room-summary as siblings (see dashboard.html's comment on
+   this, next to ADR 0024) — takes over the flex:1 role .room-header-link used to carry alone, back
+   when it wrapped room-summary too. */
+.room-header-main { flex: 1; min-width: 0; }
 .room-header-link {
     display: block;
     color: inherit;
     text-decoration: none;
-    flex: 1;
-    min-width: 0;
 }
 .room-header-link:hover { opacity: 0.85; }
 .room-header h2 {
@@ -312,7 +374,11 @@ button.danger {
     font-size: 0.85rem;
     color: var(--text-muted);
 }
-.room-ambient-item { display: flex; align-items: center; gap: 0.3rem; }
+/* Stacks the label/pill row above the as-of line and its Sparkline(s) — see CONTEXT.md: Sparkline;
+   ADR 0023 — rather than the single inline row this used to be, since the chart needs its own
+   line now. Still one wrapping item within .room-summary's flex row. */
+.room-ambient-item { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+.room-ambient-pill-row { display: flex; align-items: center; gap: 0.3rem; }
 
 /* Groups the Room header's Refresh button with a Log Reading control per Manual Sensor (see
    dashboard.html) — wrapping them lets .room-header's own justify-content: space-between treat
@@ -439,6 +505,7 @@ button.danger {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    cursor: pointer;
 }
 .collapsible-section-header .collapse-toggle { padding: 0 0.3rem 0 0; }
 .collapsible-section.collapsed .collapse-toggle { transform: rotate(-90deg); }
@@ -516,6 +583,7 @@ a.pill:hover { opacity: 0.85; }
    actually-observed half reads as the primary value at a glance. */
 .schedule-target { opacity: 0.7; }
 .status-red-text { color: var(--status-red); font-weight: 600; }
+.status-yellow-text { color: var(--status-yellow); font-weight: 600; }
 
 /* Plug on/off control — see CONTEXT.md: Command; ADR 0014. Reuses .admin-form's input/button
    styling (added alongside it on the same <form>) but lays out compactly/inline instead of
@@ -530,6 +598,75 @@ a.pill:hover { opacity: 0.85; }
 .plug-command-form input[type="text"] {
     width: 11rem;
 }
+
+/* Care Setup Prompt (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) — a small modal,
+   same shape as .graph-modal, offering "Start from Today" (one click) or "Set your own" (expands
+   the unlogged kinds' own .care-advanced dropdowns below, see app.js's useOwnCareDates()). */
+.care-prompt-modal {
+    width: min(92vw, 440px);
+    padding: 1.1rem 1.3rem;
+    background: var(--panel-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.care-prompt-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+.care-prompt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.4rem;
+}
+.care-prompt-header h3 { margin: 0; font-size: 1rem; }
+.care-prompt-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+}
+.care-prompt-close:hover { color: var(--text); }
+.care-prompt-actions { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
+.care-prompt-actions button {
+    background: var(--primary);
+    color: var(--text);
+    border: 1px solid var(--primary-bright);
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.care-prompt-actions button:hover { background: var(--primary-bright); color: #0d1913; }
+.care-prompt-actions form { margin: 0; }
+
+/* Set your own's shared instruction (see CONTEXT.md: Care Setup Prompt) — a quiet one-line callout
+   above the Care rows, shown once useOwnCareDates() expands the unlogged kinds' dropdowns, OK'd
+   away independently of them via dismissCareAdvancedHint(). */
+.care-advanced-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    margin-bottom: 0.6rem;
+}
+.care-advanced-hint p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
+.care-advanced-hint button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+    flex-shrink: 0;
+}
+.care-advanced-hint button:hover { border-color: var(--primary-bright); }
 
 .care-row { justify-content: space-between; }
 .spot-feed-picker { font-size: 0.8rem; }
@@ -609,6 +746,24 @@ a.pill:hover { opacity: 0.85; }
 
 .empty { color: var(--text-muted); font-style: italic; font-size: 0.85rem; }
 
+/* Setup Wizard (see CONTEXT.md: Setup Wizard; ADR 0031) — a plain intro paragraph above each
+   step's form, and a muted, low-emphasis "skip this" link that never competes visually with the
+   step's own primary .button-link action. */
+.setup-intro { color: var(--text-muted); max-width: 640px; }
+a.setup-skip-link { color: var(--text-muted); text-decoration: underline; font-size: 0.85rem; }
+a.setup-skip-link:hover { color: var(--text); }
+
+/* A step's "Continue"/"I'm done" link sits right below its own Add form and uses the same
+   .button-link styling as the form's submit button — easy to mistake one for the other, which is
+   exactly how a filled-in Plug gets silently lost (see onSetupDoneClick in app.js for the warning
+   this pairs with). Extra top margin plus a divider line puts real distance between "save this" and
+   "leave this step" so they don't read as one group of actions. */
+.setup-done {
+    margin-top: 2rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
 .error-banner {
     grid-column: 1 / -1;
     background: var(--status-red);
@@ -617,3 +772,164 @@ a.pill:hover { opacity: 0.85; }
     border-radius: 8px;
     font-weight: 600;
 }
+
+/* View Data (see CONTEXT.md: View Data; ADR 0021) — a day-columned grid, so its own table needs
+   horizontal scroll and a sticky first (row-label) column instead of the plain .admin-table's
+   full-width layout. */
+a.button-link {
+    display: inline-block;
+    background: var(--primary);
+    color: var(--text);
+    border: 1px solid var(--primary-bright);
+    border-radius: 6px;
+    padding: 0.4rem 0.9rem;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+a.button-link:hover { background: var(--primary-bright); color: #0d1913; }
+span.button-link.disabled {
+    display: inline-block;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+}
+.view-data-range-form { align-items: center; }
+.view-data-window { color: var(--text-muted); font-size: 0.85rem; }
+
+/* View Data (see CONTEXT.md: View Data; ADR 0027): the index is just a list of row titles per
+   section; clicking one opens its own detail page with the real, editable entry list below. */
+.view-data-row-list { list-style: none; padding: 0; margin: 0; }
+.view-data-row-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+}
+.view-data-row-item:last-child { border-bottom: none; }
+.view-data-row-link { color: var(--primary-bright); font-size: 0.95rem; }
+.view-data-entry-list { list-style: none; padding: 0; margin: 0; }
+.view-data-entry { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.view-data-entry:last-child { border-bottom: none; }
+.view-data-edit summary {
+    cursor: pointer;
+    color: var(--primary-bright);
+    list-style: none;
+}
+.view-data-edit summary::-webkit-details-marker { display: none; }
+.view-data-edit[open] summary { margin-bottom: 0.3rem; }
+.view-data-edit .log-form { margin-left: 0; }
+.view-data-edit .log-form input[type="number"], .view-data-edit .log-form input[type="text"] { width: 5rem; }
+
+/* Graphs (see CONTEXT.md: Graphs, Overlay; ADR 0022) — one chart per row, grouped the same way
+   View Data groups its table rows, plus an Overlay picker/chart reusing the same card shell. */
+.help-text { color: var(--text-muted); font-size: 0.85rem; margin: 0.2rem 0 0.8rem; }
+.graphs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    gap: 1rem;
+}
+.graph-card h3 { font-size: 0.95rem; margin: 0 0 0.4rem; }
+/* Highlights whichever card a Sparkline's click-through (ADR 0024) landed on — the anchor jump
+   alone is easy to miss on a page with many rows. */
+.graph-card:target { outline: 2px solid var(--primary-bright); border-radius: 8px; }
+.graph-card-wrap { position: relative; height: 14rem; }
+.graph-card-wrap-overlay { height: 20rem; }
+.graph-canvas { width: 100% !important; height: 100% !important; }
+
+/* Enlarged chart view (see CONTEXT.md: Graphs) — a small per-card button opens a shared modal
+   with the same chart rebuilt at a much larger size. */
+.graph-expand-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    line-height: 1;
+    padding: 0.15rem 0.4rem;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+}
+.graph-expand-btn:hover { color: var(--text); border-color: var(--primary-bright); }
+.graph-modal {
+    width: min(92vw, 1100px);
+    height: min(88vh, 720px);
+    padding: 1rem 1.2rem;
+    background: var(--panel-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.graph-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+.graph-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.6rem;
+}
+.graph-modal-header h3 { margin: 0; font-size: 1rem; }
+.graph-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+}
+.graph-modal-close:hover { color: var(--text); }
+.graph-modal-chart-wrap { position: relative; height: calc(100% - 2.4rem); }
+.overlay-picker { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; }
+.overlay-picker fieldset {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+}
+.overlay-picker legend { font-size: 0.8rem; color: var(--text-muted); padding: 0 0.3rem; }
+.overlay-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    padding: 0.15rem 0;
+    white-space: nowrap;
+}
+
+/* Sparkline (see CONTEXT.md: Sparkline; ADR 0023, ADR 0024) — a compact preview chart under a
+   Reading's "as of" line, wherever one already appears. .sparkline-group wraps one canvas per
+   metric a Sensor tracks, stacked vertically (a multi-metric Sensor like temp + humidity still
+   gets one chart per metric, just no longer side by side — each chart is wide enough to carry its
+   own axis labels now, from ADR 0024). .sparkline-group-row additionally spans the full width of
+   .reading-row-grid (dashboard.html's reading_row macro), since that grid otherwise only has the 3
+   explicit columns the pill/as-of row already fills. */
+.sparkline-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.3rem; }
+.sparkline-group-row { grid-column: 1 / -1; }
+/* .sparkline-chart wraps one canvas plus its own Week/Month toggle (ADR 0032) — each metric's
+   chart picks its window independently, same as it's always drawn independently. */
+.sparkline-chart { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+/* The whole chart is a real link to its full Graphs chart (ADR 0024) — block so the canvas sizes
+   normally inside it, with a quiet hover affordance since nothing else here signals "clickable". */
+.sparkline-link { display: inline-block; border-radius: 6px; transition: background-color 0.15s; }
+.sparkline-link:hover { background-color: var(--border); }
+canvas.sparkline { display: block; }
+
+/* Sparkline's Week/Month window toggle (ADR 0032) — both windows' data are already embedded on
+   the canvas, so clicking one of these just redraws it client-side (graphs.js's
+   setSparklineRange), no request. Sits outside .sparkline-link so a click never also triggers the
+   chart's own click-through to Graphs. */
+.sparkline-range-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.sparkline-range-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    line-height: 1;
+    padding: 0.15rem 0.5rem;
+    cursor: pointer;
+}
+.sparkline-range-btn + .sparkline-range-btn { border-left: 1px solid var(--border); }
+.sparkline-range-btn:hover { color: var(--text); }
+.sparkline-range-btn.active { background: var(--primary); color: var(--text); }

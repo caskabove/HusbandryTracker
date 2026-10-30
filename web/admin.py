@@ -6,24 +6,30 @@ Celsius (the Govee sensors' native unit — see plugins/govee_ble/protocol.py).
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app_paths import APP_ROOT
 from schemas import enclosure_types as et
 from web import admin_queries as q
-from web.govee_refresh import refresh_sensors
+from web import graphs_queries as gq
+from web import view_data_queries as vd
+from web.govee_refresh import discover_govee, refresh_sensors
 from web.plug_probe import probe_plug
-from web.queries import CARE_EVENT_KINDS, log_care_event, log_reading
-from web.status import care_interval_status, schedule_drift_status, target_range_status
+from web.tuya_discover import discover_tuya
+from web.queries import (
+    ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, PERIOD_SLOT_HHMM, log_care_event, log_reading,
+)
+from web.status import acknowledged_drift_status, care_interval_status, schedule_drift_status, target_range_status
 
 _WEB_DIR = APP_ROOT / "web"
 router = APIRouter(prefix="/admin")
@@ -31,6 +37,7 @@ templates = Jinja2Templates(directory=_WEB_DIR / "templates")
 templates.env.globals["care_interval_status"] = care_interval_status
 templates.env.globals["target_range_status"] = target_range_status
 templates.env.globals["schedule_drift_status"] = schedule_drift_status
+templates.env.globals["acknowledged_drift_status"] = acknowledged_drift_status
 templates.env.globals["ENCLOSURE_TYPES"] = et.ENCLOSURE_TYPES
 templates.env.globals["ENCLOSURE_TYPE_LABELS"] = et.ENCLOSURE_TYPE_LABELS
 templates.env.globals["target_range_metrics_for"] = et.target_range_metrics_for
@@ -42,6 +49,21 @@ templates.env.globals["TARGET_RANGE_METRICS"] = et.TARGET_RANGE_METRICS
 templates.env.globals["asset_version"] = str(int(
     max(f.stat().st_mtime for f in (_WEB_DIR / "static").iterdir() if f.is_file())
 ))
+# See web/main.py's identical filter + comment — Graphs (graphs.html) needs this too.
+templates.env.filters["tojson"] = json.dumps
+
+
+def _add_retry(request: Request) -> dict | None:
+    """A just-failed Add's attempted date/period_slot/time, carried back via the error redirect's
+    query params (see CONTEXT.md: View Data, Period Slot; ADR 0034) — None on a plain page visit."""
+    date = request.query_params.get("date")
+    if not date:
+        return None
+    return {
+        "date": date,
+        "period_slot": request.query_params.get("period_slot", ""),
+        "time": request.query_params.get("time", ""),
+    }
 
 
 def _f_to_c(fahrenheit: float | None) -> float | None:
@@ -53,6 +75,31 @@ def _c_to_f(celsius: float | None) -> float | None:
 
 
 templates.env.filters["c_to_f"] = _c_to_f
+
+
+def _clock_12h(hhmm: str | None) -> str | None:
+    """Shows a stored 24-hour "HH:MM" time as "8:00 AM" for the Schedules pills. Anything that isn't
+    a parseable time (None, empty, a stray value) is returned unchanged so the template can still
+    fall back to its "—" placeholder."""
+    try:
+        when = datetime.strptime(hhmm, "%H:%M")
+    except (TypeError, ValueError):
+        return hhmm
+    return f"{when.hour % 12 or 12}:{when.minute:02d} {'AM' if when.hour < 12 else 'PM'}"
+
+
+templates.env.filters["clock_12h"] = _clock_12h
+
+
+def _utc_stamp_as_clock(recorded_at: str | None) -> str | None:
+    """A UTC "YYYY-MM-DD HH:MM:SS" stamp (command requests, plug readings — see plugins/common.py and
+    web/outbox.py) shown as the local 12-hour time, e.g. "6:05 PM"."""
+    if not recorded_at:
+        return recorded_at
+    return _clock_12h(q.utc_clock_to_local(recorded_at))
+
+
+templates.env.filters["utc_clock"] = _utc_stamp_as_clock
 
 
 def _sensor_target_ranges(
@@ -85,21 +132,41 @@ def _sensor_target_ranges(
     }
 
 
+def _sensor_volatility(
+    volatility_temperature: str, volatility_humidity: str, volatility_uvb: str, volatility_ph: str,
+    volatility_ammonia: str, volatility_nitrite: str, volatility_nitrate: str,
+    volatility_specific_gravity: str, volatility_salinity: str, volatility_alkalinity: str,
+    volatility_calcium: str, volatility_magnesium: str, volatility_phosphate: str,
+) -> q.Volatility:
+    """Assembles the schemas.enclosure_types-shaped Volatility dict (see CONTEXT.md: Volatility;
+    ADR 0025) from the Sensor form's per-metric <select> fields — "" (Default), "fast", or "slow".
+    Same one-param-per-metric shape as _sensor_target_ranges() above, for the same reason."""
+    return {
+        "temperature": volatility_temperature or None,
+        "humidity": volatility_humidity or None,
+        "uvb": volatility_uvb or None,
+        "ph": volatility_ph or None,
+        "ammonia": volatility_ammonia or None,
+        "nitrite": volatility_nitrite or None,
+        "nitrate": volatility_nitrate or None,
+        "specific_gravity": volatility_specific_gravity or None,
+        "salinity": volatility_salinity or None,
+        "alkalinity": volatility_alkalinity or None,
+        "calcium": volatility_calcium or None,
+        "magnesium": volatility_magnesium or None,
+        "phosphate": volatility_phosphate or None,
+    }
+
+
 @router.get("/")
 def admin_index(request: Request):
     enclosures = q.list_enclosures()
     rooms = q.list_rooms()
-    enclosure_count_by_room: dict[int, int] = {}
-    for e in enclosures:
-        if e["room_id"]:
-            enclosure_count_by_room[e["room_id"]] = enclosure_count_by_room.get(e["room_id"], 0) + 1
     return templates.TemplateResponse(
         request, "admin_index.html",
         {
             "enclosures": enclosures, "rooms": rooms, "sensors": q.list_sensors(), "plugs": q.list_plugs(),
             "plug_groups": q.list_plug_groups(),
-            "rooms_by_id": {r["id"]: r["name"] for r in rooms},
-            "enclosure_count_by_room": enclosure_count_by_room,
             "settings": q.get_settings(), "error": request.query_params.get("error"),
         }
     )
@@ -121,6 +188,43 @@ def admin_update_settings(
     return RedirectResponse(url="/admin/", status_code=303)
 
 
+@router.post("/settings/tuya-credentials")
+def admin_update_tuya_credentials(
+    tuya_access_id: str = Form(""),
+    tuya_access_secret: str = Form(""),
+    tuya_api_region: str = Form("us"),
+):
+    """See ADR 0030. A separate route/row-subset from admin_update_settings on purpose — see
+    update_tuya_credentials()'s own docstring for why a blank Access Secret here means "keep the
+    existing one," not "clear it"."""
+    try:
+        q.update_tuya_credentials(tuya_access_id or None, tuya_access_secret or None, tuya_api_region)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.get("/enclosures")
+def admin_enclosures(request: Request):
+    """The Rooms and Enclosures page — the Enclosures card that used to sit on the Control Panel
+    (see admin_index) plus the Rooms card that used to sit there too (see ADR 0033). The same
+    /admin/enclosures path also takes the POST that creates an Enclosure."""
+    enclosures = q.list_enclosures()
+    rooms = q.list_rooms()
+    enclosure_count_by_room: dict[int, int] = {}
+    for e in enclosures:
+        if e["room_id"]:
+            enclosure_count_by_room[e["room_id"]] = enclosure_count_by_room.get(e["room_id"], 0) + 1
+    return templates.TemplateResponse(
+        request, "admin_enclosures.html",
+        {
+            "enclosures": enclosures, "rooms": rooms, "rooms_by_id": {r["id"]: r["name"] for r in rooms},
+            "enclosure_count_by_room": enclosure_count_by_room,
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
 @router.post("/enclosures")
 def admin_create_enclosure(
     name: str = Form(...),
@@ -138,15 +242,18 @@ def admin_create_enclosure(
         enclosure_id = q.create_enclosure(name, enclosure_type, bioactive, feeding_interval,
                                            watering_interval, spot_clean_interval, deep_clean_interval)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/enclosures?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
 @router.get("/enclosures/{enclosure_id}")
 def admin_enclosure_detail(request: Request, enclosure_id: int):
+    # Care Setup Prompt bookkeeping (see CONTEXT.md, ADR 0040) — must run before get_enclosure()
+    # below so a freshly-bumped nag count (or a freshly-cleared one) shows in this same render.
+    q.record_care_nags(enclosure_id)
     enclosure = q.get_enclosure(enclosure_id)
     if enclosure is None:
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
     # Fallback Sensor dropdown is scoped to the Enclosure's *current* Room's Sensors, and only
     # matters when it has none of its own — see CONTEXT.md: Fallback Sensor.
     room_sensors = []
@@ -162,6 +269,18 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
             "error": request.query_params.get("error"),
         }
     )
+
+
+@router.post("/enclosures/{enclosure_id}/care-events/start-from-today")
+def admin_start_care_events_from_today(enclosure_id: int):
+    """Care Setup Prompt's "Start from Today" button (see CONTEXT.md, ADR 0040) — logs today for
+    every currently-unlogged Care kind in one request; a kind with existing history is untouched.
+
+    Registered *before* the generic .../care-events/{kind} route below — FastAPI matches path
+    routes in registration order, so if that one came first it would swallow this path too,
+    capturing kind="start-from-today" and failing log_care_event's CARE_EVENT_KINDS check."""
+    q.start_care_events_from_today(enclosure_id)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#care-section", status_code=303)
 
 
 @router.post("/enclosures/{enclosure_id}/care-events/{kind}")
@@ -215,7 +334,7 @@ def admin_update_enclosure(
 @router.post("/enclosures/{enclosure_id}/delete")
 def admin_delete_enclosure(enclosure_id: int):
     q.delete_enclosure(enclosure_id)
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/enclosures", status_code=303)
 
 
 @router.post("/enclosures/{enclosure_id}/animals")
@@ -278,7 +397,13 @@ def admin_edit_animal(request: Request, animal_id: int):
     if animal is None:
         return RedirectResponse(url="/admin", status_code=303)
     return templates.TemplateResponse(
-        request, "admin_animal_edit.html", {"animal": animal, "enclosures": q.list_enclosures()}
+        request, "admin_animal_edit.html",
+        {
+            "animal": animal, "enclosures": q.list_enclosures(),
+            "logs": q.list_animal_logs(animal_id),
+            "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "error": request.query_params.get("error"),
+        }
     )
 
 
@@ -293,6 +418,57 @@ def admin_update_animal(
 ):
     q.update_animal(animal_id, enclosure_id, name, common, scientific, dob)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-weight")
+def admin_log_animal_weight(animal_id: int, weight_g: float = Form(...), occurred_at: str = Form("")):
+    try:
+        q.log_animal_weight(animal_id, weight_g, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-length")
+def admin_log_animal_length(animal_id: int, length_cm: float = Form(...), occurred_at: str = Form("")):
+    try:
+        q.log_animal_length(animal_id, length_cm, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-count")
+def admin_log_animal_count(animal_id: int, count: int = Form(...), occurred_at: str = Form("")):
+    try:
+        q.log_animal_count(animal_id, count, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-condition")
+def admin_log_animal_condition(
+    animal_id: int, condition: str = Form(...), note: str = Form(""), occurred_at: str = Form(""),
+):
+    try:
+        q.log_animal_condition(animal_id, condition, note, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/sensors/discover")
+async def admin_discover_govee_sensors():
+    """Backs every Add Sensor form's "Discover Devices" button (see ADR 0029) — a plain JSON
+    endpoint, unlike every other admin route, because the result fills in one field of a form the
+    user may already be partway through filling out; a redirect-and-redisplay round trip (this
+    app's usual pattern) would discard that. Never touches the database — see discover_govee()."""
+    try:
+        devices = await discover_govee()
+    except Exception as exc:  # bleak can raise a range of OS/adapter errors if Bluetooth is off
+        return JSONResponse({"error": f"Discovery failed: {exc}"}, status_code=502)
+    return JSONResponse({"devices": devices})
 
 
 @router.post("/sensors")
@@ -354,6 +530,19 @@ def admin_create_sensor(
     magnesium_max: float | None = Form(None),
     phosphate_min: float | None = Form(None),
     phosphate_max: float | None = Form(None),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
+    volatility_uvb: str = Form(""),
+    volatility_ph: str = Form(""),
+    volatility_ammonia: str = Form(""),
+    volatility_nitrite: str = Form(""),
+    volatility_nitrate: str = Form(""),
+    volatility_specific_gravity: str = Form(""),
+    volatility_salinity: str = Form(""),
+    volatility_alkalinity: str = Form(""),
+    volatility_calcium: str = Form(""),
+    volatility_magnesium: str = Form(""),
+    volatility_phosphate: str = Form(""),
 ):
     target_ranges = _sensor_target_ranges(
         temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max, ammonia_min, ammonia_max,
@@ -362,8 +551,14 @@ def admin_create_sensor(
         alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
         phosphate_min, phosphate_max,
     )
+    volatility = _sensor_volatility(
+        volatility_temperature, volatility_humidity, volatility_uvb, volatility_ph,
+        volatility_ammonia, volatility_nitrite, volatility_nitrate, volatility_specific_gravity,
+        volatility_salinity, volatility_alkalinity, volatility_calcium, volatility_magnesium,
+        volatility_phosphate,
+    )
     try:
-        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None, target_ranges)
+        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None, target_ranges, volatility)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
@@ -511,6 +706,19 @@ def admin_update_sensor(
     phosphate_min: float | None = Form(None),
     phosphate_max: float | None = Form(None),
     auto_update_enabled: bool = Form(False),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
+    volatility_uvb: str = Form(""),
+    volatility_ph: str = Form(""),
+    volatility_ammonia: str = Form(""),
+    volatility_nitrite: str = Form(""),
+    volatility_nitrate: str = Form(""),
+    volatility_specific_gravity: str = Form(""),
+    volatility_salinity: str = Form(""),
+    volatility_alkalinity: str = Form(""),
+    volatility_calcium: str = Form(""),
+    volatility_magnesium: str = Form(""),
+    volatility_phosphate: str = Form(""),
 ):
     target_ranges = _sensor_target_ranges(
         temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max, ammonia_min, ammonia_max,
@@ -519,12 +727,40 @@ def admin_update_sensor(
         alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
         phosphate_min, phosphate_max,
     )
+    volatility = _sensor_volatility(
+        volatility_temperature, volatility_humidity, volatility_uvb, volatility_ph,
+        volatility_ammonia, volatility_nitrite, volatility_nitrate, volatility_specific_gravity,
+        volatility_salinity, volatility_alkalinity, volatility_calcium, volatility_magnesium,
+        volatility_phosphate,
+    )
     try:
         q.update_sensor(sensor_id, enclosure_id, label, tracking_mode, mac_address or None, target_ranges,
-                         auto_update_enabled)
+                         auto_update_enabled, volatility)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/plugs/discover-tuya")
+async def admin_discover_tuya_plugs():
+    """Backs every Add Plug/Add Plug Group form's "Discover Devices" button (see ADR 0030) — same
+    JSON-endpoint exception to the redirect-and-redisplay convention as /sensors/discover (ADR
+    0029). Needs Tuya Cloud Credentials saved first; never touches the database — see
+    discover_tuya()."""
+    settings = q.get_settings()
+    access_id = settings.get("tuya_access_id")
+    access_secret = settings.get("tuya_access_secret")
+    if not access_id or not access_secret:
+        return JSONResponse(
+            {"error": 'Save your <a href="/admin#tuya-cloud-credentials">Tuya Cloud Credentials</a> first '
+                      '(Access ID and Access Secret, on Plugs and Sensors, under Settings).'},
+            status_code=400,
+        )
+    try:
+        devices = await discover_tuya(access_id, access_secret, settings.get("tuya_api_region") or "us")
+    except Exception as exc:  # Tuya's cloud can reject credentials or be unreachable
+        return JSONResponse({"error": f"Discovery failed: {exc}"}, status_code=502)
+    return JSONResponse({"devices": devices})
 
 
 @router.post("/plugs")
@@ -561,6 +797,37 @@ def admin_create_plug(
     return RedirectResponse(url="/admin/", status_code=303)
 
 
+@router.post("/enclosures/{enclosure_id}/plugs")
+def admin_create_enclosure_plug(
+    enclosure_id: int,
+    label: str = Form(...),
+    purpose: str = Form(...),
+    tracking_mode: str = Form("smart"),
+    tuya_device_id: str = Form(""),
+    tuya_local_key: str = Form(""),
+    tuya_ip_address: str = Form(""),
+    switch_dps_key: str = Form("1"),
+    target_on_time: str = Form(""),
+    target_off_time: str = Form(""),
+    always_on: bool = Form(False),
+    controller_kind: str = Form("none"),
+    target_temp_f: float | None = Form(None),
+    target_humidity_pct: float | None = Form(None),
+):
+    """Add Plug, scoped to this Enclosure (see admin_enclosure.html's own Plugs section) — same
+    shape as admin_create_sensor() just above: no "Belongs to" picker and no Plug Group option
+    (both only make sense from the main Admin page's unscoped form), enclosure_ids fixed to just
+    this one Enclosure."""
+    try:
+        q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
+                       tuya_ip_address, switch_dps_key, target_on_time or None, target_off_time or None,
+                       None, [enclosure_id],
+                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
 @router.post("/plugs/{plug_id}/delete")
 def admin_delete_plug(plug_id: int):
     q.delete_plug(plug_id)
@@ -576,6 +843,15 @@ def admin_set_plug_group(plug_id: int, plug_group_id: str = Form("")):
         q.set_plug_group(plug_id, int(plug_group_id) if plug_group_id else None)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit", status_code=303)
+
+
+@router.post("/plugs/{plug_id}/clear-timer-warning")
+def admin_clear_timer_warning(plug_id: int):
+    """Called from the Timer Warning's "Clear warning" button on the Plug's Edit page (see
+    CONTEXT.md: Timer Warning). Sent as a formaction of that page's own form, so only this route's
+    side effect runs — the rest of the form's fields are ignored here."""
+    q.clear_timer_warning(plug_id)
     return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit", status_code=303)
 
 
@@ -601,15 +877,18 @@ def admin_send_plug_command(
     plug_id: int,
     is_on: bool = Form(...),
     note: str = Form(""),
+    return_to: str = Form(""),
 ):
-    """The on/off control on a Plug's pill — see CONTEXT.md: Command, Interruption; ADR 0014. No
+    """The on/off control on a Plug's edit page — see CONTEXT.md: Command, Interruption; ADR 0014. No
     confirmation dialog by design (see ADR 0014's Considered Options) — the driving use case is
-    reacting quickly to an Alert, which a confirm dialog would work directly against."""
+    reacting quickly to an Alert, which a confirm dialog would work directly against. return_to is
+    a fixed choice rather than a URL, so this route can't be used to redirect anywhere else."""
+    back = f"/admin/plugs/{plug_id}/edit" if return_to == "plug" else "/admin/"
     try:
         q.send_plug_command(plug_id, is_on, note or None)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/", status_code=303)
+        return RedirectResponse(url=f"{back}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=back, status_code=303)
 
 
 def _render_plug_edit(request: Request, plug_id: int, error: str | None = None,
@@ -782,7 +1061,7 @@ def admin_create_room(name: str = Form(...)):
 def admin_room_detail(request: Request, room_id: int):
     room = q.get_room(room_id)
     if room is None:
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
     return templates.TemplateResponse(
         request, "admin_room.html",
         {
@@ -811,7 +1090,7 @@ def admin_update_room(
 @router.post("/rooms/{room_id}/delete")
 def admin_delete_room(room_id: int):
     q.delete_room(room_id)
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/enclosures", status_code=303)
 
 
 @router.post("/rooms/{room_id}/sensors")
@@ -824,10 +1103,13 @@ def admin_create_room_sensor(
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
 ):
     try:
         q.create_room_sensor(room_id, label, tracking_mode, mac_address or None,
-                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max)
+                              _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max,
+                              volatility_temperature or None, volatility_humidity or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/rooms/{room_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
@@ -879,11 +1161,442 @@ def admin_update_room_sensor(
     humidity_min: float | None = Form(None),
     humidity_max: float | None = Form(None),
     auto_update_enabled: bool = Form(False),
+    volatility_temperature: str = Form(""),
+    volatility_humidity: str = Form(""),
 ):
     try:
         q.update_room_sensor(sensor_id, room_id, label, tracking_mode, mac_address or None,
                               _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max,
-                              auto_update_enabled)
+                              auto_update_enabled, volatility_temperature or None, volatility_humidity or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/room-sensors/{sensor_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/rooms/{room_id}", status_code=303)
+
+
+def _view_data_window(range: str, end: str) -> dict:
+    """Shared GET-side window/navigation bits for Graphs (see CONTEXT.md: Graphs; ADR 0022) — View
+    Data itself dropped its own Range picker under ADR 0027."""
+    start, end_date, days = vd.compute_window(range, end)
+    today = datetime.now().date()
+    next_end = end_date + timedelta(days=days)
+    return {
+        "dates": vd.date_list(start, end_date),
+        "range": range if range in {key for key, _, _ in vd.RANGE_OPTIONS} else vd.DEFAULT_RANGE_KEY,
+        "end": end_date.isoformat(),
+        "range_options": vd.RANGE_OPTIONS,
+        "prev_end": (start - timedelta(days=1)).isoformat(),
+        "next_end": None if end_date >= today else min(next_end, today).isoformat(),
+    }
+
+
+@router.get("/rooms/{room_id}/data")
+def admin_room_data(request: Request, room_id: int):
+    """View Data index (see CONTEXT.md: View Data; ADR 0027) — a title per row, nothing else;
+    clicking one opens that row's own detail page below."""
+    room = q.get_room(room_id)
+    if room is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    return templates.TemplateResponse(
+        request, "view_data.html",
+        {
+            "owner_label": room["name"],
+            "owner_kind": "room",
+            "back_url": f"/admin/rooms/{room_id}",
+            "sections": vd.build_room_sections(room_id),
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.get("/enclosures/{enclosure_id}/data")
+def admin_enclosure_data(request: Request, enclosure_id: int):
+    """View Data index for an Enclosure — see admin_room_data above (same shape, different row set,
+    same split View Data has always drawn between a Room and an Enclosure)."""
+    enclosure = q.get_enclosure(enclosure_id)
+    if enclosure is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    return templates.TemplateResponse(
+        request, "view_data.html",
+        {
+            "owner_label": enclosure["name"],
+            "owner_kind": "enclosure",
+            "back_url": f"/admin/enclosures/{enclosure_id}",
+            "sections": vd.build_enclosure_sections(enclosure_id),
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.get("/rooms/{room_id}/graphs")
+def admin_room_graphs(request: Request, room_id: int, range: str = "month", end: str = ""):
+    """Graphs (see CONTEXT.md: Graphs, Overlay; ADR 0022) — same rows as View Data, charted instead
+    of tabled. Strictly read-only: no POST route exists here, unlike View Data's cell-edit routes."""
+    room = q.get_room(room_id)
+    if room is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    window = _view_data_window(range, end)
+    dates = window["dates"]
+    sections = gq.build_room_graph_sections(room_id, dates[0], dates[-1], len(dates))
+    selected = request.query_params.getlist("rows")
+    return templates.TemplateResponse(
+        request, "graphs.html",
+        {
+            "owner_label": room["name"],
+            "owner_kind": "room",
+            "back_url": f"/admin/rooms/{room_id}",
+            "sections": sections,
+            "overlay_rows": gq.rows_by_key(sections, selected),
+            "selected_keys": set(selected),
+            "error": request.query_params.get("error"),
+            **window,
+        }
+    )
+
+
+@router.get("/enclosures/{enclosure_id}/graphs")
+def admin_enclosure_graphs(request: Request, enclosure_id: int, range: str = "month", end: str = ""):
+    """Graphs for an Enclosure — see admin_room_graphs above (same shape, different row set, same
+    as View Data's own Room/Enclosure split)."""
+    enclosure = q.get_enclosure(enclosure_id)
+    if enclosure is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    window = _view_data_window(range, end)
+    dates = window["dates"]
+    sections = gq.build_enclosure_graph_sections(enclosure_id, dates[0], dates[-1], len(dates))
+    selected = request.query_params.getlist("rows")
+    return templates.TemplateResponse(
+        request, "graphs.html",
+        {
+            "owner_label": enclosure["name"],
+            "owner_kind": "enclosure",
+            "back_url": f"/admin/enclosures/{enclosure_id}",
+            "sections": sections,
+            "overlay_rows": gq.rows_by_key(sections, selected),
+            "selected_keys": set(selected),
+            "error": request.query_params.get("error"),
+            **window,
+        }
+    )
+
+
+@router.get("/sensors/{sensor_id}/readings/{metric_key}")
+def admin_reading_detail(request: Request, sensor_id: int, metric_key: str):
+    """Every real Reading for one Sensor+metric (see CONTEXT.md: View Data; ADR 0027) — reached by
+    clicking that row's title on the View Data index. Only ever editable for a Manual Sensor; a
+    Smart one's Reading is shown read-only, same split View Data has always drawn."""
+    sensor = q.get_sensor(sensor_id)
+    if sensor is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    try:
+        metric = et.metric_by_key(metric_key)
+    except ValueError:
+        return RedirectResponse(url="/admin", status_code=303)
+    owner_path = (
+        f"/admin/rooms/{sensor['room_id']}/data" if sensor["room_id"]
+        else f"/admin/enclosures/{sensor['enclosure_id']}/data"
+    )
+    entries = vd.list_reading_entries(sensor_id, metric_key)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "reading",
+            "title": f"{sensor['label']} — {metric.label or metric.key.replace('_', ' ').title()}",
+            "editable": sensor["tracking_mode"] == "manual",
+            "entries": entries,
+            "prefill": vd.entry_prefill(entries, retry=_add_retry(request)),
+            "metric": metric,
+            "post_action": f"/admin/sensors/{sensor_id}/readings/{metric_key}/entries",
+            "back_url": owner_path,
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/sensors/{sensor_id}/readings/{metric_key}/entries")
+def admin_reading_entries(
+    sensor_id: int,
+    metric_key: str,
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    period_slot: str = Form("afternoon"),
+    value: str = Form(""),
+):
+    """Add/Edit/Delete one Reading entry (see CONTEXT.md: View Data, Period Slot; ADR 0026, ADR
+    0027) — only ever reachable for a Manual Sensor; add_reading_entry() itself rejects a Smart
+    one."""
+    error = None
+    try:
+        metric = et.metric_by_key(metric_key)
+        if action == "delete":
+            vd.delete_reading_entry(int(entry_id), metric_key)
+        else:
+            try:
+                parsed = float(value) if value.strip() else None
+            except ValueError:
+                raise ValueError(f"{value!r} isn't a valid number.")
+            if parsed is None:
+                raise ValueError("Enter a value.")
+            if metric.converts_f_c:
+                parsed = _f_to_c(parsed)
+            if action == "add":
+                vd.add_reading_entry(sensor_id, metric_key, date, period_slot, parsed)
+            elif action == "update":
+                vd.update_reading_entry(int(entry_id), metric_key, parsed)
+            else:
+                raise ValueError(f"Unknown action: {action!r}")
+    except ValueError as exc:
+        error = str(exc)
+    params = {"error": error} if error else {}
+    if error and action == "add":
+        params.update(date=date, period_slot=period_slot)
+    qs = f"?{urlencode(params)}" if params else ""
+    return RedirectResponse(url=f"/admin/sensors/{sensor_id}/readings/{metric_key}{qs}", status_code=303)
+
+
+@router.get("/enclosures/{enclosure_id}/care-events/{kind}")
+def admin_care_event_detail(request: Request, enclosure_id: int, kind: str):
+    """Every real Care Event of one kind for one Enclosure (see CONTEXT.md: View Data; ADR 0027)."""
+    enclosure = q.get_enclosure(enclosure_id)
+    if enclosure is None or kind not in CARE_EVENT_KINDS:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    entries = vd.list_care_event_entries(enclosure_id, kind)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "care",
+            "title": kind.replace("_", " ").capitalize(),
+            "editable": True,
+            "entries": entries,
+            "prefill": vd.entry_prefill(entries, retry=_add_retry(request), allow_exact=True),
+            "kind": kind,
+            "animals": enclosure["animals"],
+            "post_action": f"/admin/enclosures/{enclosure_id}/care-events/{kind}/entries",
+            "back_url": f"/admin/enclosures/{enclosure_id}/data",
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/enclosures/{enclosure_id}/care-events/{kind}/entries")
+def admin_care_event_entries(
+    enclosure_id: int,
+    kind: str,
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    time: str = Form(""),
+    period_slot: str = Form("afternoon"),
+    note: str = Form(""),
+    animal_id: str = Form(""),
+):
+    """Add/Edit/Delete one Care Event entry (see CONTEXT.md: View Data, Period Slot; ADR 0026, ADR
+    0027) — period_slot "exact" means use the `time` field as-is; any other value (a Period Slot
+    name) overrides whatever's in `time` with that slot's own fixed HH:MM."""
+    error = None
+    try:
+        if action == "delete":
+            vd.delete_care_event_entry(int(entry_id))
+        else:
+            resolved_time = time if period_slot == "exact" else PERIOD_SLOT_HHMM.get(period_slot)
+            aid = int(animal_id) if animal_id else None
+            if action == "add":
+                vd.add_care_event_entry(enclosure_id, kind, date, resolved_time or None, note or None, aid)
+            elif action == "update":
+                vd.update_care_event_entry(int(entry_id), date, resolved_time or None, note or None, aid)
+            else:
+                raise ValueError(f"Unknown action: {action!r}")
+    except ValueError as exc:
+        error = str(exc)
+    params = {"error": error} if error else {}
+    if error and action == "add":
+        params.update(date=date, period_slot=period_slot, time=time)
+    qs = f"?{urlencode(params)}" if params else ""
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}/care-events/{kind}{qs}", status_code=303)
+
+
+@router.get("/animals/{animal_id}/log/metric/{field}")
+def admin_animal_metric_detail(request: Request, animal_id: int, field: str):
+    """Every real Weight/Length/Count entry for one Animal (see CONTEXT.md: Animal Log, View Data;
+    ADR 0027)."""
+    animal = q.get_animal(animal_id)
+    if animal is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    try:
+        label, unit, decimals, step = vd.animal_metric_field_info(field)
+    except ValueError:
+        return RedirectResponse(url=f"/admin/enclosures/{animal['enclosure_id']}/data", status_code=303)
+    entries = vd.list_animal_metric_entries(animal_id, field)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "animal_metric",
+            "title": f"{animal['name']} — {label}",
+            "editable": True,
+            "entries": entries,
+            "prefill": vd.entry_prefill(entries, retry=_add_retry(request)),
+            "unit": unit,
+            "decimals": decimals,
+            "step": step,
+            "post_action": f"/admin/animals/{animal_id}/log/metric/{field}/entries",
+            "back_url": f"/admin/enclosures/{animal['enclosure_id']}/data",
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/animals/{animal_id}/log/metric/{field}/entries")
+def admin_animal_metric_entries(
+    animal_id: int,
+    field: str,
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    period_slot: str = Form("afternoon"),
+    value: str = Form(""),
+):
+    """Add/Edit/Delete one Weight/Length/Count entry (see CONTEXT.md: Animal Log, View Data, Period
+    Slot; ADR 0026, ADR 0027)."""
+    animal = q.get_animal(animal_id)
+    error = None
+    if animal is None:
+        error = "Animal not found."
+    else:
+        try:
+            if action == "delete":
+                vd.delete_animal_metric_entry(int(entry_id), field)
+            else:
+                try:
+                    parsed = (int(value) if field == "count" else float(value)) if value.strip() else None
+                except ValueError:
+                    raise ValueError(f"{value!r} isn't a valid number.")
+                if parsed is None:
+                    raise ValueError("Enter a value.")
+                if action == "add":
+                    vd.add_animal_metric_entry(animal_id, field, date, period_slot, parsed)
+                elif action == "update":
+                    vd.update_animal_metric_entry(int(entry_id), field, parsed)
+                else:
+                    raise ValueError(f"Unknown action: {action!r}")
+        except ValueError as exc:
+            error = str(exc)
+    params = {"error": error} if error else {}
+    if error and action == "add":
+        params.update(date=date, period_slot=period_slot)
+    qs = f"?{urlencode(params)}" if params else ""
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/log/metric/{field}{qs}", status_code=303)
+
+
+@router.get("/animals/{animal_id}/log/condition")
+def admin_animal_condition_detail(request: Request, animal_id: int):
+    """Every real Condition entry for one Animal (see CONTEXT.md: Animal Log, View Data; ADR 0027)."""
+    animal = q.get_animal(animal_id)
+    if animal is None:
+        return RedirectResponse(url="/admin/enclosures", status_code=303)
+    entries = vd.list_animal_condition_entries(animal_id)
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "animal_condition",
+            "title": f"{animal['name']} — Condition",
+            "editable": True,
+            "entries": entries,
+            "prefill": vd.entry_prefill(entries, retry=_add_retry(request)),
+            "animal_conditions": ANIMAL_CONDITIONS,
+            "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "post_action": f"/admin/animals/{animal_id}/log/condition/entries",
+            "back_url": f"/admin/enclosures/{animal['enclosure_id']}/data",
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/animals/{animal_id}/log/condition/entries")
+def admin_animal_condition_entries(
+    animal_id: int,
+    action: str = Form(...),
+    entry_id: str = Form(""),
+    date: str = Form(""),
+    period_slot: str = Form("afternoon"),
+    condition: str = Form(""),
+    note: str = Form(""),
+):
+    """Add/Edit/Delete one Condition entry (see CONTEXT.md: Animal Log, View Data, Period Slot; ADR
+    0026, ADR 0027)."""
+    error = None
+    try:
+        if action == "delete":
+            vd.delete_animal_condition_entry(int(entry_id))
+        elif action == "add":
+            if not condition:
+                raise ValueError("Pick a Condition.")
+            vd.add_animal_condition_entry(animal_id, date, period_slot, condition, note or None)
+        elif action == "update":
+            if not condition:
+                raise ValueError("Pick a Condition.")
+            vd.update_animal_condition_entry(int(entry_id), condition, note or None)
+        else:
+            raise ValueError(f"Unknown action: {action!r}")
+    except ValueError as exc:
+        error = str(exc)
+    params = {"error": error} if error else {}
+    if error and action == "add":
+        params.update(date=date, period_slot=period_slot)
+    qs = f"?{urlencode(params)}" if params else ""
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/log/condition{qs}", status_code=303)
+
+
+@router.get("/plugs/{plug_id}/status")
+def admin_plug_status_detail(request: Request, plug_id: int):
+    """Every Status transition for one Plug (see CONTEXT.md: View Data, Plug; ADR 0027) — read-only,
+    always auto-collected (a Smart Plug's own detector) or self-reported (a Manual Plug's Command
+    log), never hand-edited."""
+    plug = q.get_plug(plug_id)
+    if plug is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    owner_path = (
+        f"/admin/rooms/{plug['room_id']}/data" if plug["room_id"]
+        else f"/admin/enclosures/{plug['enclosure_ids'][0]}/data" if plug["enclosure_ids"]
+        else "/admin"
+    )
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "plug_status",
+            "title": f"{plug['label']} — Status",
+            "editable": False,
+            "entries": vd.list_plug_status_entries(plug_id),
+            "back_url": owner_path,
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.get("/plugs/{plug_id}/telemetry/{field}")
+def admin_plug_telemetry_detail(request: Request, plug_id: int, field: str):
+    """Every Data Capture reading of one field for one Plug — read-only, same as Status above (see
+    CONTEXT.md: View Data, Plug; ADR 0027)."""
+    plug = q.get_plug(plug_id)
+    if plug is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    try:
+        unit = vd.plug_telemetry_unit(field)
+    except ValueError:
+        return RedirectResponse(url="/admin", status_code=303)
+    owner_path = (
+        f"/admin/rooms/{plug['room_id']}/data" if plug["room_id"]
+        else f"/admin/enclosures/{plug['enclosure_ids'][0]}/data" if plug["enclosure_ids"]
+        else "/admin"
+    )
+    return templates.TemplateResponse(
+        request, "view_data_detail.html",
+        {
+            "row_type": "plug_telemetry",
+            "title": f"{plug['label']} — {field.capitalize()}",
+            "editable": False,
+            "entries": vd.list_plug_telemetry_entries(plug_id, field),
+            "unit": unit,
+            "back_url": owner_path,
+            "error": request.query_params.get("error"),
+        }
+    )

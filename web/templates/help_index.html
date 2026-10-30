@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Help</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Help</h1>
+        {% set nav_current = "help" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="guide-main">
+        <section class="admin-card view-data-section">
+            <h2>What does each page show and do?</h2>
+            <p class="help-text">A quick reference for each main screen, with a sample picture. Looking for setup steps instead? See the <a href="/guide">Guide</a>.</p>
+            <ul class="help-topic-list">
+                {% for topic in topics %}
+                <li class="help-topic-item">
+                    <a class="help-topic-link" href="/help/{{ topic.slug }}">{{ topic.title }}</a>
+                    <span class="help-topic-summary">{{ topic.summary }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+    </main>
+</body>
+</html>

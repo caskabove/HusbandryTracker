@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Setup</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ enclosure.name }}</h1>
+        <nav><a href="/?setup=skip">Skip for now</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Step 3 of 5 — Animals{% if enclosure.bioactive %} &amp; Plants{% endif %}</h2>
+            <p class="setup-intro">Who lives in {{ enclosure.name }}? Add as many as you like — a pair or small colony is fine — or skip this for now if the animal isn't here yet.</p>
+
+            {% if enclosure.animals %}
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Species</th></tr></thead>
+                <tbody>
+                {% for a in enclosure.animals %}
+                    <tr><td class="admin-table-primary">{{ a.name }}</td><td>{{ a.species_common or "—" }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            <form method="post" action="/setup/enclosures/{{ enclosure.id }}/animals" class="admin-form">
+                <input type="hidden" name="species_profile" value="{{ species_profile }}">
+                <input type="hidden" name="life_stage" value="{{ life_stage }}">
+                <label>Name <input type="text" name="name" placeholder="e.g. Rex" required></label>
+                <label>Common species <input type="text" name="common" placeholder="e.g. Ball Python"></label>
+                <label>Scientific name <input type="text" name="scientific"></label>
+                <label>Date of birth <input type="date" name="dob"></label>
+                <button type="submit">Add Animal</button>
+            </form>
+
+            {% if enclosure.bioactive %}
+            {% if enclosure.plants %}
+            <table class="admin-table">
+                <thead><tr><th>Plant</th><th>Species</th></tr></thead>
+                <tbody>
+                {% for p in enclosure.plants %}
+                    <tr><td class="admin-table-primary">{{ p.name }}</td><td>{{ p.species or "—" }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            <form method="post" action="/setup/enclosures/{{ enclosure.id }}/plants" class="admin-form">
+                <input type="hidden" name="species_profile" value="{{ species_profile }}">
+                <input type="hidden" name="life_stage" value="{{ life_stage }}">
+                <label>Plant name <input type="text" name="name" placeholder="e.g. Pothos" required></label>
+                <label>Species (optional) <input type="text" name="species"></label>
+                <button type="submit">Add Plant</button>
+            </form>
+            {% endif %}
+
+            <p><a href="/setup/enclosures/{{ enclosure.id }}/sensor{{ carry_params }}" class="button-link">Continue</a></p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+    {% if species_profile %}<script>prefillAnimalSpecies('{{ species_profile }}');</script>{% endif %}
+</body>
+</html>

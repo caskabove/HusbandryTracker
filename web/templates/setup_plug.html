@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Setup</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ enclosure.name }}</h1>
+        <nav><a href="/?setup=skip">Skip for now</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Step 5 of 5 — Plug</h2>
+            <p class="setup-intro">
+                A Plug is anything plugged in that controls this enclosure's light, heat, or cooling.
+                For now this is set to manual — switched by hand or by a mechanical timer. We'll add
+                support for smart plugs later.
+            </p>
+
+            {% if enclosure.plugs %}
+            <table class="admin-table">
+                <thead><tr><th>Plug</th><th>Purpose</th></tr></thead>
+                <tbody>
+                {% for p in enclosure.plugs %}
+                    <tr><td class="admin-table-primary">{{ p.label }}</td><td>{{ p.purpose }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            <form id="setup-plug-form" method="post" action="/setup/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
+                <label>Label <input type="text" name="label" placeholder="e.g. heat lamp" required></label>
+                <label>Purpose <input type="text" name="purpose" list="purpose-suggestions-enc" placeholder="e.g. heat" required></label>
+                <datalist id="purpose-suggestions-enc">
+                    {% for p in purpose_suggestions %}<option value="{{ p }}">{% endfor %}
+                </datalist>
+                <label class="checkbox"><input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'enc-plug-on', 'enc-plug-off')"> Always on (no schedule — e.g. a filter pump)</label>
+                <label>On-time <input type="time" id="enc-plug-on" name="target_on_time"></label>
+                <label>Off-time <input type="time" id="enc-plug-off" name="target_off_time"></label>
+                <button type="submit">Add Plug</button>
+            </form>
+
+            <p class="setup-done">
+                <a href="/setup/enclosures/{{ enclosure.id }}/done" class="button-link" onclick="return onSetupDoneClick(event, 'setup-plug-form')">I'm done with this enclosure</a>
+            </p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

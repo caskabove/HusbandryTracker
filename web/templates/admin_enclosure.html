@@ -3,22 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Husbandry Tracker Admin - {{ enclosure.name }}</title>
+    <title>Husbandry Tracker Enclosures - {{ enclosure.name }}</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>{{ enclosure.name }}</h1>
-        <nav>
-            <a href="/admin">All Enclosures</a>
-            <a href="/">Dashboard</a>
-            <a href="/guide">Guide</a>
-        </nav>
+        {% set nav_current = "enclosures" %}{% include "_nav.html" %}
     </header>
 
     <main class="admin-main">
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+
+        {# Care Setup Prompt (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) — shown
+           whenever at least one Care kind has no Care Event logged at all, naming the affected
+           kinds explicitly. Reappears on every visit while any kind stays unlogged (see
+           web/admin.py's record_care_nags(), called just before this page is rendered); nothing
+           here is forced — "Start from Today" is one click, "Set your own" just opens the existing
+           per-kind Advanced dropdowns below, and the X dismisses for this visit only. #}
+        {% set ns = namespace(unlogged=[]) %}
+        {% for kind in care_kinds %}
+            {% if enclosure.care[kind].days_since is none %}{% set ns.unlogged = ns.unlogged + [kind] %}{% endif %}
+        {% endfor %}
+        {% if ns.unlogged %}
+            {% set kind_labels = ns.unlogged | map('replace', '_', ' ') | map('capitalize') | list %}
+            <dialog id="care-prompt-modal" class="care-prompt-modal">
+                <div class="care-prompt-header">
+                    <h3>No Care data yet</h3>
+                    <button type="button" class="care-prompt-close" onclick="dismissCarePrompt()" title="Close" aria-label="Close">&times;</button>
+                </div>
+                <p>
+                    {% if kind_labels|length == 1 %}{{ kind_labels[0] }} has no data yet.
+                    {% elif kind_labels|length == 2 %}{{ kind_labels[0] }} and {{ kind_labels[1] }} have no data yet.
+                    {% else %}{{ kind_labels[:-1]|join(", ") }}, and {{ kind_labels[-1] }} have no data yet.
+                    {% endif %}
+                    Want to start tracking now?
+                </p>
+                <div class="care-prompt-actions">
+                    <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/start-from-today">
+                        <button type="submit">Start from Today</button>
+                    </form>
+                    <button type="button" onclick="useOwnCareDates()">Set your own</button>
+                </div>
+            </dialog>
+        {% endif %}
+
         <section class="admin-card">
             <h2>Enclosure Settings</h2>
             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/update" class="admin-form">
@@ -70,16 +100,23 @@
             </form>
         </section>
 
-        <section class="admin-card">
+        <section class="admin-card" id="care-section">
             <h2>Care</h2>
+            {# Set your own's shared instruction (see CONTEXT.md: Care Setup Prompt) — one line
+               shown once useOwnCareDates() expands the unlogged kinds' own Advanced dropdowns
+               below, dismissed independently of them via dismissCareAdvancedHint(). #}
+            <div class="care-advanced-hint" id="care-advanced-hint" hidden>
+                <p>Pick when it actually happened for each one below, then click Log.</p>
+                <button type="button" onclick="dismissCareAdvancedHint()">OK</button>
+            </div>
             {% for kind in care_kinds %}
                 {% set entry = enclosure.care[kind] %}
                 {% set interval = enclosure[kind ~ "_interval_days"] %}
-                {% set status = care_interval_status(entry.days_since, interval) %}
-                <div class="reading-row care-row" id="care-{{ kind }}">
+                {% set status = care_interval_status(entry.days_since, interval, enclosure[kind ~ "_nag_count"]) %}
+                <div class="reading-row care-row" id="care-{{ kind }}" {% if entry.days_since is none %}data-unlogged="true"{% endif %}>
                     <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
                     <span class="pill status-{{ status.value }}">
-                        {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
+                        {% if entry.days_since is none %}no data{% else %}{{ entry.days_since }}d ago{% endif %}
                     </span>
                     {% if kind == "feeding" and enclosure.animals %}
                     {# Spot-feed (see CONTEXT.md: Spot-feed) — one shared picker synced into whichever
@@ -245,9 +282,11 @@
                                humidity, so e.g. a Freshwater Enclosure's pH shows up here too. Each
                                on its own line — same per-metric-own-line shape as the Target Range
                                column, so a Govee Sensor's Temp/Humidity read as two separate lines. #}
+                            {% set ns = namespace(shown=false) %}
                             {% for metric in TARGET_RANGE_METRICS %}
                                 {% set value = reading[metric.reading_column] if reading else none %}
                                 {% if value is not none %}
+                                    {% set ns.shown = true %}
                                     {% set status = target_range_status(value, s[metric.min_column], s[metric.max_column]) %}
                                     {% set shown = value|c_to_f if metric.converts_f_c else value %}
                                     <div>
@@ -259,7 +298,42 @@
                                     </div>
                                 {% endif %}
                             {% endfor %}
-                            {% if not reading %}<span class="pill status-unknown">no data yet</span>{% endif %}
+                            {% if ns.shown %}
+                            <span class="reading-meta">as of {{ reading.recorded_at }}</span>
+                            {# A Sparkline per metric, stacked under the shared as-of line (see
+                               CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0032) — clicking one
+                               opens the full Graphs chart for that exact Sensor+metric, anchored to
+                               the row key graphs_queries.py already builds for it. Each chart has
+                               its own Week/Month toggle (both windows are already embedded below;
+                               see web/static/graphs.js's setSparklineRange). #}
+                            <div class="sparkline-group">
+                            {% for metric in TARGET_RANGE_METRICS %}
+                                {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
+                                {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                                <div class="sparkline-chart">
+                                    <div class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                                        <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                        <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                    </div>
+                                    <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                        <canvas class="sparkline" width="260" height="84"
+                                                data-points-week="{{ spark.ranges.week|tojson }}"
+                                                data-points-month="{{ spark.ranges.month|tojson }}"
+                                                data-decimals="{{ metric.decimals }}"
+                                                data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                                data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                                data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
+                                                data-title-week="{{ metric.label }} - last 7 days"
+                                                data-title-month="{{ metric.label }} - last 30 days"
+                                                data-range="week"></canvas>
+                                    </a>
+                                </div>
+                                {% endif %}
+                            {% endfor %}
+                            </div>
+                            {% else %}
+                            <span class="pill status-unknown">no data yet</span>
+                            {% endif %}
                             {% if s.tracking_mode == "manual" %}
                             {# Hand-logged Reading (see CONTEXT.md: Reading) — same form as the dashboard's
                                Log button, posted back to this page. One input per Target Range metric this
@@ -331,6 +405,16 @@
                 <summary>+ Add Sensor</summary>
                 <form method="post" action="/admin/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                    <label>Species Profile <small>(optional — suggests starting Target Range values below)</small>
+                        <select id="add-sensor-species-profile" onchange="onSensorSpeciesProfileChange(this, 'add-sensor-zone-wrap', 'add-sensor-zone', 'temp_min_f', 'temp_max_f', 'humidity_min', 'humidity_max')"></select>
+                    </label>
+                    <label id="add-sensor-zone-wrap" style="display:none">This sensor monitors
+                        <select id="add-sensor-zone" onchange="onSensorZoneChange(this, 'add-sensor-species-profile', 'temp_min_f', 'temp_max_f')">
+                            <option value="warm">Warm side</option>
+                            <option value="cool">Cool side</option>
+                            <option value="ambient" selected>Single ambient sensor (whole enclosure)</option>
+                        </select>
+                    </label>
                     <label>Tracking Mode
                         <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-sensor-smart', 'add-sensor-manual')">
                             <option value="smart">Smart (Govee BLE sensor)</option>
@@ -339,6 +423,10 @@
                     </label>
                     <div id="add-sensor-smart" class="mode-fields">
                         <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF"></label>
+                        <div class="discover-device">
+                            <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
+                            <div class="discover-results" style="display:none"></div>
+                        </div>
                     </div>
                     <div id="add-sensor-manual" class="mode-fields" style="display:none">
                         <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric — whichever this Sensor tracks.</p>
@@ -353,6 +441,16 @@
                     <label>Target {{ metric.label }} min {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_min"></label>
                     <label>Target {{ metric.label }} max {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_max"></label>
                     {% endif %}
+                    {# Volatility (see CONTEXT.md: Volatility; ADR 0025) — only takes effect for a
+                       Manual Sensor; shown unconditionally here, same as the Target Range fields
+                       above, since this form has no live Smart/Manual field-visibility toggle. #}
+                    <label>{{ metric.label or metric.key.replace("_", " ").title() }} Volatility
+                        <select name="volatility_{{ metric.key }}">
+                            <option value="" selected>Default ({{ metric.default_volatility|capitalize }})</option>
+                            <option value="fast">Fast</option>
+                            <option value="slow">Slow</option>
+                        </select>
+                    </label>
                     {% endfor %}
                     <button type="submit">Add Sensor</button>
                 </form>
@@ -361,8 +459,12 @@
 
         <section class="admin-card">
             <h2>Plugs</h2>
-            <table class="admin-table">
-                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Status</th><th>On Dashboard</th><th></th></tr></thead>
+            <table class="admin-table admin-table-aligned">
+                <colgroup>
+                    <col class="col-label"><col class="col-purpose"><col class="col-tracking">
+                    <col class="col-status"><col class="col-schedule"><col class="col-dashboard"><col class="col-edit">
+                </colgroup>
+                <thead><tr><th>Label</th><th>Purpose</th><th>Tracking</th><th>Status</th><th>Schedule</th><th>On Dashboard</th><th></th></tr></thead>
                 <tbody>
                 {% for p in enclosure.plugs %}
                     {% set cs = p.current_status %}
@@ -372,8 +474,8 @@
                         <td>{{ p.tracking_mode|capitalize }}</td>
                         <td>
                             {# Current Status — what's actually on/off right now (or Unreachable),
-                               as opposed to the Schedules section's own target/detected and
-                               last-Command pills below. See CONTEXT.md: Unreachable, Command. #}
+                               as opposed to the Schedule column's target times.
+                               See CONTEXT.md: Unreachable, Command. #}
                             {% if cs.unreachable %}
                             <span class="pill status-red">Unreachable</span>
                             {% elif cs.is_on is none %}
@@ -383,6 +485,30 @@
                             {% else %}
                             <span class="pill status-unknown">Off</span>
                             {% endif %}
+                        </td>
+                        <td>
+                    {% if p.controller_kind == "thermostat" %}
+                        <span class="pill status-unknown">Target: {% if p.target_temp_c is not none %}{{ "%.0f"|format(p.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %}</span>
+                    {% elif p.controller_kind == "hydrostat" %}
+                        <span class="pill status-unknown">Target: {% if p.target_humidity_pct is not none %}{{ "%.0f"|format(p.target_humidity_pct) }}%{% else %}not set{% endif %}</span>
+                    {% elif p.always_on %}
+                        <span class="pill status-green">Always On</span>
+                    {% elif p.tracking_mode == "manual" %}
+                        {% if p.target_on_time and p.target_off_time %}
+                        <span class="pill status-unknown">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                        {% else %}
+                        <span class="pill status-unknown">no target schedule set</span>
+                        {% endif %}
+                    {% else %}
+                        {% set on_drift = acknowledged_drift_status(p.target_on_time, p.detected_on_time, p.timer_ack_on_time, schedule_drift_threshold_minutes) %}
+                        {% set off_drift = acknowledged_drift_status(p.target_off_time, p.detected_off_time, p.timer_ack_off_time, schedule_drift_threshold_minutes) %}
+                        {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("yellow" if (on_drift.value == "yellow" or off_drift.value == "yellow") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown")) %}
+                        {% if p.target_on_time and p.target_off_time %}
+                        <span class="pill status-{{ pill_status }}">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                        {% else %}
+                        <span class="pill status-unknown">no target schedule set</span>
+                        {% endif %}
+                    {% endif %}
                         </td>
                         <td>
                             {# Show on Dashboard (see CONTEXT.md: Plug) — auto-submits on change,
@@ -395,69 +521,81 @@
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
+                    <tr><td colspan="7" class="empty">No plugs assigned yet — add one below, or assign an existing one from the main Admin page.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
+            <details>
+                <summary>+ Add Plug</summary>
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
+                    <label>Purpose
+                        <input type="text" name="purpose" list="purpose-options" placeholder="light, heat, cooling, UVB, pump..." required>
+                        <datalist id="purpose-options">
+                            <option value="light">
+                            <option value="heat">
+                            <option value="cooling">
+                            <option value="UVB">
+                            <option value="pump">
+                        </datalist>
+                    </label>
+                    <label>Tracking Mode
+                        <select id="add-enc-plug-tracking-mode" name="tracking_mode"
+                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
+                            <option value="smart">Smart (Tuya-controlled)</option>
+                            <option value="manual">Manual (hand-switched, e.g. a timer)</option>
+                        </select>
+                    </label>
+                    <label>Controller Kind
+                        <select id="add-enc-plug-controller-kind" name="controller_kind"
+                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
+                            <option value="none" selected>None (powers the heat/cooling/moisture source directly)</option>
+                            <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
+                            <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
+                        </select>
+                    </label>
+                    <div id="add-enc-plug-smart" class="mode-fields">
+                        <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
+                        <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                        <div class="discover-device">
+                            <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                            <div class="discover-results" style="display:none"></div>
+                        </div>
+                        <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                        <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
+                    </div>
+                    {# Target Schedule/Always On/Controller Kind fields — same shape and same
+                       Controller-Kind-gated visibility as the main Admin page's Add Plug form (see
+                       admin_index.html, CONTEXT.md: Target Schedule, Always On; ADR 0012). No
+                       "Belongs to" or Plug Group picker here — this form is already scoped to this
+                       one Enclosure via the URL, same simplification as Add Sensor above. #}
+                    <div id="add-enc-plug-schedule" class="mode-fields">
+                        <label class="checkbox">
+                            <input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'add-enc-plug-target-on', 'add-enc-plug-target-off')">
+                            Always On (e.g. a pump that runs continuously — no schedule to set)
+                        </label>
+                        <label>Target on-time <input type="time" id="add-enc-plug-target-on" name="target_on_time"></label>
+                        <label>Target off-time <input type="time" id="add-enc-plug-target-off" name="target_off_time"></label>
+                    </div>
+                    <div id="add-enc-plug-thermostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>
+                    </div>
+                    <div id="add-enc-plug-hydrostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct"></label>
+                    </div>
+                    <button type="submit">Add Plug</button>
+                </form>
+            </details>
         </section>
 
-        <section class="admin-card">
-            <h2>Schedules</h2>
-            {% for plug in enclosure.plugs %}
-                <div class="reading-row">
-                    <span class="reading-label">{{ plug.purpose|capitalize }} ({{ plug.label }})</span>
-                    {% if plug.controller_kind == "thermostat" %}
-                        <span class="pill status-unknown">Target: {% if plug.target_temp_c is not none %}{{ "%.0f"|format(plug.target_temp_c|c_to_f) }}&deg;F{% else %}not set{% endif %} (thermostat)</span>
-                    {% elif plug.controller_kind == "hydrostat" %}
-                        <span class="pill status-unknown">Target: {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %} (hydrostat)</span>
-                    {% elif plug.always_on %}
-                        <span class="pill status-green">Always On</span>
-                    {% elif plug.tracking_mode == "manual" %}
-                        {% if plug.target_on_time and plug.target_off_time %}
-                        <span class="pill status-unknown">{{ plug.target_on_time }}&ndash;{{ plug.target_off_time }}</span>
-                        {% else %}
-                        <span class="pill status-unknown">no target schedule set</span>
-                        {% endif %}
-                    {% elif not plug.target_on_time and not plug.target_off_time and not plug.detected_on_time and not plug.detected_off_time %}
-                        <span class="pill status-unknown">no schedule data yet</span>
-                    {% else %}
-                        {% set on_drift = schedule_drift_status(plug.target_on_time, plug.detected_on_time, schedule_drift_threshold_minutes) %}
-                        {% set off_drift = schedule_drift_status(plug.target_off_time, plug.detected_off_time, schedule_drift_threshold_minutes) %}
-                        {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown") %}
-                        <span class="pill status-{{ pill_status }}" title="target/detected">
-                            On <span class="schedule-target">{{ plug.target_on_time or "—" }}</span>/{{ plug.detected_on_time or "—" }}
-                            · Off <span class="schedule-target">{{ plug.target_off_time or "—" }}</span>/{{ plug.detected_off_time or "—" }}
-                        </span>
-                    {% endif %}
-                    {# On/off Command control — see CONTEXT.md: Command, Interruption; ADR 0014.
-                       No confirmation dialog by design (see ADR 0014's Considered Options); the
-                       note field only appears when the Plug has a determined setting, since only
-                       that case is an Interruption — the server recomputes this independently
-                       either way, this is just a UI hint. #}
-                    {% if plug.last_command %}
-                        {% if plug.last_command.status == "confirming" %}
-                        <span class="pill status-unknown">Commanded {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }} — confirming…{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
-                        {% elif plug.last_command.status == "failed" %}
-                        <span class="pill status-red">Command failed — no response{% if plug.last_command.note %} ({{ plug.last_command.note }}){% endif %}</span>
-                        {% elif plug.tracking_mode == "manual" %}
-                        <span class="pill status-unknown">Logged {{ "ON" if plug.last_command.is_on else "OFF" }} {{ plug.last_command.requested_at[11:16] }}{% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
-                        {% else %}
-                        <span class="pill status-green">{{ "ON" if plug.last_command.is_on else "OFF" }} (commanded {{ plug.last_command.requested_at[11:16] }}){% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
-                        {% endif %}
-                    {% endif %}
-                    <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">
-                        <button type="submit" name="is_on" value="true">Turn On</button>
-                        <button type="submit" name="is_on" value="false">Turn Off</button>
-                        {% if plug.controller_kind != "none" or plug.always_on or (plug.target_on_time and plug.target_off_time) %}
-                        <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
-                        {% endif %}
-                    </form>
-                </div>
-            {% else %}
-                <p class="empty">No plugs registered</p>
-            {% endfor %}
-        </section>
+        <p>
+            <a href="/admin/enclosures/{{ enclosure.id }}/data" class="button-link">View Data</a>
+            <a href="/admin/enclosures/{{ enclosure.id }}/graphs" class="button-link">Graphs</a>
+        </p>
     </main>
+    <script src="/static/chart.min.js?v={{ asset_version }}"></script>
+    <script src="/static/graphs.js?v={{ asset_version }}"></script>
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>populateSpeciesProfileSelect(document.getElementById('add-sensor-species-profile'), '{{ enclosure.enclosure_type }}');</script>
 </body>
 </html>

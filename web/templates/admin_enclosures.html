@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker Rooms and Enclosures</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Husbandry Tracker Rooms and Enclosures</h1>
+        {% set nav_current = "enclosures" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+
+        <section class="admin-card">
+            <h2>Rooms</h2>
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Enclosures</th><th>Light Schedule</th><th></th></tr></thead>
+                <tbody>
+                {% for r in rooms %}
+                    <tr>
+                        <td class="admin-table-primary"><a href="/admin/rooms/{{ r.id }}">{{ r.name }}</a></td>
+                        <td>{{ enclosure_count_by_room.get(r.id, 0) }}</td>
+                        <td>{% if r.light_on_time and r.light_off_time %}{{ r.light_on_time }}&ndash;{{ r.light_off_time }}{% else %}not set{% endif %}</td>
+                        <td><a href="/admin/rooms/{{ r.id }}">edit</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="empty">No rooms yet — add one below.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="admin-card">
+            <details>
+                <summary>+ Add Room</summary>
+                <form method="post" action="/admin/rooms" class="admin-form">
+                    <label>Name <input type="text" name="name" placeholder="e.g. Living Room" required></label>
+                    <button type="submit">Create</button>
+                </form>
+            </details>
+        </section>
+
+        <section class="admin-card">
+            <h2>Enclosures</h2>
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Type</th><th>Room</th><th>Bioactive</th><th>Feed</th><th>Water</th><th>Spot</th><th>Deep</th><th></th></tr></thead>
+                <tbody>
+                {% for e in enclosures %}
+                    <tr>
+                        <td class="admin-table-primary"><a href="/admin/enclosures/{{ e.id }}">{{ e.name }}</a></td>
+                        <td>{{ ENCLOSURE_TYPE_LABELS[e.enclosure_type] }}</td>
+                        <td>{% if e.room_id %}<a href="/admin/rooms/{{ e.room_id }}">{{ rooms_by_id[e.room_id] }}</a>{% else %}—{% endif %}</td>
+                        <td>{{ "yes" if e.bioactive else "no" }}</td>
+                        <td>{{ e.feeding_interval_days }}d</td>
+                        <td>{{ e.watering_interval_days }}d</td>
+                        <td>{{ e.spot_clean_interval_days }}d</td>
+                        <td>{{ e.deep_clean_interval_days }}d</td>
+                        <td><a href="/admin/enclosures/{{ e.id }}">edit</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="9" class="empty">No enclosures yet — add one below.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="admin-card">
+            <details>
+                <summary>+ Add Enclosure</summary>
+                <form method="post" action="/admin/enclosures" class="admin-form">
+                    <label>Name <input type="text" name="name" required></label>
+                    <label>Enclosure Type
+                        <select name="enclosure_type" onchange="onEnclosureTypeChangeForProfile(this, 'add-enc-species-profile', 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')">
+                            {% for t in ENCLOSURE_TYPES %}
+                            <option value="{{ t }}" {% if t == "basic" %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>Species Profile <small>(optional — suggests starting numbers below; edit anything it fills in)</small>
+                        <select id="add-enc-species-profile" onchange="onEnclosureSpeciesProfileChange(this, 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')"></select>
+                    </label>
+                    <label id="add-enc-life-stage-wrap" style="display:none">Life Stage
+                        <select id="add-enc-life-stage" onchange="onEnclosureLifeStageChange(this, 'add-enc-species-profile', 'feeding_interval')">
+                            <option value="baby">Baby / Juvenile</option>
+                            <option value="adult" selected>Adult</option>
+                        </select>
+                    </label>
+                    <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
+                    <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
+                    <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
+                    <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="7" min="1"></label>
+                    <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="30" min="1"></label>
+                    <button type="submit">Create</button>
+                </form>
+                <p class="empty">Room assignment happens on the Enclosure's own page after it's created.</p>
+            </details>
+        </section>
+
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>populateSpeciesProfileSelect(document.getElementById('add-enc-species-profile'), document.querySelector('select[name="enclosure_type"]').value);</script>
+</body>
+</html>

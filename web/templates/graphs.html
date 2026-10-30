@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker Graphs - {{ owner_label }}</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ owner_label }} &mdash; Graphs</h1>
+        {% set nav_current = "control" if owner_kind == "room" else "enclosures" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <p>
+            <a href="{{ back_url }}">&larr; Back to {{ owner_label }}</a>
+            &middot;
+            <a href="{{ back_url }}/data?range={{ range }}&amp;end={{ end }}">View Data (table)</a>
+        </p>
+
+        <form method="get" action="" class="admin-form view-data-range-form">
+            <label>Range
+                <select name="range" onchange="this.form.submit()">
+                    {% for key, title, _ in range_options %}
+                    <option value="{{ key }}" {% if key == range %}selected{% endif %}>{{ title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            {% for key in selected_keys %}<input type="hidden" name="rows" value="{{ key }}">{% endfor %}
+            <input type="hidden" name="end" value="{{ end }}">
+            <a href="?range={{ range }}&amp;end={{ prev_end }}{% for key in selected_keys %}&amp;rows={{ key }}{% endfor %}" class="button-link">&laquo; Prev</a>
+            <span class="view-data-window">{{ dates[0].isoformat() }} to {{ dates[-1].isoformat() }}</span>
+            {% if next_end %}
+            <a href="?range={{ range }}&amp;end={{ next_end }}{% for key in selected_keys %}&amp;rows={{ key }}{% endfor %}" class="button-link">Next &raquo;</a>
+            {% else %}
+            <span class="button-link disabled">Next &raquo;</span>
+            {% endif %}
+        </form>
+
+        {% if overlay_rows %}
+        <section class="admin-card view-data-section" id="overlay-chart">
+            <h2>Overlay <button type="button" class="graph-expand-btn" aria-label="Enlarge Overlay chart" data-target="overlay-chart" onclick="openGraphModal(this)">&#10530;</button></h2>
+            <div class="graph-card-wrap graph-card-wrap-overlay">
+                <canvas class="graph-canvas" data-chart='{{ overlay_rows|tojson }}'></canvas>
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="admin-card view-data-section">
+            <h2>Overlay picker</h2>
+            <p class="help-text">Check two or more to combine them into the Overlay chart above &mdash; each row's own chart below is unaffected.</p>
+            <form method="get" action="" class="overlay-picker">
+                <input type="hidden" name="range" value="{{ range }}">
+                <input type="hidden" name="end" value="{{ end }}">
+                {% for section in sections %}
+                <fieldset>
+                    <legend>{{ section.title }}</legend>
+                    {% for row in section.rows %}
+                    <label class="overlay-checkbox">
+                        <input type="checkbox" name="rows" value="{{ row.key }}" onchange="this.form.submit()"
+                               {% if row.key in selected_keys %}checked{% endif %}>
+                        {{ row.label }}
+                    </label>
+                    {% endfor %}
+                </fieldset>
+                {% endfor %}
+            </form>
+        </section>
+
+        {% for section in sections %}
+        <section class="admin-card view-data-section">
+            <h2>{{ section.title }}</h2>
+            <div class="graphs-grid">
+                {% for row in section.rows %}
+                {# id lets a Sparkline's click-through (see CONTEXT.md: Sparkline; ADR 0024) jump
+                   straight to this exact row — row.key already matches the anchor each Sparkline
+                   builds, since both sides come from the same f"reading-{sensor_id}-{metric_key}"
+                   shape (graphs_queries.py). #}
+                <div class="graph-card" id="{{ row.key }}">
+                    <h3>{{ row.label }}
+                        {% if row.series %}
+                        <button type="button" class="graph-expand-btn" aria-label="Enlarge {{ row.label }} chart" data-target="{{ row.key }}" onclick="openGraphModal(this)">&#10530;</button>
+                        {% endif %}
+                    </h3>
+                    {% if row.series %}
+                    <div class="graph-card-wrap">
+                        <canvas class="graph-canvas" data-chart='{{ [row]|tojson }}'></canvas>
+                    </div>
+                    {% else %}
+                    <p class="empty">Nothing in this range</p>
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="empty">Nothing tracked here yet</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endfor %}
+    </main>
+
+    {# Enlarged chart view (see CONTEXT.md: Graphs) — one shared dialog, re-filled from whichever
+       card's own already-embedded data-chart JSON the clicked button points at (data-target), so
+       enlarging never needs a round trip. #}
+    <dialog id="graph-modal" class="graph-modal">
+        <div class="graph-modal-header">
+            <h3 id="graph-modal-title"></h3>
+            <button type="button" class="graph-modal-close" aria-label="Close" onclick="closeGraphModal()">&times;</button>
+        </div>
+        <div class="graph-modal-chart-wrap">
+            <canvas id="graph-modal-canvas" class="graph-canvas"></canvas>
+        </div>
+    </dialog>
+
+    <script src="/static/chart.min.js?v={{ asset_version }}"></script>
+    <script src="/static/graphs.js?v={{ asset_version }}"></script>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

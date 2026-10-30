@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Setup</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ enclosure.name }}</h1>
+        <nav><a href="/?setup=skip">Skip for now</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Step 4 of 5 — Sensor</h2>
+            <p class="setup-intro">
+                For now this is set to manual — you'll read a thermometer or test kit by hand and log it
+                yourself. We'll add support for automatic sensors later. Enter at least one target range
+                below so we know what counts as too hot, too cold, or otherwise off.
+            </p>
+
+            {% if enclosure.sensors %}
+            <table class="admin-table">
+                <thead><tr><th>Sensor</th></tr></thead>
+                <tbody>
+                {% for s in enclosure.sensors %}
+                    <tr><td class="admin-table-primary">{{ s.label }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            {% if room_sensors %}
+            <div class="admin-card" style="background:var(--room-bg)">
+                <p>This enclosure's room already has a sensor. Rather than add a new one, you can use it as this enclosure's reading:</p>
+                <form method="post" action="/setup/enclosures/{{ enclosure.id }}/fallback-sensor" class="admin-form">
+                    <label>Room sensor
+                        <select name="fallback_sensor_id">
+                            {% for s in room_sensors %}
+                            <option value="{{ s.id }}" {% if enclosure.fallback_sensor_id == s.id %}selected{% endif %}>{{ s.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <button type="submit">Use this sensor</button>
+                </form>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/setup/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
+                <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                <label>Species Profile <small>(optional — suggests starting Target Range values below; carried over from the Enclosure step if you picked one there)</small>
+                    <select id="setup-sensor-species-profile" name="species_profile" onchange="onSensorSpeciesProfileChange(this, 'setup-sensor-zone-wrap', 'setup-sensor-zone', 'min_{{ primary_metric.key }}', 'max_{{ primary_metric.key }}', 'min_humidity', 'max_humidity')"></select>
+                </label>
+                <label id="setup-sensor-zone-wrap" style="display:none">This sensor monitors
+                    <select id="setup-sensor-zone" onchange="onSensorZoneChange(this, 'setup-sensor-species-profile', 'min_{{ primary_metric.key }}', 'max_{{ primary_metric.key }}')">
+                        <option value="warm">Warm side</option>
+                        <option value="cool">Cool side</option>
+                        <option value="ambient" selected>Single ambient sensor (whole enclosure)</option>
+                    </select>
+                </label>
+                <label>{{ primary_metric.label }} min {% if primary_metric.unit %}({{ primary_metric.unit }}){% endif %}
+                    <input type="number" step="{{ primary_metric.step }}" name="min_{{ primary_metric.key }}">
+                </label>
+                <label>{{ primary_metric.label }} max {% if primary_metric.unit %}({{ primary_metric.unit }}){% endif %}
+                    <input type="number" step="{{ primary_metric.step }}" name="max_{{ primary_metric.key }}">
+                </label>
+                {% if other_metrics %}
+                <details open>
+                    <summary>+ More metrics ({{ other_metrics|length }})</summary>
+                    <div class="admin-form">
+                    {% for m in other_metrics %}
+                        <label>{{ m.label or "UVB" }} min {% if m.unit %}({{ m.unit }}){% endif %}<input type="number" step="{{ m.step }}" name="min_{{ m.key }}"></label>
+                        <label>{{ m.label or "UVB" }} max {% if m.unit %}({{ m.unit }}){% endif %}<input type="number" step="{{ m.step }}" name="max_{{ m.key }}"></label>
+                    {% endfor %}
+                    </div>
+                </details>
+                {% endif %}
+                <button type="submit">Add Sensor</button>
+            </form>
+
+            <p><a href="/setup/enclosures/{{ enclosure.id }}/plug" class="button-link">Continue</a></p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>
+        const sensorSpeciesSelect = document.getElementById('setup-sensor-species-profile');
+        populateSpeciesProfileSelect(sensorSpeciesSelect, '{{ enclosure.enclosure_type }}');
+        {% if species_profile %}
+        sensorSpeciesSelect.value = '{{ species_profile }}';
+        onSensorSpeciesProfileChange(sensorSpeciesSelect, 'setup-sensor-zone-wrap', 'setup-sensor-zone', 'min_{{ primary_metric.key }}', 'max_{{ primary_metric.key }}', 'min_humidity', 'max_humidity');
+        {% endif %}
+    </script>
+</body>
+</html>

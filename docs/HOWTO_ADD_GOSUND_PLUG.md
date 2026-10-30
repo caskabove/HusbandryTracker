@@ -6,10 +6,10 @@ technology under the hood (same company behind the Tuya Smart app), but are set 
 different, older app: **Smart Life**.
 
 **Read this first:** unlike the Govee sensor or the Tuya Zigbee sensor, this device connects
-directly to your home WiFi — no Bluetooth, no gateway/hub needed. But getting Husbandry Tracker talking
-to it takes one extra, more technical step beyond just pairing it in the app (see [Get Tuya
-Developer Credentials](#3-get-tuya-developer-credentials) below) — that part genuinely benefits
-from an extra pair of hands the first time, so don't be surprised if it's the slow part.
+directly to your home WiFi — no Bluetooth, no gateway/hub needed. Getting Husbandry Tracker talking to
+it needs one extra step beyond just pairing it in the app — linking a free Tuya developer account
+(see [Get Tuya Developer Credentials](#3-get-tuya-developer-credentials) below) — but once that's
+done **once**, every plug after it is just a button click; no Command Prompt needed.
 
 **Contents**
 1. [What You Need](#1-what-you-need)
@@ -32,8 +32,10 @@ from an extra pair of hands the first time, so don't be surprised if it's the sl
   included, can only join a 2.4GHz network, not 5GHz. If your router broadcasts both under the same
   name, this is the most common reason pairing silently fails — see the same callout in the [Tuya
   Zigbee sensor how-to](HOWTO_TUYA_TEMP_HUMIDITY_PROBE_SENSOR.md#1-what-you-need) for how to check.
-- **The Husbandry Tracker folder set up already** (section 2 of `docs/USER_GUIDE.md`) — step 3 below runs
-  a command from inside it.
+- **A free Tuya IoT developer account** (step 3 below walks through creating one) — a one-time
+  account-linking step on Tuya's own website, done once no matter how many plugs you add
+  afterward. No Python, no Command Prompt — Husbandry Tracker talks to Tuya's cloud for you once
+  you've saved your Access ID/Secret (see step 3).
 
 ---
 
@@ -60,49 +62,50 @@ and I'd rather fix it than leave it wrong.)*
 Every Gosund plug has a **device ID** and **local key** — think of them like a name and password
 Husbandry Tracker needs to talk to the plug directly over your WiFi, without going through Tuya's cloud
 every time. Unlike a Govee sensor's ID, these can't be found with a simple scan; getting them
-requires linking a free Tuya developer account to the same account you just used in Smart Life. This
-is the one part of setup that's genuinely more technical — plan on doing it once with someone
-comfortable following a multi-step wizard, not per-plug.
+requires linking a free Tuya developer account to the same account you just used in Smart Life.
+That account-linking step happens entirely on Tuya's own website and can't be skipped — but it's a
+**one-time** setup, not something you repeat per plug.
 
-1. Open a Command Prompt in the Husbandry Tracker folder, and run:
-   ```
-   .venv\Scripts\activate
-   python -m tinytuya wizard
-   ```
-2. This walks you through, step by step, in the same window:
-   - Creating a free account at Tuya's IoT developer platform (a website, separate from Smart Life),
-     if you don't already have one.
-   - Creating a "Cloud" project there and linking it to your Smart Life account — this step usually
-     involves scanning a QR code with your phone (in the Smart Life app) to prove it's really your
-     account.
-   - Typing in a couple of values the website shows you (an Access ID and Access Secret) back into
-     the Command Prompt window.
-3. Once finished, it prints (and saves into `devices.json`/`snapshot.json` in that same folder) every
-   linked plug's **device ID**, **local key**, and last-known **IP address** on your network.
+1. Go to [iot.tuya.com](https://iot.tuya.com) and create a free account if you don't already have
+   one.
+2. Create a "Cloud" project, then link it to your Smart Life account — this step usually involves
+   scanning a QR code with your phone (in the Smart Life app) to prove it's really your account.
+3. The project's page shows an **Access ID** and **Access Secret**. In Husbandry Tracker, go to the
+   Plugs and Sensors page's **Tuya Cloud Credentials** card, paste both in, pick your API Region (Americas,
+   Europe, China, or India — matching where your Tuya Cloud project was created), and click **Save**.
 
 **This step's website screens belong to Tuya, not Husbandry Tracker** — their exact wording/layout can
 change over time and isn't something this guide can promise pixel-for-pixel. If you get stuck partway
-through the wizard, tell me exactly what screen/prompt you're on and I'll help from there.
+through, tell me exactly what screen/prompt you're on and I'll help from there.
 
-`devices.json`/`snapshot.json` contain real credentials — they're already set up to be ignored by
-git (never uploaded/shared), but don't email or paste them anywhere either.
+Once saved, every Add Plug and Add Plug Group form gets a **Discover Devices** button: click it, and
+Husbandry Tracker asks Tuya's cloud for every device linked to that account, listing each by name —
+click the one you mean and it fills in the device ID and local key for you. No Command Prompt, no
+`devices.json` file to protect — the Access Secret is saved once, server-side, and is never shown
+again once you've entered it.
 
 ---
 
 ## 4. Confirming the On/Off Switch Key
 
-Most single-outlet plugs use the same internal switch key ("1"), but it's not guaranteed for every
-model — worth a quick check before registering it in Husbandry Tracker:
+The Discover Devices button already fills in a **best guess** at the on/off switch key (most
+single-outlet plugs use "1"), but it's a guess, not a guarantee — some models use a different DPS
+layout. Worth a quick check before trusting it, using a small script that (unlike Discover) does
+need a one-time Python install: [Python itself](https://www.python.org/downloads/) (check "Add
+python.exe to PATH" during install) plus a download or `git clone` of the [Husbandry Tracker
+repository](https://github.com/caskabove/HusbandryTracker) — anywhere on your computer, just to
+borrow its `tools/` folder and `requirements.txt`. Then, in a Command Prompt in that folder:
 
 ```
-python tools\tuya_probe.py <device_id> <local_key> --ip <ip_from_wizard>
+pip install -r requirements.txt
+python tools\tuya_probe.py <device_id> <local_key> --ip <ip_from_discover>
 ```
 
 While this is running, toggle the plug from the Smart Life app and confirm which key flips in the
-output. If it's not `1`, you'll enter that number instead in the next step.
+output. If it's not what Discover filled in, enter the correct number instead in the next step. If
+it matches, this whole step is skippable.
 
-Leave the IP address blank later in Husbandry Tracker unless a plug keeps failing to connect — pinning its
-IP (from the wizard's output) can help.
+Leave the IP address blank later in Husbandry Tracker unless a plug keeps failing to connect.
 
 ---
 
@@ -116,8 +119,9 @@ Unlike Sensors (added from the Enclosure/Room they belong to), Plugs are added f
 2. **Belongs to**: check the Enclosure(s) it serves (almost always just one — check more than one
    only if a single physical plug controls several tubs at once), or pick a Room instead for a
    genuinely room-wide fixture.
-3. Enter the **device ID** and **local key** from step 3 above.
-4. Leave **Outlet/DPS key** as `1` unless step 4 above found a different number, or the plug is a
+3. Click **Discover Devices**, then click this plug from the list — that fills in the **device ID**
+   and **local key** (and takes a best guess at Outlet/DPS key — see step 4 above) for you.
+4. Double-check **Outlet/DPS key** is `1` (or whatever step 4 above confirmed) unless this is a
    multi-outlet power strip (which needs one row here per outlet actually in use — `2`, `3`, or `7`
    for a USB port — all sharing the same device ID/local key).
 5. Click **Create**.

@@ -3,18 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Husbandry Tracker Admin - Edit Plug</title>
+    <title>Husbandry Tracker - Edit Plug</title>
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>Edit Plug</h1>
-        <nav>
-            <a href="/admin">All Enclosures</a>
-            <a href="/">Dashboard</a>
-            <a href="/guide">Guide</a>
-        </nav>
+        {% set nav_current = "control" %}{% include "_nav.html" %}
     </header>
 
     <main class="admin-main">
@@ -77,6 +73,10 @@
                     <label>Tuya device_id <input type="text" name="tuya_device_id" value="{{ plug.tuya_device_id or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                     <label>Tuya local_key <input type="text" name="tuya_local_key" value="{{ plug.tuya_local_key or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                     <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="{{ plug.switch_dps_key }}" style="width:3em" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <div class="discover-device">
+                        <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                        <div class="discover-results" style="display:none"></div>
+                    </div>
                     <label>LAN IP (optional) <input type="text" name="tuya_ip_address" value="{{ plug.tuya_ip_address or '' }}" placeholder="leave blank for auto-discovery" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                     <label class="checkbox">
                         <input type="checkbox" name="auto_update_enabled" value="true" {% if plug.auto_update_enabled %}checked{% endif %} {% if plug.tracking_mode != "smart" %}disabled{% endif %}>
@@ -96,7 +96,7 @@
                             {% if plug.latest_reading.volts is not none %} · {{ "%.0f"|format(plug.latest_reading.volts) }}V{% endif %}
                             {% if plug.latest_reading.amps is not none %} · {{ "%.2f"|format(plug.latest_reading.amps) }}A{% endif %}
                             {% if plug.latest_reading.countdown_seconds %} · countdown {{ plug.latest_reading.countdown_seconds }}s{% endif %}
-                            — captured {{ plug.latest_reading.recorded_at[11:16] }}
+                            — captured {{ plug.latest_reading.recorded_at|utc_clock }}
                         {% else %}
                             no data yet
                         {% endif %}
@@ -128,15 +128,20 @@
                     <label>Target on-time <input type="time" id="edit-plug-target-on" name="target_on_time" value="{{ plug.target_on_time or '' }}" {% if schedule_hidden or plug.always_on %}disabled{% endif %}></label>
                     <label>Target off-time <input type="time" id="edit-plug-target-off" name="target_off_time" value="{{ plug.target_off_time or '' }}" {% if schedule_hidden or plug.always_on %}disabled{% endif %}></label>
                     {% if plug.tracking_mode == "smart" and not plug.always_on %}
-                    {% set on_drift = schedule_drift_status(plug.target_on_time, plug.detected_on_time, schedule_drift_threshold_minutes) %}
-                    {% set off_drift = schedule_drift_status(plug.target_off_time, plug.detected_off_time, schedule_drift_threshold_minutes) %}
+                    {% set on_drift = acknowledged_drift_status(plug.target_on_time, plug.detected_on_time, plug.timer_ack_on_time, schedule_drift_threshold_minutes) %}
+                    {% set off_drift = acknowledged_drift_status(plug.target_off_time, plug.detected_off_time, plug.timer_ack_off_time, schedule_drift_threshold_minutes) %}
                     <p class="empty">
                         Detected: on
-                        <span class="{% if on_drift.value == 'red' %}status-red-text{% endif %}">{{ plug.detected_on_time or "no data yet" }}</span>,
+                        <span class="{% if on_drift.value == 'red' %}status-red-text{% elif on_drift.value == 'yellow' %}status-yellow-text{% endif %}">{{ plug.detected_on_time or "no data yet" }}</span>,
                         off
-                        <span class="{% if off_drift.value == 'red' %}status-red-text{% endif %}">{{ plug.detected_off_time or "no data yet" }}</span>
-                        {% if on_drift.value == "red" or off_drift.value == "red" %}
-                        <span class="pill status-red">Timer Warning</span>
+                        <span class="{% if off_drift.value == 'red' %}status-red-text{% elif off_drift.value == 'yellow' %}status-yellow-text{% endif %}">{{ plug.detected_off_time or "no data yet" }}</span>
+                        {% if on_drift.value in ("red", "yellow") or off_drift.value in ("red", "yellow") %}
+                        <span class="pill status-{{ 'red' if (on_drift.value == 'red' or off_drift.value == 'red') else 'yellow' }}">Timer Warning</span>
+                        {# Not type="submit": this sits inside the Plug's edit form above Save, and a
+                           submit button here would become the form's default button, so pressing Enter
+                           in any field would clear the warning instead of saving. Clicking it points
+                           the form at the clear route and submits; the clear route ignores the rest. #}
+                        <button type="button" onclick="this.form.action='/admin/plugs/{{ plug.id }}/clear-timer-warning'; this.form.submit();">Clear warning</button>
                         {% endif %}
                     </p>
                     {% endif %}
@@ -150,6 +155,19 @@
                     <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct" value="{{ plug.target_humidity_pct if plug.target_humidity_pct is not none else '' }}" {% if hydrostat_hidden %}disabled{% endif %}></label>
                 </div>
                 <button type="submit">Save</button>
+            </form>
+            {# On/off Command control — see CONTEXT.md: Command, Interruption; ADR 0014. Separate
+               form, same as Plug Group below. return_to=plug sends the result back to this page.
+               No confirmation dialog by design (see ADR 0014's Considered Options); the note field
+               only appears when the Plug has a determined setting, since only that case is an
+               Interruption. #}
+            <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">
+                <input type="hidden" name="return_to" value="plug">
+                <button type="submit" name="is_on" value="true">Turn On</button>
+                <button type="submit" name="is_on" value="false">Turn Off</button>
+                {% if plug.controller_kind != "none" or plug.always_on or (plug.target_on_time and plug.target_off_time) %}
+                <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
+                {% endif %}
             </form>
             {# Plug Group membership — separate from the main form, same as dashboard-visibility
                (see CONTEXT.md: Plug Group; ADR 0017). Attaching copies the Group's own
