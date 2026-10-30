@@ -314,9 +314,10 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
 
         {% for room in rooms %}
-        {# Starts expanded; app.js's applySavedCollapseState() re-collapses it if this viewer left
-           it collapsed last time (data-collapse-key) — see app.js's toggleCollapse. Doesn't cascade
-           to its Enclosures, which each decide their own collapsed state independently (see
+        {# Always starts expanded on load, even if this viewer previously collapsed it by hand
+           (RHA-87) — app.js's applySavedCollapseState() skips Room sections for exactly that
+           reason, unlike every other collapsible-key container on this page. Doesn't cascade to
+           its Enclosures, which each decide their own collapsed state independently (see
            enclosure_panel above) — matches how Refresh already never cascades between a Room and
            its Enclosures (ADR 0005). #}
         <section class="room-section" data-room-id="{{ room.id }}" data-collapse-key="room:{{ room.id }}"

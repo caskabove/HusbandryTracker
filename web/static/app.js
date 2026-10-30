@@ -103,12 +103,14 @@ function onReadingLogToggle(details) {
 // keyed off each container's own data-collapse-key), so the *last* state a viewer left a section in
 // wins on their next visit regardless of its server-rendered default. Per-browser, not shared — same
 // tradeoff as any other localStorage use in this app; wrapped in try/catch since a private window or
-// blocked site data can throw on either read or write.
+// blocked site data can throw on either read or write. Exception: a Room section (the dashboard's
+// top level) never remembers a manual collapse across loads (RHA-87) — it always starts expanded.
 const COLLAPSE_STORAGE_PREFIX = "dashboard-collapsed:";
 
 function applySavedCollapseState() {
     try {
         document.querySelectorAll("[data-collapse-key]").forEach(function (container) {
+            if (container.classList.contains("room-section")) return;
             const saved = localStorage.getItem(COLLAPSE_STORAGE_PREFIX + container.dataset.collapseKey);
             if (saved === "1") {
                 container.classList.add("collapsed");
@@ -123,6 +125,7 @@ function toggleCollapse(button) {
     const container = button.closest(".room-section, .panel, .collapsible-section");
     if (!container) return;
     container.classList.toggle("collapsed");
+    if (container.classList.contains("room-section")) return;
     const key = container.dataset.collapseKey;
     if (!key) return;
     try {
