@@ -378,15 +378,16 @@
                         the new outlet inherits both from the Group, you only set its own DPS key.</p>
                     <label>Tracking Mode
                         <select id="add-plug-tracking-mode" name="tracking_mode"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
                             <option value="smart">Smart (Tuya-controlled)</option>
                             <option value="manual">Manual (hand-switched, e.g. a timer)</option>
                         </select>
                     </label>
                     <label>Controller Kind
                         <select id="add-plug-controller-kind" name="controller_kind"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
-                            <option value="none" selected>None (powers the heat/cooling/moisture source directly)</option>
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
+                            <option value="none" selected>None (switched by hand or its own Smart schedule)</option>
+                            <option value="timer">Timer (plugged into a separate timer device)</option>
                             <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
                             <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
                         </select>
@@ -403,19 +404,19 @@
                         </div>
                         <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
                     </div>
-                    {# Target Schedule — available regardless of Tracking Mode, only hidden when a
-                       Controller Kind is set (see CONTEXT.md, ADR 0012); visible by default since
-                       Controller Kind defaults to "none" above. Always On (see CONTEXT.md) lives in
-                       this same block since it's only ever offered alongside Target Schedule (both
-                       need Controller Kind "none") and is mutually exclusive with it — checking it
-                       disables the two time inputs so a stale value is never submitted alongside it. #}
-                    <div id="add-plug-schedule" class="mode-fields">
+                    {# Always On and Target Schedule each get their own Controller-Kind-gated block
+                       now (see CONTEXT.md: Always On, Target Schedule, Timer-Controlled; ADR 0012,
+                       RHA-95) — "none" shows Always On, "timer" shows the on/off-time pair, visible
+                       by default since Controller Kind defaults to "none" above. #}
+                    <div id="add-plug-always-on" class="mode-fields">
                         <label class="checkbox">
-                            <input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'add-plug-target-on', 'add-plug-target-off')">
+                            <input type="checkbox" name="always_on" value="true">
                             Always On (e.g. a pump that runs continuously — no schedule to set)
                         </label>
-                        <label>Target on-time <input type="time" id="add-plug-target-on" name="target_on_time"></label>
-                        <label>Target off-time <input type="time" id="add-plug-target-off" name="target_off_time"></label>
+                    </div>
+                    <div id="add-plug-schedule" class="mode-fields" style="display:none">
+                        <label>Target on-time <input type="time" name="target_on_time"></label>
+                        <label>Target off-time <input type="time" name="target_off_time"></label>
                     </div>
                     <div id="add-plug-thermostat-fields" class="mode-fields" style="display:none">
                         <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>

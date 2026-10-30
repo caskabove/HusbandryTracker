@@ -24,11 +24,11 @@
             </p>
             <h2>Step 1 of 5 — Room</h2>
             <p>Does this enclosure share a space with others, or do you want to track a room-wide thermometer or light separately from any one enclosure?</p>
-            <form method="post" action="/setup/rooms" class="admin-form">
+            <form id="setup-room-form" method="post" action="/setup/rooms" class="admin-form">
                 <label>Room name <input type="text" name="name" placeholder="e.g. Reptile Rack, Living Room" required></label>
                 <button type="submit">Create Room</button>
             </form>
-            <p><a href="/setup/enclosure" class="button-link">Skip — I just have one enclosure</a></p>
+            <p><a href="/setup/enclosure" class="button-link" onclick="return onWizardContinueClick(event, 'setup-room-form', 'Room', 'Create Room')">Skip — I just have one enclosure</a></p>
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>

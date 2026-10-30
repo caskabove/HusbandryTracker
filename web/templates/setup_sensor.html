@@ -50,7 +50,7 @@
             </div>
             {% endif %}
 
-            <form method="post" action="/setup/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
+            <form id="setup-sensor-form" method="post" action="/setup/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
                 <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
                 <label>Species Profile <small>(optional — suggests starting Target Range values below; carried over from the Enclosure step if you picked one there)</small>
                     <select id="setup-sensor-species-profile" name="species_profile" onchange="onSensorSpeciesProfileChange(this, 'setup-sensor-zone-wrap', 'setup-sensor-zone', 'min_{{ primary_metric.key }}', 'max_{{ primary_metric.key }}', 'min_humidity', 'max_humidity')"></select>
@@ -82,7 +82,8 @@
                 <button type="submit">{% if enclosure.sensors %}Add Another Sensor{% else %}Add Sensor{% endif %}</button>
             </form>
 
-            <p><a href="/setup/enclosures/{{ enclosure.id }}/plug" class="button-link">Continue</a></p>
+            <p><a href="/setup/enclosures/{{ enclosure.id }}/plug" class="button-link"
+                  onclick="return onWizardContinueClick(event, 'setup-sensor-form', 'Sensor', 'Add Sensor')">Continue</a></p>
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>

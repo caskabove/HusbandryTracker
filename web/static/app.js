@@ -41,11 +41,20 @@ function onPeriodSlotChange(select, timeInputId) {
 // when it was Declared Schedule), so this recomputes all four blocks from current DOM state
 // whenever either control changes. Wired to the onchange of both the tracking-mode select and the
 // controller select, with the same six ids passed each time.
-function updatePlugFieldVisibility(trackingSelectId, controllerSelectId, smartBlockId, scheduleBlockId, thermostatBlockId, hydrostatBlockId) {
-    const isSmart = document.getElementById(trackingSelectId).value === "smart";
+// trackingSelectId/smartBlockId are both optional (pass null for either) — the Setup Wizard's own
+// Plug step (see setup_plug.html) has no Tracking Mode choice at all (ADR 0031), only a Controller
+// Kind picker, so it calls this with null for both rather than duplicating the rest of this logic.
+function updatePlugFieldVisibility(trackingSelectId, controllerSelectId, smartBlockId, alwaysOnBlockId, scheduleBlockId, thermostatBlockId, hydrostatBlockId) {
+    const trackingSelect = trackingSelectId ? document.getElementById(trackingSelectId) : null;
+    const isSmart = trackingSelect ? trackingSelect.value === "smart" : false;
     const controllerKind = document.getElementById(controllerSelectId).value;
     setToggleBlock(document.getElementById(smartBlockId), isSmart);
-    setToggleBlock(document.getElementById(scheduleBlockId), controllerKind === "none");
+    // Always On (see CONTEXT.md: Always On) and Target Schedule (see CONTEXT.md: Target Schedule,
+    // Timer-Controlled) used to share one block under controller_kind = 'none' — RHA-95 split them
+    // into their own Controller Kind values ('none' and 'timer' respectively), so each now gets
+    // its own block instead.
+    setToggleBlock(document.getElementById(alwaysOnBlockId), controllerKind === "none");
+    setToggleBlock(document.getElementById(scheduleBlockId), controllerKind === "timer");
     setToggleBlock(document.getElementById(thermostatBlockId), controllerKind === "thermostat");
     setToggleBlock(document.getElementById(hydrostatBlockId), controllerKind === "hydrostat");
 }
@@ -513,19 +522,31 @@ function prefillAnimalSpecies(speciesKey) {
     if (scientificField) scientificField.value = profile.scientific;
 }
 
-// Setup Wizard's Plug step only: "I'm done with this enclosure" is a plain navigation link sitting
-// right next to "Add Plug" — easy to click by mistake instead of submitting first, which silently
-// discards whatever was typed (no partial-save, same as every other Setup Wizard form). Warns
-// instead of leaving silently whenever the Plug form has anything typed/checked into it.
-function onSetupDoneClick(event, formId) {
+// Every Setup Wizard step's own forward-navigation link/button ("Continue", "Skip — I just have
+// one enclosure", "I'm done with this enclosure") sits right next to that step's own Add form —
+// easy to click by mistake instead of submitting first, which silently discards whatever was
+// typed (no partial-save, same as every other Setup Wizard form; see RHA-95). Warns instead of
+// leaving silently whenever the named form has anything typed/checked into it. Chain multiple
+// calls with && in one onclick (see setup_room_devices.html) to check more than one form on a
+// step that has two (Room Sensor and Room Plug) — each check is independent, so if both have
+// unsaved data the visitor sees one confirm per form, in order.
+function onWizardContinueClick(event, formId, entityLabel, addButtonLabel) {
     const form = document.getElementById(formId);
     if (!form) return true;
     const hasUnsavedData = Array.prototype.some.call(form.elements, function (el) {
-        if (el.disabled || !el.name || el.type === "submit" || el.type === "button") return false;
+        // "hidden" excluded — e.g. setup_animals.html's carried-over species_profile/life_stage
+        // fields are never empty once a Species Profile was picked earlier in the wizard, but
+        // that's not user-typed input this click would lose. "select-one"/"select-multiple"
+        // excluded too — e.g. setup_plug.html's own Controller Kind always defaults to a non-blank
+        // value ("none"), which isn't "entered" the way a typed or checked field is; whatever a
+        // select reveals when changed (a Target Temperature, an on/off time) is still its own
+        // separate, checked element below.
+        if (el.disabled || !el.name || el.type === "submit" || el.type === "button"
+            || el.type === "hidden" || el.type === "select-one" || el.type === "select-multiple") return false;
         if (el.type === "checkbox" || el.type === "radio") return el.checked;
         return el.value != null && el.value.trim() !== "";
     });
-    if (hasUnsavedData && !confirm('You’ve entered Plug details above but haven’t clicked "Add Plug" yet — they’ll be lost if you leave now. Continue without saving them?')) {
+    if (hasUnsavedData && !confirm(`You’ve entered ${entityLabel} details above but haven’t clicked "${addButtonLabel}" yet — they’ll be lost if you leave now. Continue without saving them?`)) {
         event.preventDefault();
         return false;
     }

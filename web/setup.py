@@ -136,10 +136,15 @@ def setup_create_room_plug(
     target_off_time: str = Form(""),
     always_on: bool = Form(False),
 ):
+    # This form has no Controller Kind picker (it's deliberately simple, same as every other
+    # Setup Wizard Plug field — see ADR 0031), so it infers 'timer' itself whenever an actual
+    # on/off time was entered — Target Schedule is otherwise only ever settable alongside
+    # controller_kind = 'timer' (see CONTEXT.md: Controller Kind, Timer-Controlled; RHA-95).
+    controller_kind = "timer" if (target_on_time and target_off_time and not always_on) else "none"
     try:
         q.create_plug(
             label, purpose, "manual", None, None, None, "1", target_on_time or None, target_off_time or None,
-            room_id=room_id, enclosure_ids=[], controller_kind="none",
+            room_id=room_id, enclosure_ids=[], controller_kind=controller_kind,
             target_temp_c=None, target_humidity_pct=None, always_on=always_on,
         )
     except ValueError as exc:
@@ -327,12 +332,15 @@ def setup_create_plug(
     target_on_time: str = Form(""),
     target_off_time: str = Form(""),
     always_on: bool = Form(False),
+    controller_kind: str = Form("none"),
+    target_temp_f: float | None = Form(None),
+    target_humidity_pct: float | None = Form(None),
 ):
     try:
         q.create_plug(
             label, purpose, "manual", None, None, None, "1", target_on_time or None, target_off_time or None,
-            room_id=None, enclosure_ids=[enclosure_id], controller_kind="none",
-            target_temp_c=None, target_humidity_pct=None, always_on=always_on,
+            room_id=None, enclosure_ids=[enclosure_id], controller_kind=controller_kind,
+            target_temp_c=_f_to_c(target_temp_f), target_humidity_pct=target_humidity_pct, always_on=always_on,
         )
     except ValueError as exc:
         return RedirectResponse(url=f"/setup/enclosures/{enclosure_id}/plug?error={quote(str(exc))}", status_code=303)

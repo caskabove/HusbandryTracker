@@ -29,7 +29,7 @@
                 </tbody>
             </table>
             {% endif %}
-            <form method="post" action="/setup/enclosures/{{ enclosure.id }}/animals" class="admin-form">
+            <form id="setup-animal-form" method="post" action="/setup/enclosures/{{ enclosure.id }}/animals" class="admin-form">
                 <input type="hidden" name="species_profile" value="{{ species_profile }}">
                 <input type="hidden" name="life_stage" value="{{ life_stage }}">
                 <label>Name <input type="text" name="name" placeholder="e.g. Rex" required></label>
@@ -50,7 +50,7 @@
                 </tbody>
             </table>
             {% endif %}
-            <form method="post" action="/setup/enclosures/{{ enclosure.id }}/plants" class="admin-form">
+            <form id="setup-plant-form" method="post" action="/setup/enclosures/{{ enclosure.id }}/plants" class="admin-form">
                 <input type="hidden" name="species_profile" value="{{ species_profile }}">
                 <input type="hidden" name="life_stage" value="{{ life_stage }}">
                 <label>Plant name <input type="text" name="name" placeholder="e.g. Pothos" required></label>
@@ -59,7 +59,8 @@
             </form>
             {% endif %}
 
-            <p><a href="/setup/enclosures/{{ enclosure.id }}/sensor{{ carry_params }}" class="button-link">Continue</a></p>
+            <p><a href="/setup/enclosures/{{ enclosure.id }}/sensor{{ carry_params }}" class="button-link"
+                  onclick="return onWizardContinueClick(event, 'setup-animal-form', 'Animal', 'Add Animal'){% if enclosure.bioactive %} && onWizardContinueClick(event, 'setup-plant-form', 'Plant', 'Add Plant'){% endif %}">Continue</a></p>
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>

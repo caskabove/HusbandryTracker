@@ -313,12 +313,13 @@ CREATE TABLE IF NOT EXISTS plug (
     -- it for the first 3 Plugs under the same parent — same "top 3" default as animal/sensor's own
     -- show_on_dashboard.
     show_on_dashboard   INTEGER NOT NULL DEFAULT 1,
-    target_on_time      TEXT,                           -- "HH:MM", never with a Controller Kind set (see CONTEXT.md: Target Schedule)
-    target_off_time     TEXT,                           -- "HH:MM", never with a Controller Kind set
-    -- Always On (see CONTEXT.md: Plug) — e.g. a pump that runs continuously. Only meaningful when
-    -- controller_kind = 'none' and mutually exclusive with target_on_time/target_off_time, same
-    -- split as this table's other cross-column Plug rules: enforced in web/admin_queries.py, not
-    -- a CHECK here.
+    -- "HH:MM", only ever set together with controller_kind = 'timer' (see CONTEXT.md: Target
+    -- Schedule; RHA-95 split this out of 'none', which carries no schedule at all any more).
+    target_on_time      TEXT,
+    target_off_time     TEXT,
+    -- Always On (see CONTEXT.md: Always On) — e.g. a pump that runs continuously. Only meaningful
+    -- when controller_kind = 'none'; enforced in web/admin_queries.py, not a CHECK here, same as
+    -- this table's other cross-column Plug rules.
     always_on           INTEGER NOT NULL DEFAULT 0,
     -- Timer Warning acknowledgement (see CONTEXT.md: Timer Warning) — the Detected Schedule time the
     -- user cleared the warning against, per on/off time. NULL = never cleared. update_plug() resets
@@ -326,7 +327,11 @@ CREATE TABLE IF NOT EXISTS plug (
     -- something against the target it was cleared under.
     timer_ack_on_time   TEXT,
     timer_ack_off_time  TEXT,
-    controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'thermostat', 'hydrostat')),  -- see CONTEXT.md: Controller Kind, ADR 0008 (supersedes ADR 0007's is_thermostat_controlled)
+    -- 'timer' added by RHA-95 (tools/migrate_2026_10_29_plug_timer_controller_kind.py widens this
+    -- CHECK on an already-deployed database, since SQLite can't ALTER one in place) — see
+    -- CONTEXT.md: Controller Kind, Timer-Controlled, ADR 0008 (supersedes ADR 0007's
+    -- is_thermostat_controlled).
+    controller_kind     TEXT NOT NULL DEFAULT 'none' CHECK (controller_kind IN ('none', 'timer', 'thermostat', 'hydrostat')),
     target_temp_c       REAL,                           -- required together with controller_kind = 'thermostat'; enforced in web/admin_queries.py, not here
     target_humidity_pct REAL,                           -- required together with controller_kind = 'hydrostat'; enforced in web/admin_queries.py, not here
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),

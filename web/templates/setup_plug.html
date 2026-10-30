@@ -40,14 +40,33 @@
                 <datalist id="purpose-suggestions-enc">
                     {% for p in purpose_suggestions %}<option value="{{ p }}">{% endfor %}
                 </datalist>
-                <label class="checkbox"><input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'enc-plug-on', 'enc-plug-off')"> Always on (no schedule — e.g. a filter pump)</label>
-                <label>On-time <input type="time" id="enc-plug-on" name="target_on_time"></label>
-                <label>Off-time <input type="time" id="enc-plug-off" name="target_off_time"></label>
+                <label>Controller
+                    <select id="setup-plug-controller-kind" name="controller_kind"
+                            onchange="updatePlugFieldVisibility(null, 'setup-plug-controller-kind', null, 'setup-plug-always-on', 'setup-plug-schedule', 'setup-plug-thermostat-fields', 'setup-plug-hydrostat-fields')">
+                        <option value="none" selected>None (switched by hand)</option>
+                        <option value="timer">Timer (plugged into a separate timer device)</option>
+                        <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
+                        <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
+                    </select>
+                </label>
+                <div id="setup-plug-always-on" class="mode-fields">
+                    <label class="checkbox"><input type="checkbox" name="always_on" value="true"> Always on (no schedule — e.g. a filter pump)</label>
+                </div>
+                <div id="setup-plug-schedule" class="mode-fields" style="display:none">
+                    <label>On-time <input type="time" name="target_on_time"></label>
+                    <label>Off-time <input type="time" name="target_off_time"></label>
+                </div>
+                <div id="setup-plug-thermostat-fields" class="mode-fields" style="display:none">
+                    <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>
+                </div>
+                <div id="setup-plug-hydrostat-fields" class="mode-fields" style="display:none">
+                    <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct"></label>
+                </div>
                 <button type="submit">{% if enclosure.plugs %}Add Another Plug{% else %}Add Plug{% endif %}</button>
             </form>
 
             <p class="setup-done">
-                <a href="/setup/enclosures/{{ enclosure.id }}/done" class="button-link" onclick="return onSetupDoneClick(event, 'setup-plug-form')">I'm done with this enclosure</a>
+                <a href="/setup/enclosures/{{ enclosure.id }}/done" class="button-link" onclick="return onWizardContinueClick(event, 'setup-plug-form', 'Plug', 'Add Plug')">I'm done with this enclosure</a>
             </p>
         </section>
     </main>

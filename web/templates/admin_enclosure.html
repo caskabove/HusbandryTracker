@@ -541,15 +541,16 @@
                     </label>
                     <label>Tracking Mode
                         <select id="add-enc-plug-tracking-mode" name="tracking_mode"
-                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
+                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-always-on','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
                             <option value="smart">Smart (Tuya-controlled)</option>
                             <option value="manual">Manual (hand-switched, e.g. a timer)</option>
                         </select>
                     </label>
                     <label>Controller Kind
                         <select id="add-enc-plug-controller-kind" name="controller_kind"
-                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
-                            <option value="none" selected>None (powers the heat/cooling/moisture source directly)</option>
+                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-always-on','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
+                            <option value="none" selected>None (switched by hand or its own Smart schedule)</option>
+                            <option value="timer">Timer (plugged into a separate timer device)</option>
                             <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
                             <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
                         </select>
@@ -564,18 +565,21 @@
                         <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
                         <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
                     </div>
-                    {# Target Schedule/Always On/Controller Kind fields — same shape and same
+                    {# Always On/Target Schedule/Controller Kind fields — same shape and same
                        Controller-Kind-gated visibility as the main Admin page's Add Plug form (see
-                       admin_index.html, CONTEXT.md: Target Schedule, Always On; ADR 0012). No
-                       "Belongs to" or Plug Group picker here — this form is already scoped to this
-                       one Enclosure via the URL, same simplification as Add Sensor above. #}
-                    <div id="add-enc-plug-schedule" class="mode-fields">
+                       admin_index.html, CONTEXT.md: Always On, Target Schedule, Timer-Controlled;
+                       ADR 0012, RHA-95). No "Belongs to" or Plug Group picker here — this form is
+                       already scoped to this one Enclosure via the URL, same simplification as Add
+                       Sensor above. #}
+                    <div id="add-enc-plug-always-on" class="mode-fields">
                         <label class="checkbox">
-                            <input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'add-enc-plug-target-on', 'add-enc-plug-target-off')">
+                            <input type="checkbox" name="always_on" value="true">
                             Always On (e.g. a pump that runs continuously — no schedule to set)
                         </label>
-                        <label>Target on-time <input type="time" id="add-enc-plug-target-on" name="target_on_time"></label>
-                        <label>Target off-time <input type="time" id="add-enc-plug-target-off" name="target_off_time"></label>
+                    </div>
+                    <div id="add-enc-plug-schedule" class="mode-fields" style="display:none">
+                        <label>Target on-time <input type="time" name="target_on_time"></label>
+                        <label>Target off-time <input type="time" name="target_off_time"></label>
                     </div>
                     <div id="add-enc-plug-thermostat-fields" class="mode-fields" style="display:none">
                         <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>

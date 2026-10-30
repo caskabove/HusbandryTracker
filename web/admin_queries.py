@@ -137,9 +137,9 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         )]
         for plug in enclosure["plugs"]:
             # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
-            # non-Controller-Kind Plug.
+            # Timer-Controlled Plug — see CONTEXT.md: Timer-Controlled; RHA-95.
             detected = _detect_schedule(conn, plug["id"]) if (
-                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
             ) else {"on_time": None, "off_time": None}
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
@@ -704,7 +704,7 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
     counts, a different table)."""
     if tracking_mode not in ("smart", "manual"):
         raise ValueError(f"Unknown Tracking Mode: {tracking_mode!r}")
-    if controller_kind not in ("none", "thermostat", "hydrostat"):
+    if controller_kind not in ("none", "timer", "thermostat", "hydrostat"):
         raise ValueError(f"Unknown Controller Kind: {controller_kind!r}")
     if tracking_mode == "smart":
         if not tuya_device_id or not tuya_local_key:
@@ -712,14 +712,12 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
     else:
         if tuya_device_id or tuya_local_key:
             raise ValueError("A Manual Plug has no device credentials — leave the Tuya fields blank.")
-    # Target Schedule's both-or-neither rule applies to any Plug without a Controller Kind, Smart
-    # or Manual alike — see ADR 0012 (this used to be Manual-only, back when it was called Declared
-    # Schedule and a Smart Plug had no way to set one at all). Always On (see CONTEXT.md) is the
-    # third, mutually exclusive option in that same "none" case.
-    if controller_kind == "none" and not always_on and bool(target_on_time) != bool(target_off_time):
+    # Target Schedule's both-or-neither rule applies only to a Timer-Controlled Plug, Smart or
+    # Manual alike (see ADR 0012, RHA-95) — 'none' carries no schedule at all any more, and Always
+    # On (see CONTEXT.md) is 'none''s own, separate, optional attribute, not a third option sharing
+    # this same case.
+    if controller_kind == "timer" and bool(target_on_time) != bool(target_off_time):
         raise ValueError("Enter both a target on-time and off-time, or leave both blank.")
-    if controller_kind == "none" and always_on and (target_on_time or target_off_time):
-        raise ValueError("A Plug can't be both Always On and have a Target Schedule — pick one.")
     if bool(room_id) == bool(enclosure_ids):
         raise ValueError("A Plug needs exactly one parent — pick a Room, or one or more Enclosures, not both or neither.")
     if controller_kind == "thermostat" and target_temp_c is None:
@@ -743,9 +741,11 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         always_on = False
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
                    room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on)
-    if controller_kind != "none" or always_on:
-        # Schedule isn't meaningful for a Thermostat-/Hydrostat-Controlled Plug (see ADR 0008) or
-        # an Always On one (see CONTEXT.md: Always On) — mutually exclusive either way.
+    if controller_kind != "timer":
+        # Target Schedule only means anything for a Timer-Controlled Plug (see CONTEXT.md:
+        # Controller Kind, Timer-Controlled; RHA-95) — not meaningful for 'none' (nothing to
+        # compare a hand-switched Plug's actual behavior against) or Thermostat-/Hydrostat-
+        # Controlled (see ADR 0008).
         target_on_time = target_off_time = None
     if controller_kind != "thermostat":
         target_temp_c = None
@@ -824,9 +824,9 @@ def get_plug(plug_id: int) -> dict | None:
             "SELECT enclosure_id FROM plug_enclosure WHERE plug_id = ?", (plug_id,)
         )]
         # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
-        # non-Controller-Kind Plug.
+        # Timer-Controlled Plug — see CONTEXT.md: Timer-Controlled; RHA-95.
         detected = _detect_schedule(conn, plug_id) if (
-            plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+            plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
         ) else {"on_time": None, "off_time": None}
         plug["detected_on_time"] = detected["on_time"]
         plug["detected_off_time"] = detected["off_time"]
@@ -981,10 +981,10 @@ def list_plugs() -> list[dict]:
                     (plug["id"],),
                 )]
                 plug["parent_label"] = ", ".join(names) if names else "—"
-            # Detected Schedule only means anything for a Smart, non-Controller-Kind Plug — see
-            # CONTEXT.md: Detected Schedule.
+            # Detected Schedule only means anything for a Smart, Timer-Controlled Plug — see
+            # CONTEXT.md: Detected Schedule, Timer-Controlled; RHA-95.
             detected = _detect_schedule(conn, plug["id"]) if (
-                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
             ) else {"on_time": None, "off_time": None}
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
@@ -1026,8 +1026,8 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         always_on = False  # see create_plug's identical normalization, and CONTEXT.md: Always On
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
                    room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on)
-    if controller_kind != "none" or always_on:
-        target_on_time = target_off_time = None
+    if controller_kind != "timer":
+        target_on_time = target_off_time = None  # see create_plug's identical normalization
     if controller_kind != "thermostat":
         target_temp_c = None
     if controller_kind != "hydrostat":
@@ -1297,9 +1297,10 @@ def send_plug_command(plug_id: int, is_on: bool, note: str | None = None) -> dic
     action — there's no hardware behind it to actually command).
 
     A Command counts as an Interruption iff the Plug has a determined setting at the moment it's
-    sent — a Controller Kind other than 'none', or a Target Schedule set (checking target_on_time
-    alone is enough: both-or-neither is already enforced by _validate_plug). Only an Interruption's
-    `note` is meaningful; a plain toggle's is ignored even if one was passed.
+    sent — any Controller Kind other than 'none' (Timer/Thermostat/Hydrostat all count; a Target
+    Schedule is itself only ever set alongside 'timer' — see CONTEXT.md: Controller Kind,
+    Timer-Controlled; RHA-95). Only an Interruption's `note` is meaningful; a plain toggle's is
+    ignored even if one was passed.
 
     Sending a Command to a Smart Plug whose Auto-Update is currently paused resumes Auto-Update as
     a side effect (see CONTEXT.md: Auto-Update) — otherwise the confirming plug_state event would
@@ -1309,7 +1310,7 @@ def send_plug_command(plug_id: int, is_on: bool, note: str | None = None) -> dic
         if row is None:
             raise ValueError(f"No such Plug: {plug_id}")
         plug = dict(row)
-        is_interruption = plug["controller_kind"] != "none" or bool(plug["target_on_time"])
+        is_interruption = plug["controller_kind"] != "none"
         cur = conn.execute(
             "INSERT INTO plug_command_log (plug_id, is_on, is_interruption, note) VALUES (?, ?, ?, ?)",
             (plug_id, int(is_on), int(is_interruption), note if is_interruption else None),
@@ -1352,9 +1353,9 @@ def get_room(room_id: int) -> dict | None:
         room["plugs"] = [_decode_plug(dict(r)) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
         for plug in room["plugs"]:
             # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
-            # non-Controller-Kind Plug.
+            # Timer-Controlled Plug — see CONTEXT.md: Timer-Controlled; RHA-95.
             detected = _detect_schedule(conn, plug["id"]) if (
-                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "none"
+                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
             ) else {"on_time": None, "off_time": None}
             plug["detected_on_time"] = detected["on_time"]
             plug["detected_off_time"] = detected["off_time"]
