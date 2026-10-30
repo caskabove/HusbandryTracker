@@ -47,7 +47,7 @@
                     <label>Target temp max (F) <input type="number" step="0.1" name="max_temperature_f"></label>
                     <label>Target humidity min (%) <input type="number" step="1" name="min_humidity"></label>
                     <label>Target humidity max (%) <input type="number" step="1" name="max_humidity"></label>
-                    <button type="submit">Add Sensor</button>
+                    <button type="submit">{% if room.sensors %}Add Another Sensor{% else %}Add Sensor{% endif %}</button>
                 </form>
                 <p class="empty">Since you'll enter readings by hand, fill in at least one min and max above (temperature or humidity).</p>
             </details>
@@ -73,7 +73,7 @@
                     <label class="checkbox"><input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'room-plug-on', 'room-plug-off')"> Always on (no schedule)</label>
                     <label>On-time <input type="time" id="room-plug-on" name="target_on_time"></label>
                     <label>Off-time <input type="time" id="room-plug-off" name="target_off_time"></label>
-                    <button type="submit">Add Plug</button>
+                    <button type="submit">{% if room.plugs %}Add Another Plug{% else %}Add Plug{% endif %}</button>
                 </form>
             </details>
 

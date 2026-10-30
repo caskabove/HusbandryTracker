@@ -79,7 +79,7 @@
                     </div>
                 </details>
                 {% endif %}
-                <button type="submit">Add Sensor</button>
+                <button type="submit">{% if enclosure.sensors %}Add Another Sensor{% else %}Add Sensor{% endif %}</button>
             </form>
 
             <p><a href="/setup/enclosures/{{ enclosure.id }}/plug" class="button-link">Continue</a></p>

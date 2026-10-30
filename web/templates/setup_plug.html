@@ -43,7 +43,7 @@
                 <label class="checkbox"><input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'enc-plug-on', 'enc-plug-off')"> Always on (no schedule — e.g. a filter pump)</label>
                 <label>On-time <input type="time" id="enc-plug-on" name="target_on_time"></label>
                 <label>Off-time <input type="time" id="enc-plug-off" name="target_off_time"></label>
-                <button type="submit">Add Plug</button>
+                <button type="submit">{% if enclosure.plugs %}Add Another Plug{% else %}Add Plug{% endif %}</button>
             </form>
 
             <p class="setup-done">
