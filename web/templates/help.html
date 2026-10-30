@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Help - {{ title }}</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ title }}</h1>
+        {% set nav_current = "help" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="guide-main">
+        <p><a href="/help">&larr; Back to Help</a></p>
+        <article class="guide-content help-content">
+            {{ content_html | safe }}
+        </article>
+    </main>
+</body>
+</html>
