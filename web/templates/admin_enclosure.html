@@ -305,9 +305,21 @@
                                opens the full Graphs chart for that exact Sensor+metric, anchored to
                                the row key graphs_queries.py already builds for it. Each chart has
                                its own Week/Month toggle (both windows are already embedded below;
-                               see web/static/graphs.js's setSparklineRange). #}
+                               see web/static/graphs.js's setSparklineRange). When this Sensor
+                               reports both Temperature and Humidity, they share one combined chart
+                               instead of two (RHA-93) — dual y-axis, one Target Range band per
+                               metric (two shades of green), fixed per-metric line colors, no
+                               separate legend (see web/static/graphs.js's
+                               renderCombinedSparklineChart). #}
+                            {% set spark_temp = s.sparklines.get("temperature_c") if s.sparklines else none %}
+                            {% set spark_humidity = s.sparklines.get("humidity_pct") if s.sparklines else none %}
+                            {% set humidity_metric = TARGET_RANGE_METRICS|selectattr("key", "equalto", "humidity")|first %}
+                            {% set combine_temp_humidity = spark_temp and spark_humidity
+                                and (spark_temp.ranges.week or spark_temp.ranges.month)
+                                and (spark_humidity.ranges.week or spark_humidity.ranges.month) %}
                             <div class="sparkline-group">
                             {% for metric in TARGET_RANGE_METRICS %}
+                                {% if not (combine_temp_humidity and metric.key == "humidity") %}
                                 {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
                                 {% if spark and (spark.ranges.week or spark.ranges.month) %}
                                 <div class="sparkline-chart">
@@ -315,6 +327,27 @@
                                         <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
                                         <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
                                     </div>
+                                    {% if combine_temp_humidity and metric.key == "temperature" %}
+                                    <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature &amp; Humidity chart">
+                                        <canvas class="sparkline" width="260" height="84"
+                                                data-combined="1"
+                                                data-points-week="{{ spark_temp.ranges.week|tojson }}"
+                                                data-points-month="{{ spark_temp.ranges.month|tojson }}"
+                                                data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
+                                                data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
+                                                data-decimals="{{ metric.decimals }}"
+                                                data-decimals-b="{{ humidity_metric.decimals }}"
+                                                data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
+                                                data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
+                                                data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
+                                                data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
+                                                data-label-a="{{ metric.label }}"
+                                                data-label-b="{{ humidity_metric.label }}"
+                                                data-title-week="Temperature &amp; Humidity - last 7 days"
+                                                data-title-month="Temperature &amp; Humidity - last 30 days"
+                                                data-range="week"></canvas>
+                                    </a>
+                                    {% else %}
                                     <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
                                         <canvas class="sparkline" width="260" height="84"
                                                 data-points-week="{{ spark.ranges.week|tojson }}"
@@ -327,7 +360,9 @@
                                                 data-title-month="{{ metric.label }} - last 30 days"
                                                 data-range="week"></canvas>
                                     </a>
+                                    {% endif %}
                                 </div>
+                                {% endif %}
                                 {% endif %}
                             {% endfor %}
                             </div>

@@ -9,6 +9,19 @@ const SPARKLINE_COLOR = "#007f7f";
 const SPARKLINE_TARGET_RANGE_COLOR = "#4caf72"; // var(--status-green) — canvas fills can't read CSS vars
 const SPARKLINE_AXIS_COLOR = "#93a89c"; // var(--text-muted)
 
+// A combined Temperature+Humidity Sparkline (RHA-93: one Sensor reporting both shares one chart
+// instead of two) — fixed line colors pulled from Graphs' own GRAPH_PALETTE rather than a new
+// one-off pair, so the colors stay the same when a viewer clicks through to the full Graphs
+// chart. Deliberately not green, so neither line is ever confused with either Target Range band
+// below it (see SPARKLINE_TARGET_RANGE_COLOR_B just below).
+const SPARKLINE_COMBINED_TEMPERATURE_COLOR = GRAPH_PALETTE[1];
+const SPARKLINE_COMBINED_HUMIDITY_COLOR = GRAPH_PALETTE[2];
+// The second Target Range band's shade, only used when two metrics' bands share one combined
+// Sparkline — darker than SPARKLINE_TARGET_RANGE_COLOR so both still read "green = acceptable
+// zone" while staying tellable apart. No CSS var backs this one (unlike the comment on
+// SPARKLINE_TARGET_RANGE_COLOR above) — nothing outside this one combined-chart case uses it.
+const SPARKLINE_TARGET_RANGE_COLOR_B = "#2e7d4f";
+
 function formatGraphTick(value) {
     const d = new Date(value);
     return d.toLocaleString(undefined, {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
@@ -42,11 +55,19 @@ function sparklineIsRealDataset(item) {
 function renderSparkline(canvas) {
     if (typeof Chart === "undefined") return;
     const range = canvas.dataset.range === "month" ? "month" : "week";
-    let points;
+    const combined = canvas.dataset.combined === "1";
+    let points, pointsB = [];
     try {
         points = JSON.parse(canvas.dataset[range === "month" ? "pointsMonth" : "pointsWeek"] || "[]");
     } catch (e) {
         points = [];
+    }
+    if (combined) {
+        try {
+            pointsB = JSON.parse(canvas.dataset[range === "month" ? "pointsMonthB" : "pointsWeekB"] || "[]");
+        } catch (e) {
+            pointsB = [];
+        }
     }
     if (canvas._sparklineChart) {
         canvas._sparklineChart.destroy();
@@ -54,8 +75,12 @@ function renderSparkline(canvas) {
     }
     const titleAttr = canvas.dataset[range === "month" ? "titleMonth" : "titleWeek"];
     if (titleAttr) canvas.title = titleAttr;
-    if (points.length === 0) return;
-    renderSparklineChart(canvas, points);
+    if (points.length === 0 && pointsB.length === 0) return;
+    if (combined) {
+        renderCombinedSparklineChart(canvas, points, pointsB);
+    } else {
+        renderSparklineChart(canvas, points);
+    }
 }
 
 function setSparklineRange(button, range) {
@@ -182,6 +207,143 @@ function renderSparklineChart(canvas, points) {
                                     " (range " + p[1].toFixed(precision) + "–" + p[3].toFixed(precision) + ")";
                             }
                             return p[1].toFixed(precision);
+                        },
+                    },
+                },
+            },
+        },
+    });
+}
+
+// Temperature + Humidity sharing one Sparkline (RHA-93) instead of the two stacked charts
+// renderSparklineChart draws for every other metric pairing. Same min/max-band and axis-extent
+// technique as a plain Sparkline, run twice — once per metric, each on its own y-axis (dual-axis,
+// not a normalized shared scale, so the tick labels stay real calibrated values) — rather than
+// one shared axis. Either points array can be empty (a brand-new Sensor, or a gap in just one
+// metric's history for this window); addSeries no-ops for an empty one and that metric's axis is
+// simply left out of the chart, no separate fallback path needed.
+function renderCombinedSparklineChart(canvas, pointsA, pointsB) {
+    const decimalsAttrA = parseInt(canvas.dataset.decimals, 10);
+    const decimalsAttrB = parseInt(canvas.dataset.decimalsB, 10);
+    const decimalsA = Number.isFinite(decimalsAttrA) ? decimalsAttrA : 2;
+    const decimalsB = Number.isFinite(decimalsAttrB) ? decimalsAttrB : 2;
+    const labelA = canvas.dataset.labelA || "";
+    const labelB = canvas.dataset.labelB || "";
+    const targetMinA = parseFloat(canvas.dataset.targetMin);
+    const targetMaxA = parseFloat(canvas.dataset.targetMax);
+    const targetMinB = parseFloat(canvas.dataset.targetMinB);
+    const targetMaxB = parseFloat(canvas.dataset.targetMaxB);
+
+    const allX = pointsA.concat(pointsB).map(function (p) { return p[0]; });
+    const firstX = Math.min.apply(null, allX);
+    const lastX = Math.max.apply(null, allX);
+
+    const datasets = [];
+    const scales = {
+        x: {
+            type: "linear",
+            grid: {display: false},
+            ticks: {font: {size: 9}, color: SPARKLINE_AXIS_COLOR, callback: formatSparklineDate},
+            afterBuildTicks: function (axis) {
+                axis.ticks = firstX === lastX ? [{value: firstX}] : [{value: firstX}, {value: lastX}];
+            },
+        },
+    };
+
+    // One metric's Target Range band (if set) plus its min/avg/max band or plain line — same
+    // shape renderSparklineChart already draws, just parameterized per axis/color so it can run
+    // once for Temperature and once for Humidity. Tags the real (visible) line dataset with
+    // seriesMeta so the shared tooltip callback below can label and format whichever series the
+    // viewer is hovering, the same technique buildGraphChart's own tooltip already uses for its
+    // dataset.label/decimals.
+    function addSeries(axisId, position, points, lineColor, bandColor, targetMin, targetMax, label, decimals) {
+        if (!points.length) return;
+        const hasTarget = Number.isFinite(targetMin) && Number.isFinite(targetMax);
+        const isBand = points[0].length === 4;
+        if (hasTarget) {
+            datasets.push({data: [{x: firstX, y: targetMin}, {x: lastX, y: targetMin}],
+                           yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)"});
+            datasets.push({data: [{x: firstX, y: targetMax}, {x: lastX, y: targetMax}],
+                           yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: "-1",
+                           backgroundColor: bandColor + "26", borderColor: "rgba(0,0,0,0)"});
+        }
+        let lineDataset;
+        if (isBand) {
+            datasets.push({data: points.map(function (p) { return {x: p[0], y: p[1]}; }),
+                           yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: false, borderColor: "rgba(0,0,0,0)"});
+            datasets.push({data: points.map(function (p) { return {x: p[0], y: p[3]}; }),
+                           yAxisID: axisId, borderWidth: 0, pointRadius: 0, fill: "-1",
+                           backgroundColor: lineColor + "2a", borderColor: "rgba(0,0,0,0)"});
+            lineDataset = {data: points.map(function (p) { return {x: p[0], y: p[2]}; }),
+                           yAxisID: axisId, borderColor: lineColor, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25};
+        } else {
+            lineDataset = {data: points.map(function (p) { return {x: p[0], y: p[1]}; }),
+                           yAxisID: axisId, borderColor: lineColor, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.25};
+        }
+        lineDataset.seriesMeta = {label: label, points: points, isBand: isBand, decimals: decimals};
+        datasets.push(lineDataset);
+
+        const allValues = [];
+        points.forEach(function (p) { for (let i = 1; i < p.length; i++) allValues.push(p[i]); });
+        let yMin = Math.min.apply(null, allValues);
+        let yMax = Math.max.apply(null, allValues);
+        if (hasTarget) {
+            yMin = Math.min(yMin, targetMin);
+            yMax = Math.max(yMax, targetMax);
+        }
+        const pad = (yMax - yMin) * 0.08 || Math.pow(10, -decimals);
+        yMin -= pad;
+        yMax += pad;
+
+        // Axis tick labels are tinted to this metric's own line color instead of adding a
+        // separate Chart.js legend (RHA-93) — Sparkline is already tight on vertical space (ADR
+        // 0024), and the axis sits right next to the line it belongs to, so the color does the
+        // same "which line is this" job a legend would.
+        scales[axisId] = {
+            position: position,
+            min: yMin, max: yMax,
+            grid: {display: false},
+            ticks: {
+                maxTicksLimit: 2, font: {size: 9}, color: lineColor,
+                callback: function (value) { return value.toFixed(decimals); },
+            },
+        };
+    }
+
+    addSeries("yA", "left", pointsA, SPARKLINE_COMBINED_TEMPERATURE_COLOR, SPARKLINE_TARGET_RANGE_COLOR,
+              targetMinA, targetMaxA, labelA, decimalsA);
+    addSeries("yB", "right", pointsB, SPARKLINE_COMBINED_HUMIDITY_COLOR, SPARKLINE_TARGET_RANGE_COLOR_B,
+              targetMinB, targetMaxB, labelB, decimalsB);
+
+    canvas._sparklineChart = new Chart(canvas, {
+        type: "line",
+        data: {datasets: datasets},
+        options: {
+            responsive: false,
+            animation: false,
+            // "nearest" (not "index") on purpose, same as a plain Sparkline — Temperature's and
+            // Humidity's raw points can fall on different timestamps for a Manual Sensor logged
+            // with only one of the two filled in on some entries, so pairing by array index could
+            // show a mismatched pair; pairing by nearest pixel distance never does, at the cost of
+            // the tooltip showing one series' value at a time rather than both together.
+            interaction: {mode: "nearest", intersect: false},
+            scales: scales,
+            plugins: {
+                legend: {display: false},
+                tooltip: {
+                    filter: sparklineIsRealDataset,
+                    callbacks: {
+                        title: function (items) {
+                            return items.length ? formatSparklineDate(items[0].parsed.x) : "";
+                        },
+                        label: function (context) {
+                            const meta = context.dataset.seriesMeta;
+                            if (!meta) return "";
+                            const p = meta.points[context.dataIndex];
+                            const value = meta.isBand
+                                ? "avg " + p[2].toFixed(meta.decimals) + " (range " + p[1].toFixed(meta.decimals) + "–" + p[3].toFixed(meta.decimals) + ")"
+                                : p[1].toFixed(meta.decimals);
+                            return (meta.label ? meta.label + ": " : "") + value;
                         },
                     },
                 },
