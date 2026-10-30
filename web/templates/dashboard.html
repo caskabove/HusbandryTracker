@@ -269,7 +269,9 @@
                             <span class="reading-label">{{ plug.label }}</span>
                             <span class="reading-type"></span>
                             <span class="reading-status">
-                                {% if cs.unreachable %}
+                                {% if plug.tracking_mode == "manual" %}
+                                <a class="pill status-unknown" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">{{ plug.controller_kind|capitalize }}</a>
+                                {% elif cs.unreachable %}
                                 <a class="pill status-red" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">Unreachable</a>
                                 {% elif cs.is_on is none %}
                                 <a class="pill status-unknown" href="/admin/enclosures/{{ enclosure.id }}" title="Manage on the Enclosure page">no data yet</a>
@@ -470,7 +472,8 @@
                             {% set cs = plug.current_status %}
                             <span class="room-ambient-item">
                                 {{ plug.label }}:
-                                {% if cs.unreachable %}<span class="pill status-red">Unreachable</span>
+                                {% if plug.tracking_mode == "manual" %}<span class="pill status-unknown">{{ plug.controller_kind|capitalize }}</span>
+                                {% elif cs.unreachable %}<span class="pill status-red">Unreachable</span>
                                 {% elif cs.is_on is none %}<span class="pill status-unknown">no data yet</span>
                                 {% elif cs.is_on %}<span class="pill status-green">On</span>
                                 {% else %}<span class="pill status-unknown">Off</span>

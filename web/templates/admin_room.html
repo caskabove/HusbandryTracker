@@ -159,10 +159,15 @@
                         <td>{{ p.purpose }}</td>
                         <td>{{ p.tracking_mode|capitalize }}</td>
                         <td>
-                            {# Current Status — what's actually on/off right now (or Unreachable),
-                               as opposed to the Schedules section's own target/detected and
-                               last-Command pills below. See CONTEXT.md: Unreachable, Command. #}
-                            {% if cs.unreachable %}
+                            {# Current Status — a Manual Plug has no relay to observe, so its Status
+                               shows its Controller Kind instead (whatever's actually cycling on/off
+                               downstream — see CONTEXT.md: Controller Kind); a Smart Plug shows
+                               what's actually on/off right now (or Unreachable), as opposed to the
+                               Schedules section's own target/detected and last-Command pills below.
+                               See CONTEXT.md: Unreachable, Command. #}
+                            {% if p.tracking_mode == "manual" %}
+                            <span class="pill status-unknown">{{ p.controller_kind|capitalize }}</span>
+                            {% elif cs.unreachable %}
                             <span class="pill status-red">Unreachable</span>
                             {% elif cs.is_on is none %}
                             <span class="pill status-unknown">no data yet</span>
