@@ -15,6 +15,40 @@
 
     <main class="admin-main">
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+
+        {# Care Setup Prompt (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) — shown
+           whenever at least one Care kind has no Care Event logged at all, naming the affected
+           kinds explicitly. Reappears on every visit while any kind stays unlogged (see
+           web/admin.py's record_care_nags(), called just before this page is rendered); nothing
+           here is forced — "Start from Today" is one click, "Set your own" just opens the existing
+           per-kind Advanced dropdowns below, and the X dismisses for this visit only. #}
+        {% set ns = namespace(unlogged=[]) %}
+        {% for kind in care_kinds %}
+            {% if enclosure.care[kind].days_since is none %}{% set ns.unlogged = ns.unlogged + [kind] %}{% endif %}
+        {% endfor %}
+        {% if ns.unlogged %}
+            {% set kind_labels = ns.unlogged | map('replace', '_', ' ') | map('capitalize') | list %}
+            <dialog id="care-prompt-modal" class="care-prompt-modal">
+                <div class="care-prompt-header">
+                    <h3>No Care data yet</h3>
+                    <button type="button" class="care-prompt-close" onclick="dismissCarePrompt()" title="Close" aria-label="Close">&times;</button>
+                </div>
+                <p>
+                    {% if kind_labels|length == 1 %}{{ kind_labels[0] }} has no data yet.
+                    {% elif kind_labels|length == 2 %}{{ kind_labels[0] }} and {{ kind_labels[1] }} have no data yet.
+                    {% else %}{{ kind_labels[:-1]|join(", ") }}, and {{ kind_labels[-1] }} have no data yet.
+                    {% endif %}
+                    Want to start tracking now?
+                </p>
+                <div class="care-prompt-actions">
+                    <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/start-from-today">
+                        <button type="submit">Start from Today</button>
+                    </form>
+                    <button type="button" onclick="useOwnCareDates()">Set your own</button>
+                </div>
+            </dialog>
+        {% endif %}
+
         <section class="admin-card">
             <h2>Enclosure Settings</h2>
             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/update" class="admin-form">
@@ -66,16 +100,23 @@
             </form>
         </section>
 
-        <section class="admin-card">
+        <section class="admin-card" id="care-section">
             <h2>Care</h2>
+            {# Set your own's shared instruction (see CONTEXT.md: Care Setup Prompt) — one line
+               shown once useOwnCareDates() expands the unlogged kinds' own Advanced dropdowns
+               below, dismissed independently of them via dismissCareAdvancedHint(). #}
+            <div class="care-advanced-hint" id="care-advanced-hint" hidden>
+                <p>Pick when it actually happened for each one below, then click Log.</p>
+                <button type="button" onclick="dismissCareAdvancedHint()">OK</button>
+            </div>
             {% for kind in care_kinds %}
                 {% set entry = enclosure.care[kind] %}
                 {% set interval = enclosure[kind ~ "_interval_days"] %}
-                {% set status = care_interval_status(entry.days_since, interval) %}
-                <div class="reading-row care-row" id="care-{{ kind }}">
+                {% set status = care_interval_status(entry.days_since, interval, enclosure[kind ~ "_nag_count"]) %}
+                <div class="reading-row care-row" id="care-{{ kind }}" {% if entry.days_since is none %}data-unlogged="true"{% endif %}>
                     <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
                     <span class="pill status-{{ status.value }}">
-                        {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
+                        {% if entry.days_since is none %}no data{% else %}{{ entry.days_since }}d ago{% endif %}
                     </span>
                     {% if kind == "feeding" and enclosure.animals %}
                     {# Spot-feed (see CONTEXT.md: Spot-feed) — one shared picker synced into whichever
@@ -364,6 +405,16 @@
                 <summary>+ Add Sensor</summary>
                 <form method="post" action="/admin/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                    <label>Species Profile <small>(optional — suggests starting Target Range values below)</small>
+                        <select id="add-sensor-species-profile" onchange="onSensorSpeciesProfileChange(this, 'add-sensor-zone-wrap', 'add-sensor-zone', 'temp_min_f', 'temp_max_f', 'humidity_min', 'humidity_max')"></select>
+                    </label>
+                    <label id="add-sensor-zone-wrap" style="display:none">This sensor monitors
+                        <select id="add-sensor-zone" onchange="onSensorZoneChange(this, 'add-sensor-species-profile', 'temp_min_f', 'temp_max_f')">
+                            <option value="warm">Warm side</option>
+                            <option value="cool">Cool side</option>
+                            <option value="ambient" selected>Single ambient sensor (whole enclosure)</option>
+                        </select>
+                    </label>
                     <label>Tracking Mode
                         <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-sensor-smart', 'add-sensor-manual')">
                             <option value="smart">Smart (Govee BLE sensor)</option>
@@ -470,10 +521,71 @@
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="empty">No plugs assigned yet — add or assign one from the main Admin page.</td></tr>
+                    <tr><td colspan="7" class="empty">No plugs assigned yet — add one below, or assign an existing one from the main Admin page.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
+            <details>
+                <summary>+ Add Plug</summary>
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
+                    <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
+                    <label>Purpose
+                        <input type="text" name="purpose" list="purpose-options" placeholder="light, heat, cooling, UVB, pump..." required>
+                        <datalist id="purpose-options">
+                            <option value="light">
+                            <option value="heat">
+                            <option value="cooling">
+                            <option value="UVB">
+                            <option value="pump">
+                        </datalist>
+                    </label>
+                    <label>Tracking Mode
+                        <select id="add-enc-plug-tracking-mode" name="tracking_mode"
+                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
+                            <option value="smart">Smart (Tuya-controlled)</option>
+                            <option value="manual">Manual (hand-switched, e.g. a timer)</option>
+                        </select>
+                    </label>
+                    <label>Controller Kind
+                        <select id="add-enc-plug-controller-kind" name="controller_kind"
+                                onchange="updatePlugFieldVisibility('add-enc-plug-tracking-mode','add-enc-plug-controller-kind','add-enc-plug-smart','add-enc-plug-schedule','add-enc-plug-thermostat-fields','add-enc-plug-hydrostat-fields')">
+                            <option value="none" selected>None (powers the heat/cooling/moisture source directly)</option>
+                            <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
+                            <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
+                        </select>
+                    </label>
+                    <div id="add-enc-plug-smart" class="mode-fields">
+                        <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
+                        <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
+                        <div class="discover-device">
+                            <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                            <div class="discover-results" style="display:none"></div>
+                        </div>
+                        <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                        <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
+                    </div>
+                    {# Target Schedule/Always On/Controller Kind fields — same shape and same
+                       Controller-Kind-gated visibility as the main Admin page's Add Plug form (see
+                       admin_index.html, CONTEXT.md: Target Schedule, Always On; ADR 0012). No
+                       "Belongs to" or Plug Group picker here — this form is already scoped to this
+                       one Enclosure via the URL, same simplification as Add Sensor above. #}
+                    <div id="add-enc-plug-schedule" class="mode-fields">
+                        <label class="checkbox">
+                            <input type="checkbox" name="always_on" value="true" onchange="onAlwaysOnChange(this, 'add-enc-plug-target-on', 'add-enc-plug-target-off')">
+                            Always On (e.g. a pump that runs continuously — no schedule to set)
+                        </label>
+                        <label>Target on-time <input type="time" id="add-enc-plug-target-on" name="target_on_time"></label>
+                        <label>Target off-time <input type="time" id="add-enc-plug-target-off" name="target_off_time"></label>
+                    </div>
+                    <div id="add-enc-plug-thermostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>
+                    </div>
+                    <div id="add-enc-plug-hydrostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct"></label>
+                    </div>
+                    <button type="submit">Add Plug</button>
+                </form>
+            </details>
         </section>
 
         <p>
@@ -484,5 +596,6 @@
     <script src="/static/chart.min.js?v={{ asset_version }}"></script>
     <script src="/static/graphs.js?v={{ asset_version }}"></script>
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>populateSpeciesProfileSelect(document.getElementById('add-sensor-species-profile'), '{{ enclosure.enclosure_type }}');</script>
 </body>
 </html>

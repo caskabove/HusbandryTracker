@@ -171,8 +171,8 @@
 
             <div class="panel-body">
                 <div class="section collapsible-section" data-collapse-key="readings:{{ enclosure.id }}">
-                    <h3 class="collapsible-section-header">
-                        <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
+                    <h3 class="collapsible-section-header" onclick="toggleCollapse(this)" title="Collapse/expand">
+                        <button type="button" class="collapse-toggle" onclick="event.stopPropagation(); toggleCollapse(this)">&#9662;</button>
                         <span>Readings</span>
                     </h3>
                     <div class="collapsible-section-body">
@@ -216,16 +216,20 @@
                    CONTEXT.md: Care Interval), same pattern as Animal/Sensor/Plug's own
                    show_on_dashboard; Admin's own Care section always lists every kind regardless
                    (see web/admin_queries.py's get_enclosure()). #}
-                {% set severity = {"green": 0, "yellow": 1, "red": 2} %}
+                {# "unknown" (no data, still within the Care Setup Prompt's grace period — see
+                   CONTEXT.md: Care Setup Prompt, ADR 0040) ranks above green but below yellow/red:
+                   worth surfacing over an all-green panel, but a real yellow/red deadline still
+                   wins. #}
+                {% set severity = {"green": 0, "unknown": 1, "yellow": 2, "red": 3} %}
                 {% set ns = namespace(worst="green", any=false) %}
                 {% for kind in care_kinds if enclosure["show_" ~ kind ~ "_on_dashboard"] %}
                     {% set ns.any = true %}
-                    {% set kind_status = care_interval_status(enclosure.care[kind].days_since, enclosure[kind ~ "_interval_days"]) %}
+                    {% set kind_status = care_interval_status(enclosure.care[kind].days_since, enclosure[kind ~ "_interval_days"], enclosure[kind ~ "_nag_count"]) %}
                     {% if severity[kind_status.value] > severity[ns.worst] %}{% set ns.worst = kind_status.value %}{% endif %}
                 {% endfor %}
                 <div class="section collapsible-section collapsed" data-collapse-key="care:{{ enclosure.id }}">
-                    <h3 class="collapsible-section-header">
-                        <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
+                    <h3 class="collapsible-section-header" onclick="toggleCollapse(this)" title="Collapse/expand">
+                        <button type="button" class="collapse-toggle" onclick="event.stopPropagation(); toggleCollapse(this)">&#9662;</button>
                         <span>Care</span>
                         <span class="pill status-{{ ns.worst if ns.any else 'unknown' }}" title="Worst status among this Enclosure's Care kinds">{{ ns.worst|capitalize if ns.any else 'Unknown' }}</span>
                     </h3>
@@ -233,14 +237,14 @@
                     {% for kind in care_kinds if enclosure["show_" ~ kind ~ "_on_dashboard"] %}
                         {% set entry = enclosure.care[kind] %}
                         {% set interval = enclosure[kind ~ "_interval_days"] %}
-                        {% set status = care_interval_status(entry.days_since, interval) %}
+                        {% set status = care_interval_status(entry.days_since, interval, enclosure[kind ~ "_nag_count"]) %}
                         <div class="reading-row reading-row-grid care-row">
                             <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
                             <span class="reading-type"></span>
                             <span class="reading-status">
                                 <a class="pill status-{{ status.value }}" href="/admin/enclosures/{{ enclosure.id }}#care-{{ kind }}"
                                    title="Log {{ kind|replace('_', ' ') }} on the Enclosure page">
-                                    {% if entry.days_since is none %}never{% else %}{{ entry.days_since }}d ago{% endif %}
+                                    {% if entry.days_since is none %}no data{% else %}{{ entry.days_since }}d ago{% endif %}
                                 </a>
                             </span>
                         </div>
@@ -254,8 +258,8 @@
                    Animals/Sensors (see CONTEXT.md: Plug). Status only, read-only: on/off control
                    and Schedules stay Admin-only (see web/main.py's module docstring). #}
                 <div class="section collapsible-section" data-collapse-key="plugs:{{ enclosure.id }}">
-                    <h3 class="collapsible-section-header">
-                        <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
+                    <h3 class="collapsible-section-header" onclick="toggleCollapse(this)" title="Collapse/expand">
+                        <button type="button" class="collapse-toggle" onclick="event.stopPropagation(); toggleCollapse(this)">&#9662;</button>
                         <span>Plugs</span>
                     </h3>
                     <div class="collapsible-section-body">

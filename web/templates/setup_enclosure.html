@@ -26,10 +26,19 @@
                 <input type="hidden" name="room_id" value="{{ room_id or '' }}">
                 <label>Name <input type="text" name="name" placeholder="e.g. Rex's Tank" required></label>
                 <label>Type
-                    <select name="enclosure_type">
+                    <select name="enclosure_type" onchange="onEnclosureTypeChangeForProfile(this, 'setup-species-profile', 'setup-life-stage-wrap', 'setup-life-stage', 'feeding_interval')">
                         {% for t in enclosure_types %}
                         <option value="{{ t }}">{{ enclosure_type_labels[t] }}</option>
                         {% endfor %}
+                    </select>
+                </label>
+                <label>Species Profile <small>(optional — suggests starting numbers below, and carries through to the Animal and Sensor steps; edit anything it fills in)</small>
+                    <select id="setup-species-profile" name="species_profile" onchange="onEnclosureSpeciesProfileChange(this, 'setup-life-stage-wrap', 'setup-life-stage', 'feeding_interval')"></select>
+                </label>
+                <label id="setup-life-stage-wrap" style="display:none">Life Stage
+                    <select id="setup-life-stage" name="life_stage" onchange="onEnclosureLifeStageChange(this, 'setup-species-profile', 'feeding_interval')">
+                        <option value="baby">Baby / Juvenile</option>
+                        <option value="adult" selected>Adult</option>
                     </select>
                 </label>
                 <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive (live plants &amp; cleanup crew)</label>
@@ -42,5 +51,6 @@
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>populateSpeciesProfileSelect(document.getElementById('setup-species-profile'), document.querySelector('select[name="enclosure_type"]').value);</script>
 </body>
 </html>

@@ -21,7 +21,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import markdown
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -104,6 +104,35 @@ def guide(request: Request):
     text = USER_GUIDE_PATH.read_text(encoding="utf-8")
     content_html = markdown.markdown(text, extensions=["tables", "fenced_code", "toc"])
     return templates.TemplateResponse(request, "guide.html", {"content_html": content_html})
+
+
+# Help (see CONTEXT.md: Help; ADR 0039) — a separate, visual "what does this page show/do"
+# reference, one topic per main screen, distinct from the Guide's own setup-walkthrough content.
+# Each topic's actual write-up is a standalone HTML fragment (docs/help/{slug}.html, no Jinja
+# inside it) so "the contents" stay reusable on their own, not entangled with this app's chrome.
+HELP_DIR = APP_ROOT / "docs" / "help"
+HELP_TOPICS: list[dict] = [
+    {"slug": "dashboard", "title": "Dashboard", "summary": "Your Rooms and Enclosures at a glance — Readings, Sparklines, and quick actions."},
+    {"slug": "rooms", "title": "Rooms", "summary": "Grouping Enclosures together, plus any shared ambient Sensors/Plugs."},
+    {"slug": "enclosures", "title": "Enclosures", "summary": "The core unit — one per animal or tank, with its own Animals, Sensors, and Plugs."},
+    {"slug": "plugs", "title": "Plugs", "summary": "Smart or manual outlets controlling heat, light, humidity, and more."},
+    {"slug": "sensors", "title": "Sensors", "summary": "Tracking Temperature, Humidity, pH, and other metrics over time."},
+]
+_HELP_TOPICS_BY_SLUG = {topic["slug"]: topic for topic in HELP_TOPICS}
+
+
+@app.get("/help")
+def help_index(request: Request):
+    return templates.TemplateResponse(request, "help_index.html", {"topics": HELP_TOPICS})
+
+
+@app.get("/help/{slug}")
+def help_topic(request: Request, slug: str):
+    topic = _HELP_TOPICS_BY_SLUG.get(slug)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Unknown Help topic.")
+    content_html = (HELP_DIR / f"{slug}.html").read_text(encoding="utf-8")
+    return templates.TemplateResponse(request, "help.html", {"title": topic["title"], "content_html": content_html})
 
 
 async def _refresh_smart_sensors(column: str, entity_id: int) -> str | None:

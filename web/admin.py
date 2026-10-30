@@ -248,6 +248,9 @@ def admin_create_enclosure(
 
 @router.get("/enclosures/{enclosure_id}")
 def admin_enclosure_detail(request: Request, enclosure_id: int):
+    # Care Setup Prompt bookkeeping (see CONTEXT.md, ADR 0040) — must run before get_enclosure()
+    # below so a freshly-bumped nag count (or a freshly-cleared one) shows in this same render.
+    q.record_care_nags(enclosure_id)
     enclosure = q.get_enclosure(enclosure_id)
     if enclosure is None:
         return RedirectResponse(url="/admin/enclosures", status_code=303)
@@ -266,6 +269,18 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
             "error": request.query_params.get("error"),
         }
     )
+
+
+@router.post("/enclosures/{enclosure_id}/care-events/start-from-today")
+def admin_start_care_events_from_today(enclosure_id: int):
+    """Care Setup Prompt's "Start from Today" button (see CONTEXT.md, ADR 0040) — logs today for
+    every currently-unlogged Care kind in one request; a kind with existing history is untouched.
+
+    Registered *before* the generic .../care-events/{kind} route below — FastAPI matches path
+    routes in registration order, so if that one came first it would swallow this path too,
+    capturing kind="start-from-today" and failing log_care_event's CARE_EVENT_KINDS check."""
+    q.start_care_events_from_today(enclosure_id)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#care-section", status_code=303)
 
 
 @router.post("/enclosures/{enclosure_id}/care-events/{kind}")
@@ -780,6 +795,37 @@ def admin_create_plug(
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.post("/enclosures/{enclosure_id}/plugs")
+def admin_create_enclosure_plug(
+    enclosure_id: int,
+    label: str = Form(...),
+    purpose: str = Form(...),
+    tracking_mode: str = Form("smart"),
+    tuya_device_id: str = Form(""),
+    tuya_local_key: str = Form(""),
+    tuya_ip_address: str = Form(""),
+    switch_dps_key: str = Form("1"),
+    target_on_time: str = Form(""),
+    target_off_time: str = Form(""),
+    always_on: bool = Form(False),
+    controller_kind: str = Form("none"),
+    target_temp_f: float | None = Form(None),
+    target_humidity_pct: float | None = Form(None),
+):
+    """Add Plug, scoped to this Enclosure (see admin_enclosure.html's own Plugs section) — same
+    shape as admin_create_sensor() just above: no "Belongs to" picker and no Plug Group option
+    (both only make sense from the main Admin page's unscoped form), enclosure_ids fixed to just
+    this one Enclosure."""
+    try:
+        q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
+                       tuya_ip_address, switch_dps_key, target_on_time or None, target_off_time or None,
+                       None, [enclosure_id],
+                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
 @router.post("/plugs/{plug_id}/delete")

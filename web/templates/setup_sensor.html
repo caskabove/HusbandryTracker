@@ -52,6 +52,16 @@
 
             <form method="post" action="/setup/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
                 <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                <label>Species Profile <small>(optional — suggests starting Target Range values below; carried over from the Enclosure step if you picked one there)</small>
+                    <select id="setup-sensor-species-profile" name="species_profile" onchange="onSensorSpeciesProfileChange(this, 'setup-sensor-zone-wrap', 'setup-sensor-zone', 'min_{{ primary_metric.key }}', 'max_{{ primary_metric.key }}', 'min_humidity', 'max_humidity')"></select>
+                </label>
+                <label id="setup-sensor-zone-wrap" style="display:none">This sensor monitors
+                    <select id="setup-sensor-zone" onchange="onSensorZoneChange(this, 'setup-sensor-species-profile', 'min_{{ primary_metric.key }}', 'max_{{ primary_metric.key }}')">
+                        <option value="warm">Warm side</option>
+                        <option value="cool">Cool side</option>
+                        <option value="ambient" selected>Single ambient sensor (whole enclosure)</option>
+                    </select>
+                </label>
                 <label>{{ primary_metric.label }} min {% if primary_metric.unit %}({{ primary_metric.unit }}){% endif %}
                     <input type="number" step="{{ primary_metric.step }}" name="min_{{ primary_metric.key }}">
                 </label>
@@ -59,7 +69,7 @@
                     <input type="number" step="{{ primary_metric.step }}" name="max_{{ primary_metric.key }}">
                 </label>
                 {% if other_metrics %}
-                <details>
+                <details open>
                     <summary>+ More metrics ({{ other_metrics|length }})</summary>
                     <div class="admin-form">
                     {% for m in other_metrics %}
@@ -76,5 +86,13 @@
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>
+        const sensorSpeciesSelect = document.getElementById('setup-sensor-species-profile');
+        populateSpeciesProfileSelect(sensorSpeciesSelect, '{{ enclosure.enclosure_type }}');
+        {% if species_profile %}
+        sensorSpeciesSelect.value = '{{ species_profile }}';
+        onSensorSpeciesProfileChange(sensorSpeciesSelect, 'setup-sensor-zone-wrap', 'setup-sensor-zone', 'min_{{ primary_metric.key }}', 'max_{{ primary_metric.key }}', 'min_humidity', 'max_humidity');
+        {% endif %}
+    </script>
 </body>
 </html>

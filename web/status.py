@@ -15,6 +15,13 @@ Two distinct rules live here — see CONTEXT.md for the terms:
   (yellow starts at ceil(0.8 * interval), red starts at interval + 1) was derived to fit BOTH
   examples exactly. It's a generalization, not something the user specified directly — revisit if
   it doesn't feel right in practice.
+
+- Care Interval, never-logged case: a kind with no Care Event logged at all used to read straight
+  Red ("never logged — treated as overdue"). It now reads Unknown ("no data") instead — the Care
+  Setup Prompt (see CONTEXT.md) exists to resolve this actively rather than leaving it to the pill
+  color alone — but escalates back to Red once it's been nagged about on CARE_NAG_RED_THRESHOLD
+  separate calendar days and still has no data, since an unattended Feeding/Watering kind defeats
+  the point of tracking it at all. See ADR 0040.
 """
 from __future__ import annotations
 
@@ -76,10 +83,15 @@ def acknowledged_drift_status(target_time: str | None, detected_time: str | None
     return status
 
 
-def care_interval_status(days_since_last: int | None, interval_days: int) -> Status:
-    """days_since_last is None when the Care Event has never been logged for this Enclosure."""
+CARE_NAG_RED_THRESHOLD = 3  # separate calendar days the Care Setup Prompt can nag before Red
+
+
+def care_interval_status(days_since_last: int | None, interval_days: int, nag_count: int = 0) -> Status:
+    """days_since_last is None when the Care Event has never been logged for this Enclosure — see
+    module docstring above. nag_count (web/admin_queries.py's record_care_nags()) is only consulted
+    in that case; once real data exists it's irrelevant."""
     if days_since_last is None:
-        return Status.RED  # never logged — treated as overdue, not "no data"
+        return Status.RED if nag_count >= CARE_NAG_RED_THRESHOLD else Status.UNKNOWN
     yellow_start = math.ceil(0.8 * interval_days)
     red_start = interval_days + 1
     if days_since_last >= red_start:

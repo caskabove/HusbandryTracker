@@ -55,6 +55,20 @@ CREATE TABLE IF NOT EXISTS enclosure (
     show_watering_on_dashboard    INTEGER NOT NULL DEFAULT 1,
     show_spot_clean_on_dashboard  INTEGER NOT NULL DEFAULT 1,
     show_deep_clean_on_dashboard  INTEGER NOT NULL DEFAULT 1,
+    -- Care Setup Prompt escalation (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) —
+    -- *_nag_count counts the separate calendar days a kind has been nagged about while still
+    -- unlogged; once it reaches CARE_NAG_RED_THRESHOLD (web/status.py) the kind's Unknown ("no
+    -- data") pill escalates to Red. *_nag_last_date dedupes same-day visits from double-counting.
+    -- Both reset back to 0/NULL the moment that kind gets real data (see
+    -- web/admin_queries.py's record_care_nags()).
+    feeding_nag_count         INTEGER NOT NULL DEFAULT 0,
+    feeding_nag_last_date     TEXT,
+    watering_nag_count        INTEGER NOT NULL DEFAULT 0,
+    watering_nag_last_date    TEXT,
+    spot_clean_nag_count      INTEGER NOT NULL DEFAULT 0,
+    spot_clean_nag_last_date  TEXT,
+    deep_clean_nag_count      INTEGER NOT NULL DEFAULT 0,
+    deep_clean_nag_last_date  TEXT,
     created_at                TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

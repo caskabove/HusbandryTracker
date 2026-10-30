@@ -75,10 +75,19 @@
                 <form method="post" action="/admin/enclosures" class="admin-form">
                     <label>Name <input type="text" name="name" required></label>
                     <label>Enclosure Type
-                        <select name="enclosure_type">
+                        <select name="enclosure_type" onchange="onEnclosureTypeChangeForProfile(this, 'add-enc-species-profile', 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')">
                             {% for t in ENCLOSURE_TYPES %}
                             <option value="{{ t }}" {% if t == "basic" %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
                             {% endfor %}
+                        </select>
+                    </label>
+                    <label>Species Profile <small>(optional — suggests starting numbers below; edit anything it fills in)</small>
+                        <select id="add-enc-species-profile" onchange="onEnclosureSpeciesProfileChange(this, 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')"></select>
+                    </label>
+                    <label id="add-enc-life-stage-wrap" style="display:none">Life Stage
+                        <select id="add-enc-life-stage" onchange="onEnclosureLifeStageChange(this, 'add-enc-species-profile', 'feeding_interval')">
+                            <option value="baby">Baby / Juvenile</option>
+                            <option value="adult" selected>Adult</option>
                         </select>
                     </label>
                     <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
@@ -94,5 +103,6 @@
 
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>populateSpeciesProfileSelect(document.getElementById('add-enc-species-profile'), document.querySelector('select[name="enclosure_type"]').value);</script>
 </body>
 </html>

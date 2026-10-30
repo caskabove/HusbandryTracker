@@ -272,6 +272,35 @@ button.danger {
     color: var(--text-muted);
 }
 
+/* Help (see CONTEXT.md: Help; ADR 0039) — a per-page reference distinct from the Guide, reusing
+   .guide-main/.guide-content's "prose box" shell. .help-content only adds what's specific to it:
+   the sample screenshot and the index's topic list. An image that hasn't been dropped in yet
+   (web/static/images/help/{slug}.png) just shows its alt text in that same box — no broken-image
+   styling needed. */
+.help-content figure.help-screenshot { margin: 0 0 1.2em; }
+.help-content .help-screenshot img {
+    max-width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: block;
+}
+.help-content .help-screenshot figcaption {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 0.4em;
+}
+.help-topic-list { list-style: none; padding: 0; margin: 0; }
+.help-topic-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+}
+.help-topic-item:last-child { border-bottom: none; }
+.help-topic-link { color: var(--primary-bright); font-size: 1rem; }
+.help-topic-summary { color: var(--text-muted); font-size: 0.85rem; }
+
 .dashboard-main {
     padding: 1.5rem 1.5rem 0.5rem;
 }
@@ -476,6 +505,7 @@ button.danger {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    cursor: pointer;
 }
 .collapsible-section-header .collapse-toggle { padding: 0 0.3rem 0 0; }
 .collapsible-section.collapsed .collapse-toggle { transform: rotate(-90deg); }
@@ -569,6 +599,75 @@ a.pill:hover { opacity: 0.85; }
     width: 11rem;
 }
 
+/* Care Setup Prompt (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) — a small modal,
+   same shape as .graph-modal, offering "Start from Today" (one click) or "Set your own" (expands
+   the unlogged kinds' own .care-advanced dropdowns below, see app.js's useOwnCareDates()). */
+.care-prompt-modal {
+    width: min(92vw, 440px);
+    padding: 1.1rem 1.3rem;
+    background: var(--panel-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.care-prompt-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+.care-prompt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.4rem;
+}
+.care-prompt-header h3 { margin: 0; font-size: 1rem; }
+.care-prompt-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+}
+.care-prompt-close:hover { color: var(--text); }
+.care-prompt-actions { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
+.care-prompt-actions button {
+    background: var(--primary);
+    color: var(--text);
+    border: 1px solid var(--primary-bright);
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.care-prompt-actions button:hover { background: var(--primary-bright); color: #0d1913; }
+.care-prompt-actions form { margin: 0; }
+
+/* Set your own's shared instruction (see CONTEXT.md: Care Setup Prompt) — a quiet one-line callout
+   above the Care rows, shown once useOwnCareDates() expands the unlogged kinds' dropdowns, OK'd
+   away independently of them via dismissCareAdvancedHint(). */
+.care-advanced-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    margin-bottom: 0.6rem;
+}
+.care-advanced-hint p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
+.care-advanced-hint button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+    flex-shrink: 0;
+}
+.care-advanced-hint button:hover { border-color: var(--primary-bright); }
+
 .care-row { justify-content: space-between; }
 .spot-feed-picker { font-size: 0.8rem; }
 .care-actions {
@@ -653,6 +752,17 @@ a.pill:hover { opacity: 0.85; }
 .setup-intro { color: var(--text-muted); max-width: 640px; }
 a.setup-skip-link { color: var(--text-muted); text-decoration: underline; font-size: 0.85rem; }
 a.setup-skip-link:hover { color: var(--text); }
+
+/* A step's "Continue"/"I'm done" link sits right below its own Add form and uses the same
+   .button-link styling as the form's submit button — easy to mistake one for the other, which is
+   exactly how a filled-in Plug gets silently lost (see onSetupDoneClick in app.js for the warning
+   this pairs with). Extra top margin plus a divider line puts real distance between "save this" and
+   "leave this step" so they don't read as one group of actions. */
+.setup-done {
+    margin-top: 2rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
 
 .error-banner {
     grid-column: 1 / -1;

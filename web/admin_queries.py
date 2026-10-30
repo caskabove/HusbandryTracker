@@ -5,7 +5,7 @@ for scripting/bulk setup.
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -17,6 +17,7 @@ from schemas import enclosure_types as et
 from web.outbox import write_command
 from web.queries import (
     ANIMAL_CONDITIONS, CARE_EVENT_KINDS, _latest_reading, _normalize_datetime_local, _sparklines, days_since,
+    log_care_event,
 )
 
 
@@ -167,6 +168,55 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         )]
 
         return enclosure
+
+
+def record_care_nags(enclosure_id: int) -> None:
+    """Care Setup Prompt bookkeeping (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) —
+    called once per GET of the Enclosure's own Admin page, the only place the prompt appears. For
+    each Care kind still unlogged, bumps its nag count at most once per calendar day (dedupe via
+    *_nag_last_date) so repeat visits in one sitting don't inflate it. For a kind that already has
+    real data, clears any stale nag state instead, so a future revert to no-data (every entry later
+    deleted) starts the grace period fresh rather than reading an old count."""
+    today = date.today().isoformat()
+    with get_connection() as conn:
+        for kind in CARE_EVENT_KINDS:
+            has_data = conn.execute(
+                "SELECT 1 FROM care_event WHERE enclosure_id = ? AND kind = ? LIMIT 1",
+                (enclosure_id, kind),
+            ).fetchone() is not None
+            if has_data:
+                conn.execute(
+                    f"UPDATE enclosure SET {kind}_nag_count = 0, {kind}_nag_last_date = NULL "
+                    f"WHERE id = ? AND {kind}_nag_count != 0",
+                    (enclosure_id,),
+                )
+                continue
+            last_date = conn.execute(
+                f"SELECT {kind}_nag_last_date FROM enclosure WHERE id = ?", (enclosure_id,)
+            ).fetchone()[0]
+            if last_date == today:
+                continue
+            conn.execute(
+                f"UPDATE enclosure SET {kind}_nag_count = {kind}_nag_count + 1, "
+                f"{kind}_nag_last_date = ? WHERE id = ?",
+                (today, enclosure_id),
+            )
+
+
+def start_care_events_from_today(enclosure_id: int) -> list[str]:
+    """Care Setup Prompt's "Start from Today" (see CONTEXT.md) — logs today for every currently-
+    unlogged Care kind on this Enclosure; a kind that already has history is left untouched. Returns
+    the kinds actually logged."""
+    with get_connection() as conn:
+        unlogged = [
+            kind for kind in CARE_EVENT_KINDS
+            if conn.execute(
+                "SELECT 1 FROM care_event WHERE enclosure_id = ? AND kind = ? LIMIT 1", (enclosure_id, kind)
+            ).fetchone() is None
+        ]
+    for kind in unlogged:
+        log_care_event(enclosure_id, kind)
+    return unlogged
 
 
 def create_plant(enclosure_id: int, name: str, species: str | None) -> None:

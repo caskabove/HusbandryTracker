@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -47,6 +47,15 @@ def _f_to_c(fahrenheit: float | None) -> float | None:
 
 
 templates.env.filters["c_to_f"] = lambda c: None if c is None else c * 9 / 5 + 32
+
+
+def _wizard_redirect(path: str, **params: str) -> str:
+    """Builds a Setup Wizard redirect URL carrying only the non-empty query params given — used to
+    thread the Species Profile pick (see CONTEXT.md: Species Profile) through the wizard's own
+    step-to-step redirects without ever persisting it anywhere (same "never stored" rule as the
+    picker itself), alongside this router's existing error-message carry-through."""
+    query = {k: v for k, v in params.items() if v}
+    return path + (("?" + urlencode(query)) if query else "")
 
 
 def _primary_and_other_metrics(enclosure_type: str) -> tuple[et.TargetRangeMetric, list[et.TargetRangeMetric]]:
@@ -161,6 +170,8 @@ def setup_create_enclosure(
     spot_clean_interval: int = Form(7),
     deep_clean_interval: int = Form(30),
     room_id: str = Form(""),
+    species_profile: str = Form(""),
+    life_stage: str = Form("adult"),
 ):
     try:
         enclosure_id = q.create_enclosure(
@@ -173,7 +184,11 @@ def setup_create_enclosure(
         )
     if room_id:
         q.set_enclosure_room(enclosure_id, int(room_id))
-    return RedirectResponse(url=f"/setup/enclosures/{enclosure_id}/animals", status_code=303)
+    return RedirectResponse(
+        url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/animals",
+                              species_profile=species_profile, life_stage=life_stage),
+        status_code=303,
+    )
 
 
 @router.get("/enclosures/{enclosure_id}/animals")
@@ -181,34 +196,57 @@ def setup_animals(request: Request, enclosure_id: int):
     enclosure = q.get_enclosure(enclosure_id)
     if enclosure is None:
         return RedirectResponse(url="/setup/", status_code=303)
+    species_profile = request.query_params.get("species_profile", "")
+    life_stage = request.query_params.get("life_stage", "adult")
     return templates.TemplateResponse(
-        request, "setup_animals.html", {"enclosure": enclosure, "error": request.query_params.get("error")}
+        request, "setup_animals.html",
+        {
+            "enclosure": enclosure, "error": request.query_params.get("error"),
+            "species_profile": species_profile, "life_stage": life_stage,
+            "carry_params": _wizard_redirect("", species_profile=species_profile, life_stage=life_stage),
+        }
     )
 
 
 @router.post("/enclosures/{enclosure_id}/animals")
 def setup_create_animal(
     enclosure_id: int, name: str = Form(...), common: str = Form(""), scientific: str = Form(""), dob: str = Form(""),
+    species_profile: str = Form(""), life_stage: str = Form("adult"),
 ):
     name = name.strip()
     if not name:
         return RedirectResponse(
-            url=f"/setup/enclosures/{enclosure_id}/animals?error={quote('Enter a name for the animal.')}",
+            url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/animals",
+                                  error="Enter a name for the animal.",
+                                  species_profile=species_profile, life_stage=life_stage),
             status_code=303,
         )
     q.create_animal(enclosure_id, name, common or None, scientific or None, dob or None)
-    return RedirectResponse(url=f"/setup/enclosures/{enclosure_id}/animals", status_code=303)
+    return RedirectResponse(
+        url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/animals",
+                              species_profile=species_profile, life_stage=life_stage),
+        status_code=303,
+    )
 
 
 @router.post("/enclosures/{enclosure_id}/plants")
-def setup_create_plant(enclosure_id: int, name: str = Form(...), species: str = Form("")):
+def setup_create_plant(
+    enclosure_id: int, name: str = Form(...), species: str = Form(""),
+    species_profile: str = Form(""), life_stage: str = Form("adult"),
+):
     try:
         q.create_plant(enclosure_id, name, species or None)
     except ValueError as exc:
         return RedirectResponse(
-            url=f"/setup/enclosures/{enclosure_id}/animals?error={quote(str(exc))}", status_code=303
+            url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/animals", error=str(exc),
+                                  species_profile=species_profile, life_stage=life_stage),
+            status_code=303,
         )
-    return RedirectResponse(url=f"/setup/enclosures/{enclosure_id}/animals", status_code=303)
+    return RedirectResponse(
+        url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/animals",
+                              species_profile=species_profile, life_stage=life_stage),
+        status_code=303,
+    )
 
 
 @router.get("/enclosures/{enclosure_id}/sensor")
@@ -228,6 +266,7 @@ def setup_sensor_form(request: Request, enclosure_id: int):
         {
             "enclosure": enclosure, "primary_metric": primary, "other_metrics": others,
             "room_sensors": room_sensors, "error": request.query_params.get("error"),
+            "species_profile": request.query_params.get("species_profile", ""),
         }
     )
 
@@ -241,9 +280,12 @@ def setup_use_fallback_sensor(enclosure_id: int, fallback_sensor_id: int = Form(
 @router.post("/enclosures/{enclosure_id}/sensors")
 async def setup_create_sensor(request: Request, enclosure_id: int, label: str = Form(...)):
     label = label.strip()
+    form = await request.form()
+    species_profile = form.get("species_profile", "")
     if not label:
         return RedirectResponse(
-            url=f"/setup/enclosures/{enclosure_id}/sensor?error={quote('Enter a label for the sensor.')}",
+            url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/sensor",
+                                  error="Enter a label for the sensor.", species_profile=species_profile),
             status_code=303,
         )
     enclosure = q.get_enclosure(enclosure_id)
@@ -252,8 +294,15 @@ async def setup_create_sensor(request: Request, enclosure_id: int, label: str = 
     try:
         q.create_sensor(enclosure_id, label, "manual", None, target_ranges, {})
     except ValueError as exc:
-        return RedirectResponse(url=f"/setup/enclosures/{enclosure_id}/sensor?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/setup/enclosures/{enclosure_id}/sensor", status_code=303)
+        return RedirectResponse(
+            url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/sensor",
+                                  error=str(exc), species_profile=species_profile),
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/sensor", species_profile=species_profile),
+        status_code=303,
+    )
 
 
 @router.get("/enclosures/{enclosure_id}/plug")

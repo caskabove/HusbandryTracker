@@ -34,7 +34,7 @@
             </table>
             {% endif %}
 
-            <form method="post" action="/setup/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
+            <form id="setup-plug-form" method="post" action="/setup/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
                 <label>Label <input type="text" name="label" placeholder="e.g. heat lamp" required></label>
                 <label>Purpose <input type="text" name="purpose" list="purpose-suggestions-enc" placeholder="e.g. heat" required></label>
                 <datalist id="purpose-suggestions-enc">
@@ -46,7 +46,9 @@
                 <button type="submit">Add Plug</button>
             </form>
 
-            <p><a href="/setup/enclosures/{{ enclosure.id }}/done" class="button-link">I'm done with this enclosure</a></p>
+            <p class="setup-done">
+                <a href="/setup/enclosures/{{ enclosure.id }}/done" class="button-link" onclick="return onSetupDoneClick(event, 'setup-plug-form')">I'm done with this enclosure</a>
+            </p>
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
