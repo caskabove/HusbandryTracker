@@ -221,7 +221,7 @@ def setup_create_animal(
                                   species_profile=species_profile, life_stage=life_stage),
             status_code=303,
         )
-    q.create_animal(enclosure_id, name, common or None, scientific or None, dob or None)
+    q.create_animal(enclosure_id, name, common or None, scientific or None, dob or None, species_profile or None)
     return RedirectResponse(
         url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/animals",
                               species_profile=species_profile, life_stage=life_stage),

@@ -405,7 +405,7 @@
                 <summary>+ Add Sensor</summary>
                 <form method="post" action="/admin/enclosures/{{ enclosure.id }}/sensors" class="admin-form">
                     <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
-                    <label>Species Profile <small>(optional — suggests starting Target Range values below)</small>
+                    <label>Species Profile <small>(optional — suggests starting Target Range values below; pre-filled if this Enclosure's Animals agree on one)</small>
                         <select id="add-sensor-species-profile" onchange="onSensorSpeciesProfileChange(this, 'add-sensor-zone-wrap', 'add-sensor-zone', 'temp_min_f', 'temp_max_f', 'humidity_min', 'humidity_max')"></select>
                     </label>
                     <label id="add-sensor-zone-wrap" style="display:none">This sensor monitors
@@ -596,6 +596,13 @@
     <script src="/static/chart.min.js?v={{ asset_version }}"></script>
     <script src="/static/graphs.js?v={{ asset_version }}"></script>
     <script src="/static/app.js?v={{ asset_version }}"></script>
-    <script>populateSpeciesProfileSelect(document.getElementById('add-sensor-species-profile'), '{{ enclosure.enclosure_type }}');</script>
+    <script>
+        const addSensorSpeciesSelect = document.getElementById('add-sensor-species-profile');
+        populateSpeciesProfileSelect(addSensorSpeciesSelect, '{{ enclosure.enclosure_type }}');
+        {% if enclosure.known_species_profile %}
+        addSensorSpeciesSelect.value = '{{ enclosure.known_species_profile }}';
+        onSensorSpeciesProfileChange(addSensorSpeciesSelect, 'add-sensor-zone-wrap', 'add-sensor-zone', 'temp_min_f', 'temp_max_f', 'humidity_min', 'humidity_max');
+        {% endif %}
+    </script>
 </body>
 </html>

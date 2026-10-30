@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS animal (
     name                TEXT NOT NULL,
     species_common      TEXT,
     species_scientific  TEXT,
+    -- The Species Profile key picked for this Animal in the Setup Wizard (see web/static/app.js's
+    -- SPECIES_PROFILES, CONTEXT.md: Species Profile), NULL if none was picked or the Animal was
+    -- added from the Enclosure's own Admin page instead (that form has no Species Profile picker).
+    -- Lets a later "Add Sensor" on this Enclosure pre-fill its own Species Profile (RHA-94) without
+    -- asking again — only when every Animal in the Enclosure that has one set agrees on the same
+    -- value (see web/admin_queries.py's get_enclosure()).
+    species_profile     TEXT,
     dob                 TEXT,  -- ISO date, nullable (not always known)
     -- Whether this Animal's card shows on the Dashboard's Enclosure panel — an Enclosure housing a
     -- colony can have more Animals than fit comfortably at a glance, so this is opt-in per Animal,

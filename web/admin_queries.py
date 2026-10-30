@@ -113,6 +113,15 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             return None
         enclosure = dict(row)
         enclosure["animals"] = [dict(r) for r in conn.execute("SELECT * FROM animal WHERE enclosure_id = ? ORDER BY name", (enclosure_id,))]
+        # Known Species Profile (see CONTEXT.md: Species Profile; RHA-94) — lets Admin's own "Add
+        # Sensor" form pre-fill the same Species Profile already picked for this Enclosure's
+        # Animals, instead of asking again. Only when every Animal that has one set (Admin's "Add
+        # Animal" form never sets it, so some may have NULL) agrees on the exact same value —
+        # anything else (none set, or more than one distinct value) leaves it unset, same as the
+        # ticket's own "more than one species" open question resolved: no pre-fill, let the user
+        # choose by hand rather than guess which one.
+        animal_profiles = {a["species_profile"] for a in enclosure["animals"] if a["species_profile"]}
+        enclosure["known_species_profile"] = animal_profiles.pop() if len(animal_profiles) == 1 else None
         enclosure["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
         # Current Reading — same "what's actually happening right now" info the Dashboard already
         # shows for this Enclosure's Sensors, and Room Sensors already get on their own Admin page
@@ -364,20 +373,27 @@ def delete_enclosure(enclosure_id: int) -> None:
         conn.execute("DELETE FROM enclosure WHERE id = ?", (enclosure_id,))  # cascades via FK
 
 
-def create_animal(enclosure_id: int, name: str, common: str | None, scientific: str | None, dob: str | None) -> None:
+def create_animal(
+    enclosure_id: int, name: str, common: str | None, scientific: str | None, dob: str | None,
+    species_profile: str | None = None,
+) -> None:
     """show_on_dashboard (see CONTEXT.md: Animal) defaults on for only the first 3 Animals in an
     Enclosure — counting those already shown, not total Animals, so an Enclosure that's had some
     hidden by hand doesn't have that count "used up" by them. Past 3, a new Animal defaults off
     until picked from the Enclosure's Admin page; the user can always flip any Animal's flag
-    either way regardless of this default."""
+    either way regardless of this default.
+
+    species_profile (see CONTEXT.md: Species Profile; RHA-94) is only ever passed by the Setup
+    Wizard, which carries its Enclosure step's pick through to this call — Admin's own "Add Animal"
+    form has no Species Profile picker, so it always leaves this NULL."""
     with get_connection() as conn:
         (shown_count,) = conn.execute(
             "SELECT COUNT(*) FROM animal WHERE enclosure_id = ? AND show_on_dashboard = 1", (enclosure_id,)
         ).fetchone()
         conn.execute(
-            "INSERT INTO animal (enclosure_id, name, species_common, species_scientific, dob, show_on_dashboard) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (enclosure_id, name, common or None, scientific or None, dob or None, 1 if shown_count < 3 else 0),
+            "INSERT INTO animal (enclosure_id, name, species_common, species_scientific, species_profile, dob, show_on_dashboard) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (enclosure_id, name, common or None, scientific or None, species_profile or None, dob or None, 1 if shown_count < 3 else 0),
         )
 
 
