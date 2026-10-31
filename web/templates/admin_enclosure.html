@@ -102,61 +102,127 @@
 
         <section class="admin-card" id="care-section">
             <h2>Care</h2>
-            {# Set your own's shared instruction (see CONTEXT.md: Care Setup Prompt) — one line
-               shown once useOwnCareDates() expands the unlogged kinds' own Advanced dropdowns
-               below, dismissed independently of them via dismissCareAdvancedHint(). #}
-            <div class="care-advanced-hint" id="care-advanced-hint" hidden>
-                <p>Pick when it actually happened for each one below, then click Log.</p>
-                <button type="button" onclick="dismissCareAdvancedHint()">OK</button>
-            </div>
+            {# Feeding Detail's recent foods (see CONTEXT.md: Feeding Detail; RHA-91) — one shared
+               <datalist>, referenced by the Log Feeding Dialog's food field below, so the same
+               food tends to autocomplete instead of being retyped every time. #}
+            <datalist id="recent-foods">
+                {% for food in recent_foods %}<option value="{{ food }}">{% endfor %}
+            </datalist>
             {% for kind in care_kinds %}
                 {% set entry = enclosure.care[kind] %}
                 {% set interval = enclosure[kind ~ "_interval_days"] %}
                 {% set status = care_interval_status(entry.days_since, interval, enclosure[kind ~ "_nag_count"]) %}
+                {% set last_feeding = enclosure.care.feeding.last_detail if kind == "feeding" else none %}
                 <div class="reading-row care-row" id="care-{{ kind }}" {% if entry.days_since is none %}data-unlogged="true"{% endif %}>
                     <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
                     <span class="pill status-{{ status.value }}">
                         {% if entry.days_since is none %}no data{% else %}{{ entry.days_since }}d ago{% endif %}
                     </span>
-                    {% if kind == "feeding" and enclosure.animals %}
-                    {# Spot-feed (see CONTEXT.md: Spot-feed) — one shared picker synced into whichever
-                       of the four forms below actually gets submitted, via syncSpotFeedAnimal() in
-                       app.js, rather than duplicating a select in each tiny form. #}
-                    <select class="spot-feed-picker" onchange="syncSpotFeedAnimal(this)" title="Log this Feeding for one Animal instead of the whole Enclosure">
-                        <option value="">Whole enclosure</option>
-                        {% for a in enclosure.animals %}
-                        <option value="{{ a.id }}">Spot-feed: {{ a.name }}</option>
-                        {% endfor %}
-                    </select>
+                    {% if kind == "feeding" and last_feeding %}
+                    {# What the Log Feeding Dialog's Whole-enclosure Who defaults to (see CONTEXT.md:
+                       Log Feeding Dialog; ADR 0043) — shown so the user can see it before opening
+                       the dialog. A Spot-feed's own last detail is previewed inside the dialog
+                       itself, once that Animal is picked as Who. #}
+                    <span class="reading-meta" title="What the Log Feeding Dialog defaults to for Whole enclosure">
+                        Last fed: {{ last_feeding.food or "(no food recorded)" }}{% if last_feeding.count %} &times;{{ last_feeding.count }}{% endif %}{% if last_feeding.result == "refused" %} &mdash; refused{% endif %}
+                    </span>
                     {% endif %}
                     <div class="care-actions">
+                        {% if kind == "feeding" %}
+                        {# Log Feeding Dialog (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — all
+                           four buttons open the one shared dialog below instead of submitting
+                           directly. Today/Yesterday/2-days-ago lock its Date to that offset;
+                           Advanced leaves Date editable for backdating/catching up instead. #}
+                        <div class="log-form">
+                            <button type="button" onclick="openLogFeedingDialog('0')">Today</button>
+                            <button type="button" onclick="openLogFeedingDialog('1')">Yesterday</button>
+                            <button type="button" onclick="openLogFeedingDialog('2')">2 days ago</button>
+                            <button type="button" class="care-advanced-trigger" onclick="openLogFeedingDialog('advanced')">Advanced</button>
+                        </div>
+                        {% else %}
                         <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
-                            {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                             <input type="hidden" name="days_ago" value="0">
                             <button type="submit">Today</button>
                         </form>
                         <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
-                            {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                             <input type="hidden" name="days_ago" value="1">
                             <button type="submit">Yesterday</button>
                         </form>
                         <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
-                            {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                             <input type="hidden" name="days_ago" value="2">
                             <button type="submit">2 days ago</button>
                         </form>
                         <details class="care-advanced">
                             <summary>Advanced</summary>
                             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/{{ kind }}" class="log-form">
-                                {% if kind == "feeding" %}<input type="hidden" name="animal_id" class="spot-feed-target" value="">{% endif %}
                                 <input type="datetime-local" name="occurred_at" title="When it happened — leave blank to log as now">
                                 <button type="submit">Log</button>
                             </form>
                         </details>
+                        {% endif %}
                     </div>
                 </div>
             {% endfor %}
         </section>
+
+        {# Log Feeding Dialog (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — the one dialog that
+           logs a Feeding Care Event and its Feeding Detail together, opened from any of Feeding's
+           four buttons above. data-defaults embeds one entry per Who ("" = whole enclosure, else
+           an Animal's id) computed once by get_enclosure() (web/admin_queries.py) rather than
+           fetched live on every Who switch — see openLogFeedingDialog()/onLogFeedingWhoChange()
+           in app.js for the clear-then-refill behavior. #}
+        <dialog id="log-feeding-modal" class="care-prompt-modal log-feeding-modal"
+                data-defaults='{{ enclosure.care.feeding.defaults_by_who | tojson }}'>
+            <div class="care-prompt-header">
+                <h3>Log Feeding</h3>
+                <button type="button" class="care-prompt-close" onclick="dismissLogFeedingDialog()" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <p class="log-feeding-date-locked" id="log-feeding-date-locked"></p>
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/care-events/feeding" class="log-feeding-form">
+                <input type="hidden" name="days_ago" id="log-feeding-days-ago" value="">
+                <label class="log-feeding-field" id="log-feeding-date-editable-label" hidden>
+                    When
+                    <input type="datetime-local" name="occurred_at" id="log-feeding-occurred-at">
+                </label>
+                <label class="log-feeding-field">
+                    Who
+                    <select name="animal_id" id="log-feeding-who" onchange="onLogFeedingWhoChange(this)" title="Log this Feeding for one Animal instead of the whole Enclosure">
+                        <option value="">Whole enclosure</option>
+                        {% for a in enclosure.animals %}
+                        <option value="{{ a.id }}">Spot-feed: {{ a.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="log-feeding-field">
+                    Food
+                    <input type="text" name="food" list="recent-foods" id="log-feeding-food" placeholder="food">
+                </label>
+                <label class="log-feeding-field">
+                    Count
+                    <input type="number" name="count" min="0" step="1" id="log-feeding-count" placeholder="count">
+                </label>
+                <label class="log-feeding-field">
+                    Type
+                    <select name="prey_state" id="log-feeding-prey-state">
+                        <option value="">&mdash; choose &mdash;</option>
+                        {% for s in prey_states %}
+                        <option value="{{ s }}">{{ prey_state_labels[s] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="log-feeding-field">
+                    Result
+                    <select name="result" id="log-feeding-result">
+                        {% for r in feeding_results %}
+                        <option value="{{ r }}">{{ feeding_result_labels[r] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <div class="care-prompt-actions">
+                    <button type="submit">Log</button>
+                </div>
+            </form>
+        </dialog>
 
         <section class="admin-card">
             <h2>Animals</h2>
@@ -645,6 +711,10 @@
         {% if enclosure.known_species_profile %}
         addSensorSpeciesSelect.value = '{{ enclosure.known_species_profile }}';
         onSensorSpeciesProfileChange(addSensorSpeciesSelect, 'add-sensor-zone-wrap', 'add-sensor-zone', 'temp_min_f', 'temp_max_f', 'humidity_min', 'humidity_max');
+        // The pre-fill above opens every ancestor <details> (see app.js revealField) so a manual
+        // edit's pre-filled value is visible — but on initial page load "+ Add Sensor" should still
+        // start collapsed, so close it back up.
+        addSensorSpeciesSelect.closest('details').open = false;
         {% endif %}
     </script>
 </body>

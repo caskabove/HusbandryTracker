@@ -81,6 +81,50 @@
                 <button type="submit">Log Condition</button>
             </form>
         </section>
+
+        {# A manually-logged, backdatable Shed observation (see CONTEXT.md: Shed Log; RHA-91) — not
+           a Care Event, same shape as the Growth & Condition Log section above. Stuck shed location
+           only matters for a Partial shed — the checkbox group below shows/enables only then, via
+           app.js's existing onToggleChange() (the same conditional-field pattern Plug's Controller
+           Kind fields already use). #}
+        <section class="admin-card" id="shed-log">
+            <h2>Shed Log</h2>
+            <table class="admin-table">
+                <thead><tr><th>When</th><th>Completeness</th><th>Stuck locations</th><th>Note</th></tr></thead>
+                <tbody>
+                {% for entry in shed_logs %}
+                    <tr>
+                        <td>{{ entry.occurred_at }}</td>
+                        <td>{{ shed_completeness_labels[entry.completeness] }}</td>
+                        <td>{{ entry.stuck_location_labels|join(", ") }}</td>
+                        <td>{{ entry.note or "" }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="empty">No Sheds logged yet</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+            <form method="post" action="/admin/animals/{{ animal.id }}/log-shed" class="admin-form animal-log-form">
+                <label>Completeness
+                    <select name="completeness" onchange="onToggleChange(this, 'partial', 'shed-stuck-block', '')">
+                        {% for c in shed_completeness %}
+                        <option value="{{ c }}">{{ shed_completeness_labels[c] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <span id="shed-stuck-block" style="display:none">
+                    {% for loc in shed_stuck_locations %}
+                    <label><input type="checkbox" name="stuck_locations" value="{{ loc }}"> {{ shed_stuck_location_labels[loc] }}</label>
+                    {% endfor %}
+                    <label>Other <input type="text" name="stuck_location_other" placeholder="optional"></label>
+                </span>
+                <label>Note <input type="text" name="note" placeholder="optional"></label>
+                <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+                <button type="submit">Log Shed</button>
+            </form>
+        </section>
     </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

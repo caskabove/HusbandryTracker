@@ -18,6 +18,11 @@
         <p><a href="{{ back_url }}">&larr; Back to Data</a></p>
 
         <section class="admin-card">
+            {% if kind == "feeding" %}
+            <datalist id="recent-foods">
+                {% for food in recent_foods %}<option value="{{ food }}">{% endfor %}
+            </datalist>
+            {% endif %}
             {% if editable %}
             <form method="post" action="{{ post_action }}" class="admin-form">
                 <input type="hidden" name="action" value="add">
@@ -42,6 +47,29 @@
                 <label>Note
                     <input type="text" name="note" placeholder="note" autofocus>
                 </label>
+                {% if kind == "feeding" %}
+                <label>Food
+                    <input type="text" name="food" list="recent-foods" placeholder="food">
+                </label>
+                <label>Count
+                    <input type="number" name="count" min="0" step="1" placeholder="count">
+                </label>
+                <label>Type
+                    <select name="prey_state">
+                        <option value="">&mdash; choose &mdash;</option>
+                        {% for s in prey_states %}
+                        <option value="{{ s }}">{{ prey_state_labels[s] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Result
+                    <select name="result">
+                        {% for r in feeding_results %}
+                        <option value="{{ r }}">{{ feeding_result_labels[r] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                {% endif %}
                 {% if kind == "feeding" and animals %}
                 <label>Animal
                     <select name="animal_id">
@@ -117,7 +145,11 @@
                     {% elif row_type == "care" %}
                     <details class="view-data-edit">
                         <summary>
+                            {% if kind == "feeding" %}
+                            {{ e.date }} {{ e.time|clock_12h }} &mdash; {{ e.food or "(no food recorded)" }}{% if e.count %} &times;{{ e.count }}{% endif %}{% if e.result == "refused" %} &mdash; refused{% endif %} &mdash; {{ e.animal_name or "Whole enclosure" }}{% if e.note %} &mdash; {{ e.note }}{% endif %}
+                            {% else %}
                             {{ e.date }} {{ e.time|clock_12h }}{% if e.note %} &mdash; {{ e.note }}{% endif %}{% if e.animal_name %} &mdash; {{ e.animal_name }}{% endif %}
+                            {% endif %}
                         </summary>
                         <form method="post" action="{{ post_action }}" class="log-form">
                             <input type="hidden" name="action" value="update">
@@ -132,6 +164,21 @@
                             </select>
                             <input type="time" id="{{ time_id }}" name="time" value="{{ e.time }}">
                             <input type="text" name="note" value="{{ e.note }}" placeholder="note">
+                            {% if kind == "feeding" %}
+                            <input type="text" name="food" value="{{ e.food or '' }}" list="recent-foods" placeholder="food">
+                            <input type="number" name="count" value="{{ e.count or '' }}" min="0" step="1" placeholder="count">
+                            <select name="prey_state">
+                                <option value="">&mdash; choose &mdash;</option>
+                                {% for s in prey_states %}
+                                <option value="{{ s }}" {% if e.prey_state == s %}selected{% endif %}>{{ prey_state_labels[s] }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="result">
+                                {% for r in feeding_results %}
+                                <option value="{{ r }}" {% if (e.result or "accepted") == r %}selected{% endif %}>{{ feeding_result_labels[r] }}</option>
+                                {% endfor %}
+                            </select>
+                            {% endif %}
                             {% if kind == "feeding" and animals %}
                             <select name="animal_id">
                                 <option value="">Whole enclosure</option>

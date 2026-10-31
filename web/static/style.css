@@ -641,35 +641,37 @@ a.pill:hover { opacity: 0.85; }
 .care-prompt-actions button:hover { background: var(--primary-bright); color: #0d1913; }
 .care-prompt-actions form { margin: 0; }
 
-/* Set your own's shared instruction (see CONTEXT.md: Care Setup Prompt) — a quiet one-line callout
-   above the Care rows, shown once useOwnCareDates() expands the unlogged kinds' dropdowns, OK'd
-   away independently of them via dismissCareAdvancedHint(). */
-.care-advanced-hint {
+/* Log Feeding Dialog (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — reuses .care-prompt-modal's
+   own shell/header/actions styling, just with a stacked field layout instead of that modal's two
+   plain buttons. */
+.log-feeding-modal { width: min(92vw, 420px); }
+.log-feeding-date-locked { margin: 0 0 0.6rem; font-size: 0.85rem; color: var(--text-muted); }
+.log-feeding-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.log-feeding-field {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    gap: 0.8rem;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+}
+/* Today/Yesterday/2-days-ago hide this field via its `hidden` attribute (app.js's
+   openLogFeedingDialog) — the plain `display: flex` above would otherwise win over the browser's
+   own `[hidden] { display: none }` default (an author rule always beats a UA one, regardless of
+   selector specificity), leaving an empty "When" field visibly stacked right under "Logging
+   for: ...", confusingly implying the date wasn't set. */
+.log-feeding-field[hidden] { display: none; }
+.log-feeding-field input, .log-feeding-field select {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.5rem 0.8rem;
-    margin-bottom: 0.6rem;
-}
-.care-advanced-hint p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
-.care-advanced-hint button {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 6px;
     color: var(--text);
-    cursor: pointer;
-    font-size: 0.8rem;
-    padding: 0.2rem 0.6rem;
-    flex-shrink: 0;
+    border-radius: 6px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+    flex: 1 1 auto;
+    max-width: 65%;
 }
-.care-advanced-hint button:hover { border-color: var(--primary-bright); }
 
 .care-row { justify-content: space-between; }
-.spot-feed-picker { font-size: 0.8rem; }
 .care-actions {
     margin-left: auto;
     display: flex;
@@ -686,6 +688,19 @@ a.pill:hover { opacity: 0.85; }
 }
 .care-advanced summary:hover { color: var(--text); }
 .care-advanced[open] .log-form { margin-top: 0.3rem; }
+/* Feeding's own Advanced (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — a plain button, not a
+   `.care-advanced` <details>, since it has nothing to disclose inline anymore: it just opens the
+   Log Feeding Dialog with Date editable. Matches `.care-advanced summary`'s muted look so the two
+   kinds of "Advanced" read the same at a glance despite behaving differently. */
+.care-advanced-trigger {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding: 0.25rem 0.4rem;
+}
+.care-advanced-trigger:hover { color: var(--text); }
 .log-form {
     margin-left: auto;
     display: flex;

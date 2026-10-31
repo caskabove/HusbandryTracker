@@ -84,14 +84,6 @@ function onAlwaysOnChange(checkbox, onTimeId, offTimeId) {
     });
 }
 
-// Spot-feed (see CONTEXT.md): one visible Animal picker per Feeding row, copied into the hidden
-// animal_id field of whichever of the four small forms (Today/Yesterday/2 days ago/Advanced)
-// actually gets submitted — avoids showing four duplicate pickers for one Feeding row.
-function syncSpotFeedAnimal(select) {
-    const row = select.closest(".care-row");
-    row.querySelectorAll(".spot-feed-target").forEach(function (el) { el.value = select.value; });
-}
-
 // Dashboard: a Manual Sensor's Log Reading control (see dashboard.html's reading_log_form macro)
 // starts collapsed to a single button naming the Sensor (e.g. "Log Probe Reading"); opening it
 // pre-fills the datetime-local field with the current moment, so logging "now" needs no typing.
@@ -236,9 +228,12 @@ async function onDiscoverGoveeClick(button) {
 // server-rendered only when at least one Care kind has no data yet (admin_enclosure.html), so this
 // just opens it as a real modal on load; nothing to do when the dialog isn't on the page (every
 // kind already resolved). "Start from Today" is a plain form submit, same as every other action in
-// this app. "Set your own" dismisses the prompt and expands exactly the unlogged kinds' own
-// Advanced dropdowns (marked data-unlogged by the template) instead of forcing a choice, showing
-// one shared instruction once rather than forcing the user to discover the existing Log forms.
+// this app. "Set your own" dismisses the prompt and expands exactly the unlogged non-Feeding
+// kinds' own Advanced dropdowns (marked data-unlogged by the template) instead of forcing a
+// choice — an unlogged Feeding is left alone rather than auto-opening the Log Feeding Dialog
+// (see Log Feeding Dialog, ADR 0043), which would be a jarring modal-after-modal experience; the
+// selector below naturally excludes it, since Feeding's own Advanced is a plain button, not a
+// `.care-advanced` <details>, once this dialog exists.
 function openCarePromptIfNeeded() {
     const dialog = document.getElementById("care-prompt-modal");
     if (!dialog) return;
@@ -260,16 +255,87 @@ function useOwnCareDates() {
     document.querySelectorAll('.care-row[data-unlogged="true"] .care-advanced').forEach(function (details) {
         details.open = true;
     });
-    const hint = document.getElementById("care-advanced-hint");
-    if (hint) hint.hidden = false;
-}
-
-function dismissCareAdvancedHint() {
-    const hint = document.getElementById("care-advanced-hint");
-    if (hint) hint.hidden = true;
 }
 
 openCarePromptIfNeeded();
+
+// Log Feeding Dialog (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — the one dialog that logs a
+// Feeding Care Event and its Feeding Detail together, opened by Today/Yesterday/2-days-ago (Date
+// locked to that offset) or Advanced (Date editable, no day pre-picked, for backdating/catching
+// up). feedingDefaultsByWho is read once per open from the dialog's own data-defaults attribute
+// (embedded by admin_enclosure.html from get_enclosure()'s per-Who lookup, web/admin_queries.py)
+// rather than fetched live on every Who switch.
+let feedingDefaultsByWho = {};
+
+// Mirrors admin_create_care_event()'s own days_ago -> occurred_at computation (web/admin.py) —
+// "now" minus N whole days, keeping the current time-of-day — purely for display in the locked
+// label; the actual value logged is still computed server-side from days_ago at submit time.
+function formatLockedFeedingDate(daysAgo) {
+    const d = new Date();
+    d.setDate(d.getDate() - parseInt(daysAgo, 10));
+    return d.toLocaleString(undefined, {
+        weekday: "short", month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit",
+    });
+}
+
+function openLogFeedingDialog(daysAgo) {
+    const dialog = document.getElementById("log-feeding-modal");
+    if (!dialog) return;
+    try {
+        feedingDefaultsByWho = JSON.parse(dialog.dataset.defaults || "{}");
+    } catch (e) {
+        feedingDefaultsByWho = {};
+    }
+    const daysAgoField = document.getElementById("log-feeding-days-ago");
+    const occurredAtField = document.getElementById("log-feeding-occurred-at");
+    const lockedLabel = document.getElementById("log-feeding-date-locked");
+    const editableField = document.getElementById("log-feeding-date-editable-label");
+    if (daysAgo === "advanced") {
+        daysAgoField.value = "";
+        occurredAtField.value = "";
+        lockedLabel.hidden = true;
+        editableField.hidden = false;
+    } else {
+        daysAgoField.value = daysAgo;
+        occurredAtField.value = "";
+        editableField.hidden = true;
+        lockedLabel.hidden = false;
+        lockedLabel.textContent = "Logging for: " + formatLockedFeedingDate(daysAgo);
+    }
+    const whoField = document.getElementById("log-feeding-who");
+    whoField.value = "";
+    applyFeedingDefaultsForWho("");
+    if (!dialog.open) dialog.showModal();
+}
+
+function dismissLogFeedingDialog() {
+    const dialog = document.getElementById("log-feeding-modal");
+    if (dialog && dialog.open) dialog.close();
+}
+
+function onLogFeedingWhoChange(select) {
+    applyFeedingDefaultsForWho(select.value);
+}
+
+// Clear-then-refill (see CONTEXT.md: Log Feeding Dialog) — wipes the previous Who's values before
+// loading the new Who's own last Feeding, rather than leaving a stale mix on screen; a Who with no
+// prior Feeding here just clears, since there's nothing to default from.
+function applyFeedingDefaultsForWho(who) {
+    const defaults = feedingDefaultsByWho[who] || null;
+    document.getElementById("log-feeding-food").value = (defaults && defaults.food) || "";
+    document.getElementById("log-feeding-count").value = (defaults && defaults.count != null) ? defaults.count : "";
+    document.getElementById("log-feeding-prey-state").value = (defaults && defaults.prey_state) || "";
+    document.getElementById("log-feeding-result").value = (defaults && defaults.result) || "accepted";
+}
+
+(function initLogFeedingDialog() {
+    const dialog = document.getElementById("log-feeding-modal");
+    if (!dialog) return;
+    dialog.addEventListener("click", function (e) {
+        if (e.target === dialog) dismissLogFeedingDialog();
+    });
+})();
 
 async function onDiscoverTuyaClick(button) {
     const form = button.closest("form");

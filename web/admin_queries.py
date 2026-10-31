@@ -16,7 +16,8 @@ from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
 from web.outbox import write_command
 from web.queries import (
-    ANIMAL_CONDITIONS, CARE_EVENT_KINDS, _latest_reading, _normalize_datetime_local, _sparklines, days_since,
+    ANIMAL_CONDITIONS, CARE_EVENT_KINDS, FEEDING_RESULTS, PREY_STATES, SHED_COMPLETENESS,
+    SHED_STUCK_LOCATION_LABELS, _latest_reading, _normalize_datetime_local, _sparklines, days_since,
     log_care_event,
 )
 
@@ -162,6 +163,16 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             ).fetchone()
             occurred_at = latest["occurred_at"] if latest else None
             enclosure["care"][kind] = {"occurred_at": occurred_at, "days_since": days_since(occurred_at)}
+        # Log Feeding Dialog defaults (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — one entry
+        # per Who ("" = whole enclosure, else str(animal_id)), computed once here rather than
+        # fetched live each time the dialog's Who field changes, since Enclosures here hold few
+        # Animals. "last_detail" (whole-enclosure only) is kept separately for the Feeding row's
+        # own "Last fed:" preview, shown before the dialog is even opened.
+        feeding_defaults_by_who = {"": get_last_feeding_detail(enclosure_id)}
+        for animal in enclosure["animals"]:
+            feeding_defaults_by_who[str(animal["id"])] = get_last_feeding_detail(enclosure_id, animal["id"])
+        enclosure["care"]["feeding"]["last_detail"] = feeding_defaults_by_who[""]
+        enclosure["care"]["feeding"]["defaults_by_who"] = feeding_defaults_by_who
 
         # Plant / Plant Health (see CONTEXT.md: Plant, Plant Health) — only ever populated for a
         # Bioactive Enclosure in practice (create_plant enforces it), but harmless to fetch
@@ -228,6 +239,59 @@ def start_care_events_from_today(enclosure_id: int) -> list[str]:
     return unlogged
 
 
+def get_last_feeding_detail(enclosure_id: int, animal_id: int | None = None) -> dict | None:
+    """The most recent Feeding's detail for this Enclosure — or, for a Spot-feed, this one Animal
+    specifically — used both to prefill the Advanced form's defaults and to auto-copy for the
+    Today/Yesterday/2-days-ago quick-log buttons (see CONTEXT.md: Feeding Detail; RHA-91).
+    animal_id=None matches the ordinary whole-Enclosure case the same way care_event.animal_id
+    itself does — an enclosure-wide Feeding never mixes with a specific Animal's Spot-feed history
+    here, same scoping care_event already applies."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT fd.* FROM feeding_detail fd JOIN care_event ce ON ce.id = fd.care_event_id
+               WHERE ce.enclosure_id = ? AND ce.kind = 'feeding'
+               AND ((? IS NULL AND ce.animal_id IS NULL) OR ce.animal_id = ?)
+               ORDER BY ce.occurred_at DESC LIMIT 1""",
+            (enclosure_id, animal_id, animal_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_recent_foods(enclosure_id: int, limit: int = 8) -> list[str]:
+    """Distinct recent `food` values logged for this Enclosure's Feedings, newest first — feeds the
+    Advanced form's autocomplete <datalist> (see CONTEXT.md: Feeding Detail), since the same food
+    tends to repeat across Feedings."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT fd.food, MAX(ce.occurred_at) AS last_occurred_at
+               FROM feeding_detail fd JOIN care_event ce ON ce.id = fd.care_event_id
+               WHERE ce.enclosure_id = ? AND fd.food IS NOT NULL AND fd.food != ''
+               GROUP BY fd.food ORDER BY last_occurred_at DESC LIMIT ?""",
+            (enclosure_id, limit),
+        ).fetchall()
+        return [row["food"] for row in rows]
+
+
+def log_feeding(enclosure_id: int, note: str | None = None, occurred_at: str | None = None,
+                 animal_id: int | None = None, food: str | None = None, count: int | None = None,
+                 prey_state: str | None = None, result: str = "accepted") -> None:
+    """Logs a Feeding Care Event and its Feeding Detail together (see CONTEXT.md: Feeding Detail;
+    RHA-91) — the care_event row keeps Feeding's existing Care Interval/staleness/nag tracking
+    unchanged; feeding_detail carries the richer fields care_event never had room for. Always
+    writes a feeding_detail row, even for a bare repeat, so get_last_feeding_detail() always has
+    the real most-recent Feeding to chain from rather than skipping back to an older one."""
+    if prey_state is not None and prey_state not in PREY_STATES:
+        raise ValueError(f"Unknown prey state: {prey_state!r}")
+    if result not in FEEDING_RESULTS:
+        raise ValueError(f"Unknown Feeding result: {result!r}")
+    care_event_id = log_care_event(enclosure_id, "feeding", note, occurred_at, animal_id)
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO feeding_detail (care_event_id, food, count, prey_state, result) VALUES (?, ?, ?, ?, ?)",
+            (care_event_id, food or None, count, prey_state, result),
+        )
+
+
 def create_plant(enclosure_id: int, name: str, species: str | None) -> None:
     """See CONTEXT.md: Plant. Only meaningful on a Bioactive Enclosure — enforced here, not in the
     schema, same pattern as this file's other cross-row invariants (e.g. Manual Sensor's Target
@@ -256,16 +320,10 @@ def log_plant_health(enclosure_id: int, note: str, plant_id: int | None = None,
         raise ValueError("Enter a note describing what you observed.")
     occurred_at = _normalize_datetime_local(occurred_at)
     with get_connection() as conn:
-        if occurred_at:
-            conn.execute(
-                "INSERT INTO plant_health_log (enclosure_id, plant_id, note, occurred_at) VALUES (?, ?, ?, ?)",
-                (enclosure_id, plant_id, note, occurred_at),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO plant_health_log (enclosure_id, plant_id, note) VALUES (?, ?, ?)",
-                (enclosure_id, plant_id, note),
-            )
+        conn.execute(
+            "INSERT INTO plant_health_log (enclosure_id, plant_id, note, occurred_at) VALUES (?, ?, ?, ?)",
+            (enclosure_id, plant_id, note, occurred_at),
+        )
 
 
 def _validate_enclosure_type(enclosure_type: str) -> None:
@@ -440,11 +498,8 @@ def list_animal_logs(animal_id: int, limit: int = 20) -> list[dict]:
 
 def _insert_animal_log(animal_id: int, occurred_at: str | None, **fields) -> None:
     occurred_at = _normalize_datetime_local(occurred_at)
-    columns = list(fields.keys())
-    values = list(fields.values())
-    if occurred_at:
-        columns.append("occurred_at")
-        values.append(occurred_at)
+    columns = [*fields.keys(), "occurred_at"]
+    values = [*fields.values(), occurred_at]
     placeholders = ", ".join("?" for _ in columns)
     with get_connection() as conn:
         conn.execute(
@@ -476,6 +531,42 @@ def log_animal_condition(animal_id: int, condition: str, note: str | None = None
     if condition not in ANIMAL_CONDITIONS:
         raise ValueError(f"Unknown Condition: {condition!r}")
     _insert_animal_log(animal_id, occurred_at, condition=condition, note=note or None)
+
+
+def list_shed_logs(animal_id: int, limit: int = 20) -> list[dict]:
+    """Most-recent-first Shed Log history (see CONTEXT.md: Shed Log) for the Animal's own Edit
+    page — mirrors list_animal_logs()'s shape. stuck_locations comes back split into a list, each
+    piece mapped through SHED_STUCK_LOCATION_LABELS when it's one of the fixed codes; a piece that
+    isn't recognized is passed through as-is, which is how a free-text "other" entry displays."""
+    with get_connection() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM shed_log WHERE animal_id = ? ORDER BY occurred_at DESC LIMIT ?",
+            (animal_id, limit),
+        )]
+    for row in rows:
+        codes = row["stuck_locations"].split(",") if row["stuck_locations"] else []
+        row["stuck_location_labels"] = [SHED_STUCK_LOCATION_LABELS.get(code, code) for code in codes]
+    return rows
+
+
+def create_shed_log(animal_id: int, completeness: str, stuck_locations: list[str] | None = None,
+                     note: str | None = None, occurred_at: str | None = None) -> None:
+    """See CONTEXT.md: Shed Log. stuck_locations is only meaningful alongside completeness ==
+    'partial' — a Full shed's stuck_locations is always cleared to NULL regardless of what was
+    submitted, same "clear the inapplicable fields" pattern Plug's Controller Kind already uses
+    (see web/admin_queries.py's create_plug/update_plug)."""
+    if completeness not in SHED_COMPLETENESS:
+        raise ValueError(f"Unknown shed completeness: {completeness!r}")
+    joined_locations = None
+    if completeness == "partial" and stuck_locations:
+        joined_locations = ",".join(loc.strip() for loc in stuck_locations if loc and loc.strip())
+    occurred_at = _normalize_datetime_local(occurred_at)
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO shed_log (animal_id, completeness, stuck_locations, note, occurred_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (animal_id, completeness, joined_locations, note or None, occurred_at),
+        )
 
 
 TargetRanges = dict[str, tuple[float | None, float | None]]

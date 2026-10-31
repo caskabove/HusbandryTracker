@@ -27,7 +27,9 @@ from web.govee_refresh import discover_govee, refresh_sensors
 from web.plug_probe import probe_plug
 from web.tuya_discover import discover_tuya
 from web.queries import (
-    ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, PERIOD_SLOT_HHMM, log_care_event, log_reading,
+    ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, FEEDING_RESULT_LABELS, FEEDING_RESULTS,
+    PERIOD_SLOT_HHMM, PREY_STATE_LABELS, PREY_STATES, SHED_COMPLETENESS, SHED_COMPLETENESS_LABELS,
+    SHED_STUCK_LOCATION_LABELS, SHED_STUCK_LOCATIONS, log_care_event, log_reading,
 )
 from web.status import acknowledged_drift_status, care_interval_status, schedule_drift_status, target_range_status
 
@@ -266,6 +268,9 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
             "enclosure": enclosure, "care_kinds": CARE_EVENT_KINDS, "rooms": q.list_rooms(),
             "room_sensors": room_sensors,
             "schedule_drift_threshold_minutes": q.get_settings()["schedule_drift_threshold_minutes"],
+            "recent_foods": q.list_recent_foods(enclosure_id),
+            "prey_states": PREY_STATES, "prey_state_labels": PREY_STATE_LABELS,
+            "feeding_results": FEEDING_RESULTS, "feeding_result_labels": FEEDING_RESULT_LABELS,
             "error": request.query_params.get("error"),
         }
     )
@@ -287,13 +292,37 @@ def admin_start_care_events_from_today(enclosure_id: int):
 def admin_create_care_event(
     enclosure_id: int, kind: str, note: str = Form(default=None), occurred_at: str = Form(default=""),
     days_ago: str = Form(default=""), animal_id: str = Form(default=""),
+    # Feeding Detail fields (see CONTEXT.md: Feeding Detail; RHA-91) — only ever submitted by
+    # Feeding's own Advanced form (admin_enclosure.html); ignored for every other kind, same
+    # precedent as animal_id (Spot-feed) above being feeding-only on this same shared route.
+    food: str = Form(default=""), count: str = Form(default=""), prey_state: str = Form(default=""),
+    result: str = Form(default=""),
 ):
     # A quick-log button (Today/Yesterday/2 days ago) wins over the Advanced datetime picker if
     # both are somehow present — the three buttons are the common case this exists to simplify.
     if days_ago:
         occurred_at = (datetime.now() - timedelta(days=int(days_ago))).strftime("%Y-%m-%dT%H:%M")
+    animal_id_int = int(animal_id) if animal_id else None
     try:
-        log_care_event(enclosure_id, kind, note, occurred_at, int(animal_id) if animal_id else None)
+        if kind == "feeding":
+            # The three quick-log buttons never submit food/count/prey_state/result — only the
+            # Advanced form does. An empty submission here means "repeat the last Feeding" (the
+            # whole point of the quick-log buttons for Feeding — see CONTEXT.md: Feeding Detail),
+            # so it's filled in from get_last_feeding_detail() instead of logging nothing fed.
+            if food or count or prey_state or result:
+                q.log_feeding(
+                    enclosure_id, note, occurred_at, animal_id_int, food or None,
+                    int(count) if count else None, prey_state or None, result or "accepted",
+                )
+            else:
+                last = q.get_last_feeding_detail(enclosure_id, animal_id_int)
+                q.log_feeding(
+                    enclosure_id, note, occurred_at, animal_id_int,
+                    last["food"] if last else None, last["count"] if last else None,
+                    last["prey_state"] if last else None, last["result"] if last else "accepted",
+                )
+        else:
+            log_care_event(enclosure_id, kind, note, occurred_at, animal_id_int)
     except ValueError as exc:
         return RedirectResponse(
             url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}#care-{kind}", status_code=303
@@ -402,6 +431,9 @@ def admin_edit_animal(request: Request, animal_id: int):
             "animal": animal, "enclosures": q.list_enclosures(),
             "logs": q.list_animal_logs(animal_id),
             "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "shed_logs": q.list_shed_logs(animal_id),
+            "shed_completeness": SHED_COMPLETENESS, "shed_completeness_labels": SHED_COMPLETENESS_LABELS,
+            "shed_stuck_locations": SHED_STUCK_LOCATIONS, "shed_stuck_location_labels": SHED_STUCK_LOCATION_LABELS,
             "error": request.query_params.get("error"),
         }
     )
@@ -456,6 +488,21 @@ def admin_log_animal_condition(
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/log-shed")
+def admin_log_shed(
+    animal_id: int, completeness: str = Form(...), stuck_locations: list[str] = Form(default=[]),
+    stuck_location_other: str = Form(""), note: str = Form(""), occurred_at: str = Form(""),
+):
+    locations = list(stuck_locations)
+    if stuck_location_other.strip():
+        locations.append(stuck_location_other.strip())
+    try:
+        q.create_shed_log(animal_id, completeness, locations, note, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit#shed-log", status_code=303)
 
 
 @router.post("/sensors/discover")
@@ -1371,6 +1418,9 @@ def admin_care_event_detail(request: Request, enclosure_id: int, kind: str):
             "prefill": vd.entry_prefill(entries, retry=_add_retry(request), allow_exact=True),
             "kind": kind,
             "animals": enclosure["animals"],
+            "recent_foods": q.list_recent_foods(enclosure_id) if kind == "feeding" else [],
+            "prey_states": PREY_STATES, "prey_state_labels": PREY_STATE_LABELS,
+            "feeding_results": FEEDING_RESULTS, "feeding_result_labels": FEEDING_RESULT_LABELS,
             "post_action": f"/admin/enclosures/{enclosure_id}/care-events/{kind}/entries",
             "back_url": f"/admin/enclosures/{enclosure_id}/data",
             "error": request.query_params.get("error"),
@@ -1389,6 +1439,12 @@ def admin_care_event_entries(
     period_slot: str = Form("afternoon"),
     note: str = Form(""),
     animal_id: str = Form(""),
+    # Feeding Detail fields (see CONTEXT.md: Feeding Detail; ADR 0042/0043) — only ever submitted
+    # by this route's own feeding-kind Add/Edit forms; ignored for every other kind.
+    food: str = Form(""),
+    count: str = Form(""),
+    prey_state: str = Form(""),
+    result: str = Form(""),
 ):
     """Add/Edit/Delete one Care Event entry (see CONTEXT.md: View Data, Period Slot; ADR 0026, ADR
     0027) — period_slot "exact" means use the `time` field as-is; any other value (a Period Slot
@@ -1400,10 +1456,17 @@ def admin_care_event_entries(
         else:
             resolved_time = time if period_slot == "exact" else PERIOD_SLOT_HHMM.get(period_slot)
             aid = int(animal_id) if animal_id else None
+            count_val = int(count) if count else None
             if action == "add":
-                vd.add_care_event_entry(enclosure_id, kind, date, resolved_time or None, note or None, aid)
+                vd.add_care_event_entry(
+                    enclosure_id, kind, date, resolved_time or None, note or None, aid,
+                    food or None, count_val, prey_state or None, result or "accepted",
+                )
             elif action == "update":
-                vd.update_care_event_entry(int(entry_id), date, resolved_time or None, note or None, aid)
+                vd.update_care_event_entry(
+                    int(entry_id), kind, date, resolved_time or None, note or None, aid,
+                    food or None, count_val, prey_state or None, result or "accepted",
+                )
             else:
                 raise ValueError(f"Unknown action: {action!r}")
     except ValueError as exc:

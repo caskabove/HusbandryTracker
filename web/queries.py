@@ -23,6 +23,21 @@ ANIMAL_CONDITION_LABELS = {
     "poor": "Poor", "ok": "OK", "good": "Good", "really_good": "Really Good",
 }
 
+# feeding_detail's allowed values — see CONTEXT.md: Feeding Detail. Must match the CHECK
+# constraints in db/schema.sql.
+PREY_STATES = ["live", "frozen_thawed", "dry"]
+PREY_STATE_LABELS = {"live": "Live", "frozen_thawed": "Frozen-thawed", "dry": "Dry"}
+FEEDING_RESULTS = ["accepted", "refused"]
+FEEDING_RESULT_LABELS = {"accepted": "Accepted", "refused": "Refused"}
+
+# shed_log's allowed values — see CONTEXT.md: Shed Log. completeness must match the CHECK
+# constraint in db/schema.sql; stuck_locations is free-form (comma-joined codes from this list
+# plus optional free text), not itself a CHECK constraint.
+SHED_COMPLETENESS = ["full", "partial"]
+SHED_COMPLETENESS_LABELS = {"full": "Full", "partial": "Partial"}
+SHED_STUCK_LOCATIONS = ["eye_caps", "tail_tip", "toes"]
+SHED_STUCK_LOCATION_LABELS = {"eye_caps": "Eye caps", "tail_tip": "Tail tip", "toes": "Toes"}
+
 # Morning/Afternoon/Night anchor hours — see CONTEXT.md: Period Slot; ADR 0026. Shared by both this
 # concept's uses: View Data's cell editors (entry — see web/view_data_queries.py) and Graphs' Care
 # Event marker snapping (display — see web/graphs_queries.py's _PERIOD_SLOT_ANCHORS), so the three
@@ -94,12 +109,17 @@ def days_since(occurred_at: str | None) -> int | None:
     return (datetime.now() - then).days
 
 
-def _normalize_datetime_local(value: str | None) -> str | None:
+def _normalize_datetime_local(value: str | None) -> str:
     """Browser <input type="datetime-local"> submits "YYYY-MM-DDTHH:MM" — normalize to the
     "YYYY-MM-DD HH:MM:SS" shape every other timestamp in the DB uses, so backdated rows sort/compare
-    consistently with auto-generated ones. Returns None for a blank value (meaning: log as now)."""
+    consistently with auto-generated ones. A blank value means "log as now" — returns local
+    wall-clock time rather than leaving the column out for the table's own schema-level
+    DEFAULT (datetime('now')) to fill in: that default evaluates in UTC, which doesn't match the
+    explicit-occurred_at rows above (always local) or days_since()'s comparison against local
+    datetime.now(), and previously made a just-logged "now" row sort/compare as if it were hours in
+    the future."""
     if not value:
-        return None
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return value.replace("T", " ") + ":00"
 
 
@@ -366,29 +386,27 @@ def get_dashboard_data() -> dict:
 
 
 def log_care_event(enclosure_id: int, kind: str, note: str | None = None, occurred_at: str | None = None,
-                    animal_id: int | None = None) -> None:
+                    animal_id: int | None = None) -> int:
     """occurred_at lets a Care Event be backdated to when it actually happened instead of always
     being "now" — see CONTEXT.md: Care Event. Pass None (the default) to log it as now.
 
     animal_id is Spot-feed only (see CONTEXT.md: Spot-feed) — scopes a Feeding to one Animal in the
     Enclosure instead of the whole Enclosure. Only valid alongside kind == "feeding"; a non-None
-    value for any other kind is a friendly ValueError rather than a silently-ignored form field."""
+    value for any other kind is a friendly ValueError rather than a silently-ignored form field.
+
+    Returns the new row's id — web/admin_queries.py's log_feeding() needs it to attach a
+    feeding_detail row to the care_event it just created (see CONTEXT.md: Feeding Detail)."""
     if kind not in CARE_EVENT_KINDS:
         raise ValueError(f"Unknown care event kind: {kind!r}")
     if animal_id is not None and kind != "feeding":
         raise ValueError("Spot-feed (picking one Animal) only applies to Feeding.")
     occurred_at = _normalize_datetime_local(occurred_at)
     with get_connection() as conn:
-        if occurred_at:
-            conn.execute(
-                "INSERT INTO care_event (enclosure_id, animal_id, kind, occurred_at, note) VALUES (?, ?, ?, ?, ?)",
-                (enclosure_id, animal_id, kind, occurred_at, note),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO care_event (enclosure_id, animal_id, kind, note) VALUES (?, ?, ?, ?)",
-                (enclosure_id, animal_id, kind, note),
-            )
+        cur = conn.execute(
+            "INSERT INTO care_event (enclosure_id, animal_id, kind, occurred_at, note) VALUES (?, ?, ?, ?, ?)",
+            (enclosure_id, animal_id, kind, occurred_at, note),
+        )
+        return cur.lastrowid
 
 
 def log_reading(sensor_id: int, values: dict[str, float | None], recorded_at: str | None = None) -> None:
@@ -411,16 +429,10 @@ def log_reading(sensor_id: int, values: dict[str, float | None], recorded_at: st
     column_list = ", ".join(columns)
     placeholders = ", ".join("?" for _ in columns)
     with get_connection() as conn:
-        if recorded_at:
-            conn.execute(
-                f"INSERT INTO sensor_reading (sensor_id, recorded_at, {column_list}) VALUES (?, ?, {placeholders})",
-                (sensor_id, recorded_at, *provided.values()),
-            )
-        else:
-            conn.execute(
-                f"INSERT INTO sensor_reading (sensor_id, {column_list}) VALUES (?, {placeholders})",
-                (sensor_id, *provided.values()),
-            )
+        conn.execute(
+            f"INSERT INTO sensor_reading (sensor_id, recorded_at, {column_list}) VALUES (?, ?, {placeholders})",
+            (sensor_id, recorded_at, *provided.values()),
+        )
 
 
 def assign_enclosure_room(enclosure_id: int, room_id: int | None) -> None:

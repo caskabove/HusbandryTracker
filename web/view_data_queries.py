@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db.db import get_connection
 from schemas import enclosure_types as et
-from web.queries import ANIMAL_CONDITIONS, CARE_EVENT_KINDS, PERIOD_SLOT_HHMM, PERIOD_SLOTS
+from web.queries import ANIMAL_CONDITIONS, CARE_EVENT_KINDS, FEEDING_RESULTS, PERIOD_SLOT_HHMM, PERIOD_SLOTS, PREY_STATES
 
 # (key, title, number of days) — used only by Graphs now (see CONTEXT.md: Graphs; ADR 0022), which
 # still shows a day-windowed chart. View Data itself dropped its own Range picker under ADR 0027.
@@ -393,15 +393,29 @@ def delete_reading_entry(entry_id: int, metric_key: str) -> None:
 # ---- Care Event entries ----
 
 def list_care_event_entries(enclosure_id: int, kind: str) -> list[dict]:
+    """For Feeding, also brings in that occurrence's Feeding Detail (see CONTEXT.md: Feeding
+    Detail; ADR 0042/0043) via a LEFT JOIN — a Feeding logged before that feature existed has no
+    feeding_detail row at all, so food/count/prey_state/result come back None rather than erroring."""
     with get_connection() as conn:
-        rows = conn.execute(
-            """SELECT ce.id, ce.occurred_at, ce.note, ce.animal_id, a.name AS animal_name
-               FROM care_event ce LEFT JOIN animal a ON a.id = ce.animal_id
-               WHERE ce.enclosure_id = ? AND ce.kind = ? ORDER BY ce.occurred_at DESC LIMIT ?""",
-            (enclosure_id, kind, _DETAIL_ENTRY_LIMIT),
-        ).fetchall()
-    return [
-        {
+        if kind == "feeding":
+            rows = conn.execute(
+                """SELECT ce.id, ce.occurred_at, ce.note, ce.animal_id, a.name AS animal_name,
+                          fd.food, fd.count, fd.prey_state, fd.result
+                   FROM care_event ce LEFT JOIN animal a ON a.id = ce.animal_id
+                   LEFT JOIN feeding_detail fd ON fd.care_event_id = ce.id
+                   WHERE ce.enclosure_id = ? AND ce.kind = ? ORDER BY ce.occurred_at DESC LIMIT ?""",
+                (enclosure_id, kind, _DETAIL_ENTRY_LIMIT),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT ce.id, ce.occurred_at, ce.note, ce.animal_id, a.name AS animal_name
+                   FROM care_event ce LEFT JOIN animal a ON a.id = ce.animal_id
+                   WHERE ce.enclosure_id = ? AND ce.kind = ? ORDER BY ce.occurred_at DESC LIMIT ?""",
+                (enclosure_id, kind, _DETAIL_ENTRY_LIMIT),
+            ).fetchall()
+    entries = []
+    for row in rows:
+        entry = {
             "id": row["id"],
             "date": row["occurred_at"][:10],
             "time": row["occurred_at"][11:16],
@@ -409,35 +423,73 @@ def list_care_event_entries(enclosure_id: int, kind: str) -> list[dict]:
             "animal_id": row["animal_id"],
             "animal_name": row["animal_name"],
         }
-        for row in rows
-    ]
+        if kind == "feeding":
+            entry.update(
+                food=row["food"], count=row["count"], prey_state=row["prey_state"], result=row["result"],
+            )
+        entries.append(entry)
+    return entries
 
 
 def add_care_event_entry(enclosure_id: int, kind: str, day: str, time_str: str | None,
-                          note: str | None, animal_id: int | None) -> None:
+                          note: str | None, animal_id: int | None, food: str | None = None,
+                          count: int | None = None, prey_state: str | None = None,
+                          result: str = "accepted") -> None:
+    """food/count/prey_state/result are Feeding Detail fields (see CONTEXT.md: Feeding Detail; ADR
+    0042/0043) — ignored for every other kind, same as animal_id (Spot-feed) is feeding-only."""
     if kind not in CARE_EVENT_KINDS:
         raise ValueError(f"Unknown care event kind: {kind!r}")
     if animal_id is not None and kind != "feeding":
         raise ValueError("Spot-feed (picking one Animal) only applies to Feeding.")
+    if kind == "feeding":
+        if prey_state is not None and prey_state not in PREY_STATES:
+            raise ValueError(f"Unknown prey state: {prey_state!r}")
+        if result not in FEEDING_RESULTS:
+            raise ValueError(f"Unknown Feeding result: {result!r}")
     occurred_at = f"{day} {time_str or PERIOD_SLOT_HHMM['afternoon']}:00"
     with get_connection() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO care_event (enclosure_id, animal_id, kind, occurred_at, note) VALUES (?, ?, ?, ?, ?)",
             (enclosure_id, animal_id, kind, occurred_at, note or None),
         )
+        if kind == "feeding":
+            conn.execute(
+                "INSERT INTO feeding_detail (care_event_id, food, count, prey_state, result) VALUES (?, ?, ?, ?, ?)",
+                (cur.lastrowid, food or None, count, prey_state, result),
+            )
 
 
-def update_care_event_entry(entry_id: int, day: str, time_str: str | None,
-                             note: str | None, animal_id: int | None) -> None:
+def update_care_event_entry(entry_id: int, kind: str, day: str, time_str: str | None,
+                             note: str | None, animal_id: int | None, food: str | None = None,
+                             count: int | None = None, prey_state: str | None = None,
+                             result: str = "accepted") -> None:
     """Unlike Reading/Animal Log entries, a Care Event entry's date/time is fully editable in
     place — same "always re-derive occurred_at" rule the day-grid cell editor used under ADR 0026,
-    carried over to this per-row table by ADR 0027."""
+    carried over to this per-row table by ADR 0027.
+
+    For Feeding, also upserts the feeding_detail row (see CONTEXT.md: Feeding Detail; ADR 0042/
+    0043) — ON CONFLICT covers both a normal edit of an existing row and backfilling one for a
+    Feeding logged before Feeding Detail existed."""
+    if kind == "feeding":
+        if prey_state is not None and prey_state not in PREY_STATES:
+            raise ValueError(f"Unknown prey state: {prey_state!r}")
+        if result not in FEEDING_RESULTS:
+            raise ValueError(f"Unknown Feeding result: {result!r}")
     occurred_at = f"{day} {time_str or PERIOD_SLOT_HHMM['afternoon']}:00"
     with get_connection() as conn:
         conn.execute(
             "UPDATE care_event SET occurred_at = ?, note = ?, animal_id = ? WHERE id = ?",
             (occurred_at, note or None, animal_id, entry_id),
         )
+        if kind == "feeding":
+            conn.execute(
+                """INSERT INTO feeding_detail (care_event_id, food, count, prey_state, result)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(care_event_id) DO UPDATE SET
+                       food = excluded.food, count = excluded.count,
+                       prey_state = excluded.prey_state, result = excluded.result""",
+                (entry_id, food or None, count, prey_state, result),
+            )
 
 
 def delete_care_event_entry(entry_id: int) -> None:

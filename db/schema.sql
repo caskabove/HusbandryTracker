@@ -457,3 +457,34 @@ CREATE TABLE IF NOT EXISTS care_event (
     note          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_care_event_enclosure_kind_time ON care_event (enclosure_id, kind, occurred_at);
+
+-- A 1:1 extension of a Feeding care_event (see CONTEXT.md: Feeding Detail; ADR 0042) — the richer
+-- fields a Feeding Care Event never had room for. Deliberately NOT a replacement for care_event:
+-- Feeding's Care Interval/staleness/nag tracking stays on the shared care_event mechanism Watering/
+-- Spot-clean/Deep-clean also use, so this only carries what's new. note stays on care_event itself
+-- rather than being duplicated here. care_event_id is UNIQUE — exactly one Feeding Detail per
+-- Feeding care_event, cascade-deleted if that row ever is.
+CREATE TABLE IF NOT EXISTS feeding_detail (
+    id            INTEGER PRIMARY KEY,
+    care_event_id INTEGER NOT NULL UNIQUE REFERENCES care_event(id) ON DELETE CASCADE,
+    food          TEXT,     -- free text, e.g. "frozen-thawed rat - small" — type and size fuse together in real use
+    count         INTEGER,
+    prey_state    TEXT CHECK (prey_state IN ('live', 'frozen_thawed', 'dry')),
+    result        TEXT NOT NULL DEFAULT 'accepted' CHECK (result IN ('accepted', 'refused'))
+);
+
+-- A manually-logged, backdatable Shed observation for one Animal (see CONTEXT.md: Shed Log; ADR
+-- 0042) — not a Care Event: nothing was "done," and there's no interval/staleness tracking for
+-- it, same reasoning plant_health_log and animal_log already use. stuck_locations is Partial-only,
+-- a comma-joined list of SHED_STUCK_LOCATIONS codes (web/queries.py) plus optional free text —
+-- flat TEXT, not a join table, same simplicity bias as every other small multi-value field in this
+-- schema; nothing needs to query across Animals by stuck-location yet.
+CREATE TABLE IF NOT EXISTS shed_log (
+    id              INTEGER PRIMARY KEY,
+    animal_id       INTEGER NOT NULL REFERENCES animal(id) ON DELETE CASCADE,
+    completeness    TEXT NOT NULL CHECK (completeness IN ('full', 'partial')),
+    stuck_locations TEXT,
+    note            TEXT,
+    occurred_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_shed_log_animal_time ON shed_log (animal_id, occurred_at);
