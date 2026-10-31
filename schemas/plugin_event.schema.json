@@ -16,10 +16,10 @@
       "minLength": 1
     },
     "kind": {
-      "enum": ["sensor_reading", "plug_state", "plug_telemetry"]
+      "enum": ["sensor_reading", "plug_state", "plug_telemetry", "log"]
     },
     "external_id": {
-      "description": "The opaque per-Plugin device id this event is about — matches sensor.external_id/plug.external_id for the same plugin. See CONTEXT.md: External ID.",
+      "description": "The opaque per-Plugin device id this event is about — matches sensor.external_id/plug.external_id for the same plugin. For a \"log\" event this is repurposed as a free-form scope reference instead (e.g. \"enclosure:3\", \"animal:12\", or \"app\" when the entry isn't about any specific entity) — see CONTEXT.md: External ID, Log Event.",
       "type": "string",
       "minLength": 1
     },
@@ -44,6 +44,10 @@
     {
       "if": { "properties": { "kind": { "const": "plug_telemetry" } } },
       "then": { "properties": { "payload": { "$ref": "#/$defs/plug_telemetry_payload" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "log" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/log_payload" } } }
     }
   ],
   "$defs": {
@@ -75,6 +79,17 @@
         "volts": { "type": ["number", "null"] },
         "amps": { "type": ["number", "null"] },
         "countdown_seconds": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "log_payload": {
+      "description": "See CONTEXT.md: Log Event; ADR 0044. A free-form entry from a Plugin or an AI skill — not resolved against the Registry the way sensor_reading/plug_state/plug_telemetry are, so Ingest writes it straight through regardless of whether external_id matches any registered device.",
+      "type": "object",
+      "required": ["message"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "enum": ["debug", "info", "warning", "error"] },
+        "message": { "type": "string", "minLength": 1 },
+        "data": { "type": "object" }
       }
     }
   }

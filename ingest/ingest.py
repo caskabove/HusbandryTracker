@@ -4,7 +4,8 @@
    Plugin never queries the database directly to learn what to watch.
 2. Drains the Inbox (data/inbox/<kind>/*.json), validating every Plugin Event against
    schemas/plugin_event.schema.json before writing the resulting Reading/Plug State Transition/
-   Data Capture, then evaluating Alert Conditions.
+   Data Capture/Log Event, then evaluating Alert Conditions (a Log Event skips both the Registry
+   match and Alert evaluation — see CONTEXT.md: Log Event; ADR 0044).
 3. Periodically re-evaluates Unreachable for every registered Smart Sensor/Plug, since that
    condition needs to fire even when *nothing* arrives, not just when something does.
 
@@ -32,7 +33,7 @@ INBOX_DIR = APP_ROOT / "data" / "inbox"
 REGISTRY_DIR = APP_ROOT / "data" / "registry"
 REJECTED_DIR = INBOX_DIR / "_rejected"
 SCHEMA_PATH = APP_ROOT / "schemas" / "plugin_event.schema.json"
-EVENT_KINDS = ["sensor_reading", "plug_state", "plug_telemetry"]
+EVENT_KINDS = ["sensor_reading", "plug_state", "plug_telemetry", "log"]
 
 DEFAULT_SCAN_INTERVAL_SECONDS = 5
 
@@ -172,6 +173,18 @@ def _apply_event(event: dict) -> None:
                  payload.get("countdown_seconds")),
             )
         alerts.evaluate_plug_zero_power(plug_id)
+
+    elif kind == "log":
+        # Deliberately no Registry match and no Alert evaluation — a Log Event isn't about a
+        # registered Sensor/Plug (see CONTEXT.md: Log Event; ADR 0044), so every well-formed one
+        # is written straight through.
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO event_log (source, scope, level, message, data, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (plugin, external_id, payload.get("level", "info"), payload["message"],
+                 json.dumps(payload["data"]) if "data" in payload else None, observed_at),
+            )
 
 
 def _drain_inbox(validator: jsonschema.Draft202012Validator) -> None:

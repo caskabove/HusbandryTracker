@@ -433,6 +433,25 @@ CREATE TABLE IF NOT EXISTS plug_reading (
 );
 CREATE INDEX IF NOT EXISTS idx_plug_reading_plug_time ON plug_reading (plug_id, recorded_at);
 
+-- A free-form log entry from a Plugin or an AI skill (see CONTEXT.md: Log Event; ADR 0044) — the
+-- generalization of the Inbox/Ingest contract beyond the three fixed observation kinds above.
+-- source is the plugin/skill name (matches a Plugin Event's own `plugin` field); scope is that
+-- event's external_id, repurposed here as a free-form reference (e.g. "enclosure:3", "animal:12",
+-- or "app" when the entry isn't about any specific entity) rather than a Registry-matched device
+-- id — Ingest writes every log event straight through, unlike sensor_reading/plug_state/
+-- plug_telemetry, which are dropped if external_id doesn't resolve to a registered Sensor/Plug.
+CREATE TABLE IF NOT EXISTS event_log (
+    id          INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,
+    scope       TEXT NOT NULL,
+    level       TEXT NOT NULL DEFAULT 'info' CHECK (level IN ('debug', 'info', 'warning', 'error')),
+    message     TEXT NOT NULL,
+    data        TEXT,  -- opaque JSON, NULL if the event carried none
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_event_log_source_time ON event_log (source, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_event_log_scope_time ON event_log (scope, recorded_at);
+
 -- Per-Plug Alert state machine — see the sensor_alert_state comment above for why this is a
 -- separate typed table rather than one polymorphic table shared with Sensors.
 CREATE TABLE IF NOT EXISTS plug_alert_state (

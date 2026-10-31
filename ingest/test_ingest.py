@@ -134,6 +134,44 @@ def test_drain_inbox_quarantines_schema_violation(json_dirs, temp_db) -> None:
     assert (json_dirs["rejected"] / "plug_state" / "bad.json").exists()
 
 
+def test_drain_inbox_applies_log_event_with_no_registered_device(json_dirs, temp_db) -> None:
+    # No sensor/plug/anything registered for "enclosure:3" — a log event needs no Registry match.
+    event = {
+        "schema_version": 1, "plugin": "feeding_skill", "kind": "log", "external_id": "enclosure:3",
+        "observed_at": "2026-01-01 00:00:00",
+        "payload": {"level": "info", "message": "Logged feeding via voice command", "data": {"animal_id": 7}},
+    }
+    _drop_inbox_file(json_dirs, "log", "event1.json", json.dumps(event))
+
+    _drain_inbox(_load_validator())
+
+    row = temp_db.execute(
+        "SELECT source, scope, level, message, data FROM event_log WHERE source = 'feeding_skill'"
+    ).fetchone()
+    assert row is not None
+    assert row["scope"] == "enclosure:3"
+    assert row["level"] == "info"
+    assert row["message"] == "Logged feeding via voice command"
+    assert json.loads(row["data"]) == {"animal_id": 7}
+    assert not (json_dirs["inbox"] / "log" / "event1.json").exists()
+
+
+def test_drain_inbox_log_event_defaults_level_and_data(json_dirs, temp_db) -> None:
+    event = {
+        "schema_version": 1, "plugin": "feeding_skill", "kind": "log", "external_id": "app",
+        "observed_at": "2026-01-01 00:00:00", "payload": {"message": "started up"},
+    }
+    _drop_inbox_file(json_dirs, "log", "event1.json", json.dumps(event))
+
+    _drain_inbox(_load_validator())
+
+    row = temp_db.execute(
+        "SELECT level, data FROM event_log WHERE scope = 'app'"
+    ).fetchone()
+    assert row["level"] == "info"
+    assert row["data"] is None
+
+
 def test_drain_inbox_ignores_event_for_deregistered_device(json_dirs, temp_db) -> None:
     # No plug row registered for "dev1:1" at all.
     event = {

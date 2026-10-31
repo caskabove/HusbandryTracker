@@ -13,6 +13,11 @@ that observation back into the database.
 Direction 2 (Core -> Plugin): Core issues a Command via write_command, and the Plugin
 (simulated) takes it via take_command.
 
+Direction 3 (AI skill -> Ingest, no Registry involved at all): an AI skill — not a device
+Plugin, just anything that speaks the same JSON contract — reports a Log Event (see
+CONTEXT.md: Log Event; ADR 0044) via the same write_event Plugins already use, and Ingest
+drains it straight into event_log with no Sensor/Plug to resolve against.
+
 Run with: pytest tests/test_json_contract_roundtrip.py
 """
 from __future__ import annotations
@@ -73,3 +78,21 @@ def test_outbox_command_roundtrip(json_dirs) -> None:
     assert command["request_id"] == 99
     # Taken exactly once — a second poll before Core issues a new one sees nothing pending.
     assert take_command("tuya_lan", "dev1:1") is None
+
+
+def test_skill_log_event_roundtrip(json_dirs, temp_db) -> None:
+    # 1. An AI skill reports a Log Event the same way a Plugin reports any other kind — no
+    #    Sensor/Plug registration, no Registry export, needed first.
+    write_event("feeding_skill", "enclosure:3", "log",
+                {"level": "info", "message": "Logged feeding via voice command"})
+
+    # 2. Ingest drains the Inbox and writes it straight into event_log.
+    _drain_inbox(_load_validator())
+
+    row = temp_db.execute(
+        "SELECT source, scope, level, message FROM event_log WHERE source = 'feeding_skill'"
+    ).fetchone()
+    assert row is not None
+    assert row["scope"] == "enclosure:3"
+    assert row["level"] == "info"
+    assert row["message"] == "Logged feeding via voice command"
