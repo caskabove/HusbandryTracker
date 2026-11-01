@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker Admin</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Husbandry Tracker Admin</h1>
+        {% set nav_current = "app_admin" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Plugins</h2>
+            {# See CONTEXT.md: Plugin, Plugin Contract, Active Plugin, Skill, App Admin;
+               ADR 0045/0046/0047/0048. "Available" here means a plugins/<name>/ folder satisfies
+               the Plugin Contract (manifest.json + init.py) — every Plugin does now, including
+               tuya_lan/govee_ble. #}
+            <p class="empty">Independent integrations (device Plugins) and Skills (AI-driven helpers —
+                see Skill) that this install knows about. A device Plugin must be Active for its
+                Sensors/Plugs on the "Plugs and Sensors" page to actually update — deactivating one
+                pauses them the same way deregistering their last device would.</p>
+            {% if plugins %}
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Kind</th><th>Description</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                {% for plugin in plugins %}
+                    <tr>
+                        <td class="admin-table-primary">{{ plugin.name }}</td>
+                        <td>{{ plugin.kind|capitalize }}</td>
+                        <td>{{ plugin.description }}
+                            {% if plugin.kind == "skill" and not plugin.active %}
+                            <br><span class="empty">Activating installs a Claude Code skill into this install's own <code>.claude/skills/{{ plugin.name }}/</code> — nothing is written anywhere until you do this.</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ "Active" if plugin.active else "Inactive" }}</td>
+                        <td>
+                            {% if plugin.active %}
+                            <form method="post" action="/admin/plugins/{{ plugin.name }}/deactivate" class="inline-form">
+                                <button type="submit">Deactivate</button>
+                            </form>
+                            {% else %}
+                            <form method="post" action="/admin/plugins/{{ plugin.name }}/activate" class="inline-form">
+                                <button type="submit">Activate</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty">No Plugins found under <code>plugins/</code>.</p>
+            {% endif %}
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

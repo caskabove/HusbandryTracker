@@ -170,7 +170,21 @@ def admin_index(request: Request):
         {
             "enclosures": enclosures, "rooms": rooms, "sensors": q.list_sensors(), "plugs": q.list_plugs(),
             "plug_groups": q.list_plug_groups(),
-            "settings": q.get_settings(), "plugins": plugin_catalog.list_plugins(),
+            "settings": q.get_settings(),
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.get("/app")
+def admin_app(request: Request):
+    # See CONTEXT.md: App Admin; ADR 0048 — the entity-independent home for cross-cutting app
+    # config, distinct from the per-entity Admin-page sense used elsewhere in CONTEXT.md. Plugins
+    # is its first card, moved here from admin_index's "Plugs and Sensors".
+    return templates.TemplateResponse(
+        request, "admin_app.html",
+        {
+            "plugins": plugin_catalog.list_plugins(),
             "error": request.query_params.get("error"),
         }
     )
@@ -185,8 +199,8 @@ def admin_activate_plugin(name: str):
     try:
         plugin_catalog.activate_plugin(name)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/app/", status_code=303)
 
 
 @router.post("/plugins/{name}/deactivate")
@@ -194,8 +208,8 @@ def admin_deactivate_plugin(name: str):
     try:
         plugin_catalog.deactivate_plugin(name)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/app/", status_code=303)
 
 
 @router.post("/settings")
