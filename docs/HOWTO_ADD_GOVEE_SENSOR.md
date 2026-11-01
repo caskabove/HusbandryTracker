@@ -52,8 +52,8 @@ and I'd rather fix it than leave it wrong.)*
 
 No Command Prompt detour needed — the website finds it for you:
 
-1. On Husbandry Tracker's Admin page, go to the enclosure this sensor belongs in.
-2. In the **"Add Sensor"** form, leave **Tracking Mode** on **Smart**.
+1. On Husbandry Tracker's Admin page, in the **"Add Sensor"** form, leave **Tracking Mode** on
+   **Smart**, and pick the enclosure this sensor belongs in under **Belongs to**.
 3. Click **Discover Devices**, next to the MAC address field, and wait about 20 seconds while it
    listens for nearby Govee sensors.
 4. It lists each one it heard, with a live temperature/humidity reading next to it — check that

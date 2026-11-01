@@ -29,20 +29,10 @@
                         <td><a href="/admin/rooms/{{ r.id }}">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="empty">No rooms yet — add one below.</td></tr>
+                    <tr><td colspan="4" class="empty">No rooms yet — add one on <a href="/admin/app">Admin</a>.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
-        </section>
-
-        <section class="admin-card">
-            <details>
-                <summary>+ Add Room</summary>
-                <form method="post" action="/admin/rooms" class="admin-form">
-                    <label>Name <input type="text" name="name" placeholder="e.g. Living Room" required></label>
-                    <button type="submit">Create</button>
-                </form>
-            </details>
         </section>
 
         <section class="admin-card">
@@ -63,46 +53,13 @@
                         <td><a href="/admin/enclosures/{{ e.id }}">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="9" class="empty">No enclosures yet — add one below.</td></tr>
+                    <tr><td colspan="9" class="empty">No enclosures yet — add one on <a href="/admin/app">Admin</a>.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
         </section>
 
-        <section class="admin-card">
-            <details>
-                <summary>+ Add Enclosure</summary>
-                <form method="post" action="/admin/enclosures" class="admin-form">
-                    <label>Name <input type="text" name="name" required></label>
-                    <label>Enclosure Type
-                        <select name="enclosure_type" onchange="onEnclosureTypeChangeForProfile(this, 'add-enc-species-profile', 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')">
-                            {% for t in ENCLOSURE_TYPES %}
-                            <option value="{{ t }}" {% if t == "basic" %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <label>Species Profile <small>(optional — suggests starting numbers below; edit anything it fills in)</small>
-                        <select id="add-enc-species-profile" onchange="onEnclosureSpeciesProfileChange(this, 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')"></select>
-                    </label>
-                    <label id="add-enc-life-stage-wrap" style="display:none">Life Stage
-                        <select id="add-enc-life-stage" onchange="onEnclosureLifeStageChange(this, 'add-enc-species-profile', 'feeding_interval')">
-                            <option value="baby">Baby / Juvenile</option>
-                            <option value="adult" selected>Adult</option>
-                        </select>
-                    </label>
-                    <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
-                    <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
-                    <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
-                    <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="7" min="1"></label>
-                    <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="30" min="1"></label>
-                    <button type="submit">Create</button>
-                </form>
-                <p class="empty">Room assignment happens on the Enclosure's own page after it's created.</p>
-            </details>
-        </section>
-
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
-    <script>populateSpeciesProfileSelect(document.getElementById('add-enc-species-profile'), document.querySelector('select[name="enclosure_type"]').value);</script>
 </body>
 </html>

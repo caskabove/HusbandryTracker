@@ -114,15 +114,6 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             return None
         enclosure = dict(row)
         enclosure["animals"] = [dict(r) for r in conn.execute("SELECT * FROM animal WHERE enclosure_id = ? ORDER BY name", (enclosure_id,))]
-        # Known Species Profile (see CONTEXT.md: Species Profile; RHA-94) — lets Admin's own "Add
-        # Sensor" form pre-fill the same Species Profile already picked for this Enclosure's
-        # Animals, instead of asking again. Only when every Animal that has one set (Admin's "Add
-        # Animal" form never sets it, so some may have NULL) agrees on the exact same value —
-        # anything else (none set, or more than one distinct value) leaves it unset, same as the
-        # ticket's own "more than one species" open question resolved: no pre-fill, let the user
-        # choose by hand rather than guess which one.
-        animal_profiles = {a["species_profile"] for a in enclosure["animals"] if a["species_profile"]}
-        enclosure["known_species_profile"] = animal_profiles.pop() if len(animal_profiles) == 1 else None
         enclosure["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
         # Current Reading — same "what's actually happening right now" info the Dashboard already
         # shows for this Enclosure's Sensors, and Room Sensors already get on their own Admin page

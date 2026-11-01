@@ -127,8 +127,9 @@ Since Husbandry Tracker can't read this sensor automatically (see below), you ad
 Sensor** — the same kind you'd use for a handheld thermometer or test strip, just one you happen to
 also be able to check remotely in the Tuya Smart app.
 
-1. On Husbandry Tracker's Admin page, go to the enclosure (or Room) this sensor is actually monitoring.
-2. In the **"Add Sensor"** form, set **Tracking Mode** to **Manual**.
+1. On Husbandry Tracker's Admin page, in the **"Add Sensor"** form, set **Tracking Mode** to
+   **Manual**, and pick the Enclosure (or Room) this sensor is actually monitoring under
+   **Belongs to** — its own Target Range fields show once you do.
 3. Give it a label (e.g. "Tuya probe — water" or "Tuya ambient — tub air", especially useful since
    this device reports two separate readings — see the note below).
 4. Set a **target range** (min and max) for whichever it measures — required for a Manual Sensor,

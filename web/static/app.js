@@ -629,6 +629,67 @@ function onSensorZoneChange(zoneSelect, speciesSelectId, tempMinName, tempMaxNam
     }
 }
 
+function _setFieldInContainer(container, name, value) {
+    if (!container) return;
+    const field = container.querySelector('[name="' + name + '"]');
+    if (field) { field.value = value; revealField(field); }
+}
+
+// Admin's global Add Sensor form only (see admin_app.html; ADR 0050) — merges the per-Enclosure
+// and per-Room Add Sensor forms into one, so it needs this scoped sibling of
+// onSensorSpeciesProfileChange above: admin_app.html renders all four Enclosure Types' Target
+// Range/Volatility blocks at once (one shown+enabled, three hidden+disabled, picked by the chosen
+// Enclosure's own data-enclosure-type), so looking a field up by name alone across the whole form
+// (as _setNamedField does) would be ambiguous — "temperature" alone appears in every block. This
+// writes into the one active block's own fields instead.
+function onGlobalSensorEnclosureChange(enclosureSelect, speciesProfileSelectId, zoneWrapId, zoneSelectId) {
+    const option = enclosureSelect.options[enclosureSelect.selectedIndex];
+    const enclosureType = option ? option.dataset.enclosureType : null;
+    ["basic", "freshwater", "saltwater", "amphibian"].forEach(function (type) {
+        setToggleBlock(document.getElementById("add-sensor-global-metrics-" + type), type === enclosureType);
+    });
+    const profileSelect = document.getElementById(speciesProfileSelectId);
+    populateSpeciesProfileSelect(profileSelect, enclosureType);
+    onGlobalSensorSpeciesProfileChange(profileSelect, zoneWrapId, zoneSelectId, enclosureSelect.id);
+}
+
+// Scoped sibling of onSensorSpeciesProfileChange — see onGlobalSensorEnclosureChange above for why.
+function onGlobalSensorSpeciesProfileChange(select, zoneWrapId, zoneSelectId, enclosureSelectId) {
+    const enclosureSelect = document.getElementById(enclosureSelectId);
+    const option = enclosureSelect ? enclosureSelect.options[enclosureSelect.selectedIndex] : null;
+    const enclosureType = option ? option.dataset.enclosureType : null;
+    const container = enclosureType ? document.getElementById("add-sensor-global-metrics-" + enclosureType) : null;
+    const profile = SPECIES_PROFILES[select.value];
+    const hasTemp = !!(profile && profile.basking);
+    const zoneWrap = zoneWrapId ? document.getElementById(zoneWrapId) : null;
+    if (zoneWrap) setToggleBlock(zoneWrap, hasTemp);
+    if (!container) return;
+    if (hasTemp) {
+        const zone = zoneSelectId ? document.getElementById(zoneSelectId).value : "ambient";
+        const range = _tempRangeForZone(profile, zone);
+        _setFieldInContainer(container, "temp_min_f", range[0]);
+        _setFieldInContainer(container, "temp_max_f", range[1]);
+    }
+    if (profile && profile.humidity) {
+        _setFieldInContainer(container, "humidity_min", profile.humidity[0]);
+        _setFieldInContainer(container, "humidity_max", profile.humidity[1]);
+    }
+}
+
+// Scoped sibling of onSensorZoneChange — see onGlobalSensorEnclosureChange above for why.
+function onGlobalSensorZoneChange(zoneSelect, speciesSelectId, enclosureSelectId) {
+    const speciesSelect = document.getElementById(speciesSelectId);
+    const profile = SPECIES_PROFILES[speciesSelect.value];
+    const range = _tempRangeForZone(profile, zoneSelect.value);
+    if (!range) return;
+    const enclosureSelect = document.getElementById(enclosureSelectId);
+    const option = enclosureSelect ? enclosureSelect.options[enclosureSelect.selectedIndex] : null;
+    const enclosureType = option ? option.dataset.enclosureType : null;
+    const container = enclosureType ? document.getElementById("add-sensor-global-metrics-" + enclosureType) : null;
+    _setFieldInContainer(container, "temp_min_f", range[0]);
+    _setFieldInContainer(container, "temp_max_f", range[1]);
+}
+
 // Setup Wizard only: the Species Profile picked on the Enclosure step carries forward through the
 // wizard's own query-string chain (never persisted — same "never stored" rule as the picker itself,
 // see CONTEXT.md: Species Profile; Setup Wizard) to pre-fill the Animal step's Common/Scientific

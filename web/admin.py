@@ -163,12 +163,10 @@ def _sensor_volatility(
 
 @router.get("/")
 def admin_index(request: Request):
-    enclosures = q.list_enclosures()
-    rooms = q.list_rooms()
     return templates.TemplateResponse(
         request, "admin_index.html",
         {
-            "enclosures": enclosures, "rooms": rooms, "sensors": q.list_sensors(), "plugs": q.list_plugs(),
+            "sensors": q.list_sensors(), "plugs": q.list_plugs(),
             "plug_groups": q.list_plug_groups(),
             "settings": q.get_settings(),
             "error": request.query_params.get("error"),
@@ -178,13 +176,18 @@ def admin_index(request: Request):
 
 @router.get("/app")
 def admin_app(request: Request):
-    # See CONTEXT.md: App Admin; ADR 0048 — the entity-independent home for cross-cutting app
-    # config, distinct from the per-entity Admin-page sense used elsewhere in CONTEXT.md. Plugins
-    # is its first card, moved here from admin_index's "Plugs and Sensors".
+    # See CONTEXT.md: App Admin; ADR 0048/0049 — the entity-independent home for cross-cutting app
+    # config and every "create a new X" Add form, distinct from the per-entity Admin-page sense
+    # used elsewhere in CONTEXT.md. Plugins was the first card moved here (ADR 0048); Settings,
+    # Tuya Cloud Credentials, and the global Add Room/Enclosure/Sensor/Plug/Plug Group forms
+    # followed (ADR 0049) — enclosures/rooms/plug_groups here are just for those forms' own
+    # Belongs-to/Plug-Group pickers, not for listing anything.
     return templates.TemplateResponse(
         request, "admin_app.html",
         {
             "plugins": plugin_catalog.list_plugins(),
+            "enclosures": q.list_enclosures(), "rooms": q.list_rooms(), "plug_groups": q.list_plug_groups(),
+            "settings": q.get_settings(),
             "error": request.query_params.get("error"),
         }
     )
@@ -224,8 +227,8 @@ def admin_update_settings(
         q.update_settings(ble_refresh_timeout_seconds, alert_debounce_minutes,
                            ntfy_server_url or None, ntfy_topic or None, schedule_drift_threshold_minutes)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/app/", status_code=303)
 
 
 @router.post("/settings/tuya-credentials")
@@ -240,8 +243,8 @@ def admin_update_tuya_credentials(
     try:
         q.update_tuya_credentials(tuya_access_id or None, tuya_access_secret or None, tuya_api_region)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}#tuya-cloud-credentials", status_code=303)
+    return RedirectResponse(url="/admin/app/#tuya-cloud-credentials", status_code=303)
 
 
 @router.get("/enclosures")
@@ -282,7 +285,7 @@ def admin_create_enclosure(
         enclosure_id = q.create_enclosure(name, enclosure_type, bioactive, feeding_interval,
                                            watering_interval, spot_clean_interval, deep_clean_interval)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/enclosures?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -404,15 +407,20 @@ def admin_delete_enclosure(enclosure_id: int):
     return RedirectResponse(url="/admin/enclosures", status_code=303)
 
 
-@router.post("/enclosures/{enclosure_id}/animals")
-def admin_create_animal(
-    enclosure_id: int,
+@router.post("/animals")
+def admin_create_animal_global(
+    enclosure_id: str = Form(""),
     name: str = Form(...),
     common: str = Form(""),
     scientific: str = Form(""),
     dob: str = Form(""),
 ):
-    q.create_animal(enclosure_id, name, common, scientific, dob)
+    """The global Add Animal form on Admin (see admin_app.html; ADR 0050) — same as the Enclosure
+    page's own Add Animal used to be, just with its own Enclosure picker instead of being scoped to
+    one Enclosure via the URL."""
+    if not enclosure_id:
+        return RedirectResponse(url=f"/admin/app/?error={quote('Pick an Enclosure.')}", status_code=303)
+    q.create_animal(int(enclosure_id), name, common, scientific, dob)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -559,36 +567,11 @@ async def admin_discover_govee_sensors():
 @router.post("/sensors")
 def admin_create_sensor_global(
     label: str = Form(...),
+    tracking_mode: str = Form("smart"),
     mac_address: str = Form(""),
     parent_type: str = Form("enclosure"),
     enclosure_id: str = Form(""),
     room_id: str = Form(""),
-):
-    """The top-level Sensors section's own Add form (see admin_index.html) — Smart only. A Manual
-    Sensor needs a complete Target Range (min+max) at creation (_validate_sensor), which depends on
-    the parent's Enclosure Type and isn't known generically here; adding one still goes through the
-    existing per-Enclosure/Room Add Sensor form, which already offers the right fields for that
-    parent."""
-    try:
-        if parent_type == "room":
-            if not room_id:
-                raise ValueError("Pick a Room.")
-            q.create_room_sensor(int(room_id), label, "smart", mac_address or None, None, None, None, None)
-        else:
-            if not enclosure_id:
-                raise ValueError("Pick an Enclosure.")
-            q.create_sensor(int(enclosure_id), label, "smart", mac_address or None, {})
-    except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/", status_code=303)
-
-
-@router.post("/enclosures/{enclosure_id}/sensors")
-def admin_create_sensor(
-    enclosure_id: int,
-    label: str = Form(...),
-    tracking_mode: str = Form("smart"),
-    mac_address: str = Form(""),
     temp_min_f: float | None = Form(None),
     temp_max_f: float | None = Form(None),
     humidity_min: float | None = Form(None),
@@ -629,24 +612,41 @@ def admin_create_sensor(
     volatility_magnesium: str = Form(""),
     volatility_phosphate: str = Form(""),
 ):
-    target_ranges = _sensor_target_ranges(
-        temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max, ammonia_min, ammonia_max,
-        nitrite_min, nitrite_max, nitrate_min, nitrate_max, specific_gravity_min, specific_gravity_max,
-        salinity_min, salinity_max,
-        alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
-        phosphate_min, phosphate_max,
-    )
-    volatility = _sensor_volatility(
-        volatility_temperature, volatility_humidity, volatility_uvb, volatility_ph,
-        volatility_ammonia, volatility_nitrite, volatility_nitrate, volatility_specific_gravity,
-        volatility_salinity, volatility_alkalinity, volatility_calcium, volatility_magnesium,
-        volatility_phosphate,
-    )
+    """The global Add Sensor form on Admin (see admin_app.html; ADR 0049/0050) — Smart or Manual,
+    for either an Enclosure or a Room. Picking an Enclosure shows that Enclosure Type's own Target
+    Range/Volatility fields (admin_app.html renders one block per Enclosure Type, client-side
+    JS — see app.js's onGlobalSensorEnclosureChange — shows/enables just the one that matches);
+    picking a Room always shows the same fixed temperature/humidity fields admin_room.html's own
+    Add Sensor form has, since a Room has no Enclosure Type. Only the active block's fields are
+    ever enabled, so only one value per field name is ever actually submitted even though the same
+    name appears in more than one block."""
     try:
-        q.create_sensor(enclosure_id, label, tracking_mode, mac_address or None, target_ranges, volatility)
+        if parent_type == "room":
+            if not room_id:
+                raise ValueError("Pick a Room.")
+            q.create_room_sensor(int(room_id), label, tracking_mode, mac_address or None,
+                                  _f_to_c(temp_min_f), _f_to_c(temp_max_f), humidity_min, humidity_max,
+                                  volatility_temperature or None, volatility_humidity or None)
+        else:
+            if not enclosure_id:
+                raise ValueError("Pick an Enclosure.")
+            target_ranges = _sensor_target_ranges(
+                temp_min_f, temp_max_f, humidity_min, humidity_max, uvb_min, uvb_max, ph_min, ph_max,
+                ammonia_min, ammonia_max, nitrite_min, nitrite_max, nitrate_min, nitrate_max,
+                specific_gravity_min, specific_gravity_max, salinity_min, salinity_max,
+                alkalinity_min, alkalinity_max, calcium_min, calcium_max, magnesium_min, magnesium_max,
+                phosphate_min, phosphate_max,
+            )
+            volatility = _sensor_volatility(
+                volatility_temperature, volatility_humidity, volatility_uvb, volatility_ph,
+                volatility_ammonia, volatility_nitrite, volatility_nitrate, volatility_specific_gravity,
+                volatility_salinity, volatility_alkalinity, volatility_calcium, volatility_magnesium,
+                volatility_phosphate,
+            )
+            q.create_sensor(int(enclosure_id), label, tracking_mode, mac_address or None, target_ranges, volatility)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
 
 
 @router.post("/sensors/{sensor_id}/delete")
@@ -837,8 +837,8 @@ async def admin_discover_tuya_plugs():
     access_secret = settings.get("tuya_access_secret")
     if not access_id or not access_secret:
         return JSONResponse(
-            {"error": 'Save your <a href="/admin#tuya-cloud-credentials">Tuya Cloud Credentials</a> first '
-                      '(Access ID and Access Secret, on Plugs and Sensors, under Settings).'},
+            {"error": 'Save your <a href="/admin/app#tuya-cloud-credentials">Tuya Cloud Credentials</a> first '
+                      '(Access ID and Access Secret, on Admin).'},
             status_code=400,
         )
     try:
@@ -878,39 +878,8 @@ def admin_create_plug(
                            int(room_id) if room_id else None, enclosure_ids,
                            controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
-
-
-@router.post("/enclosures/{enclosure_id}/plugs")
-def admin_create_enclosure_plug(
-    enclosure_id: int,
-    label: str = Form(...),
-    purpose: str = Form(...),
-    tracking_mode: str = Form("smart"),
-    tuya_device_id: str = Form(""),
-    tuya_local_key: str = Form(""),
-    tuya_ip_address: str = Form(""),
-    switch_dps_key: str = Form("1"),
-    target_on_time: str = Form(""),
-    target_off_time: str = Form(""),
-    always_on: bool = Form(False),
-    controller_kind: str = Form("none"),
-    target_temp_f: float | None = Form(None),
-    target_humidity_pct: float | None = Form(None),
-):
-    """Add Plug, scoped to this Enclosure (see admin_enclosure.html's own Plugs section) — same
-    shape as admin_create_sensor() just above: no "Belongs to" picker and no Plug Group option
-    (both only make sense from the main Admin page's unscoped form), enclosure_ids fixed to just
-    this one Enclosure."""
-    try:
-        q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
-                       tuya_ip_address, switch_dps_key, target_on_time or None, target_off_time or None,
-                       None, [enclosure_id],
-                       controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on)
-    except ValueError as exc:
-        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
 @router.post("/plugs/{plug_id}/delete")
@@ -1117,7 +1086,7 @@ def admin_create_plug_group(
             smart_members, manual_members,
         )
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
 
 

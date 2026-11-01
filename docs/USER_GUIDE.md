@@ -122,7 +122,7 @@ every 10–60+ seconds, so this can take a little while (the browser just waits;
 ever refreshes what that Room/Enclosure actually owns — a Room's button never reaches into its
 Enclosures, and an Enclosure showing a Room's Fallback Sensor reading has no button of its own (use
 the Room's instead). How long it waits before giving up is the **Refresh Timeout** setting on
-Plugs and Sensors (default 30s — see [Section 10](#10-getting-notified-when-somethings-wrong)).
+Admin (default 30s — see [Section 10](#10-getting-notified-when-somethings-wrong)).
 
 ### What the colors mean
 
@@ -144,8 +144,11 @@ earlier rather than right now; leave it blank to log it as now.
 
 ## 4. Setting Up Your First Enclosure
 
-Everything below happens on the **Admin** side of the app — click **Rooms and Enclosures** or
-**Plugs and Sensors** in the top navigation bar (not **Dashboard**, which is view-only).
+Everything below happens on the **Admin** side of the app — click **Rooms and Enclosures**,
+**Plugs and Sensors**, or **Admin** in the top navigation bar (not **Dashboard**, which is
+view-only). Creating a new Room, Enclosure, Sensor, Plug, or Plug Group always starts on
+**Admin** (`/admin/app`) — **Rooms and Enclosures** and **Plugs and Sensors** are where you browse,
+edit, and manage what already exists.
 
 ### 4.1 (Optional) Create a Room first
 
@@ -155,14 +158,14 @@ as you go rather than coming back later. If you only have one or two enclosures 
 ambient sensor between them, feel free to skip this and come back to [Section
 7](#7-rooms-light-schedules-and-fallback-sensors) later — a Room is entirely optional.
 
-1. Go to **Rooms and Enclosures** (`/admin/enclosures`).
-2. In the **Rooms** card, fill out **"+ Add Room"** — just a name (e.g. "Reptile Rack") — and click
-   **Create**.
+1. Go to **Admin** (`/admin/app`).
+2. Fill out **"+ Add Room"** — just a name (e.g. "Reptile Rack") — and click **Create**. This takes
+   you to **Rooms and Enclosures**, where your new Room now shows.
 
 ### 4.2 Add an Enclosure
 
-1. Still on **Rooms and Enclosures** (`/admin/enclosures`).
-2. Fill out the **"+ Add Enclosure"** form at the bottom:
+1. Go to **Admin** (`/admin/app`).
+2. Fill out the **"+ Add Enclosure"** form:
    - **Name** — whatever you call the tank (e.g. "Gargoyl", "The Cape").
    - **Enclosure Type** — **Basic** (snake/lizard/tortoise/insect — the default), **Freshwater**,
      **Saltwater**, or **Amphibian**. This decides which Target Range fields you'll be offered when
@@ -178,8 +181,8 @@ ambient sensor between them, feel free to skip this and come back to [Section
      this enclosure. This is what drives the green/yellow/red colors, so set it to match how you
      actually care for that animal (a snake might be fed weekly; a small gecko might need feeding
      every 2–3 days).
-3. Click **Create** — it takes you straight to that enclosure's own Admin page, where everything
-   else below happens.
+3. Click **Create** — it takes you straight to that enclosure's own Admin page, where Care logging
+   and Schedules happen (Animals and Sensors, below, are added from the main **Admin** page instead).
 
 A new enclosure lands in "Ungrouped" on the dashboard until you give it a Room — see [Section
 7](#7-rooms-light-schedules-and-fallback-sensors) for how, or just drag its dashboard panel onto a
@@ -187,9 +190,10 @@ Room later.
 
 ### 4.3 Add an Animal to It
 
-On the enclosure's own page, fill out the **"Add Animal"** form: name, common species name,
-scientific name (optional), and date of birth (exact date, or just a year-month like `2024-05` if
-you don't know the exact day). Click **Create**.
+On **Admin**, fill out the **"Add Animal"** form: pick this Enclosure, then its name, common
+species name, scientific name (optional), and date of birth (exact date, or just a year-month like
+`2024-05` if you don't know the exact day). Click **Create**, which takes you back to the
+enclosure's own page.
 
 Each Animal gets a small "edit" link, which is also where you'll go to log its Weight, Length,
 Count, or Condition over time — see [Section 5](#5-tracking-an-animals-growth-and-condition).
@@ -202,8 +206,8 @@ the warm side and one on the cool side, each with its own label and target range
 
 #### Smart Sensor (Govee)
 
-1. On the enclosure's own Admin page, in the **"Add Sensor"** form, leave **Tracking Mode** on
-   **Smart**.
+1. On **Admin**, in the **"Add Sensor"** form, leave **Tracking Mode** on **Smart**, and pick this
+   Enclosure under **Belongs to**.
 2. Click **Discover Devices**, next to the MAC address field. Wait about 20 seconds while it
    listens for nearby Govee sensors — put the Govee Home app in the foreground on your phone too,
    so you can cross-check readings live.
@@ -227,7 +231,8 @@ it — open that Sensor's **Edit** page, switch **Tracking Mode** to **Smart**, 
 For a spot-check tool with no Bluetooth of its own (an infrared thermometer, a moisture meter, a
 water test strip):
 
-1. In the **"Add Sensor"** form, set **Tracking Mode** to **Manual**.
+1. On **Admin**, in the **"Add Sensor"** form, set **Tracking Mode** to **Manual**, and pick this
+   Enclosure under **Belongs to** — its own Target Range/Volatility fields show once you do.
 2. Give it a label.
 3. Set a target range (**min *and* max**) on whichever metric it measures — this is required for a
    Manual Sensor, since there'd otherwise be nothing to judge a hand-logged reading against.
@@ -246,9 +251,10 @@ a Manual Sensor for now).
 
 ### 4.5 Add a Plug
 
-Unlike Animals/Sensors (added from the Enclosure or Room they belong to), Plugs are added from the
-**Plugs and Sensors** page (`/admin`), in its own **"Plugs"** card — a Plug can belong to more than one
-place, which is why it lives at the top level rather than nested under one Enclosure.
+Unlike Animals/Sensors (added from the Enclosure or Room they belong to), Plugs are added from
+**Admin** (`/admin/app`), in its own **"Add Plug"** card — a Plug can belong to more than one
+place, which is why it lives at the top level rather than nested under one Enclosure. Once created,
+it shows up in the **"Plugs"** card on **Plugs and Sensors** (`/admin`).
 
 Every Plug is either **Smart** (a real Tuya-controlled Gosund plug, read automatically) or
 **Manual** (no smart device — e.g. a light on a mechanical timer); pick which one in the **"Add
@@ -273,7 +279,7 @@ linking a free Tuya developer account to the same account you paired the plug wi
 1. Go to [iot.tuya.com](https://iot.tuya.com) and create a free account.
 2. Create a "Cloud" project there and link it to your Smart Life account (usually a QR-code scan
    from your phone).
-3. On Husbandry Tracker's Plugs and Sensors page, find the **Tuya Cloud Credentials** card and paste in the
+3. On Husbandry Tracker's **Admin** page, find the **Tuya Cloud Credentials** card and paste in the
    **Access ID** and **Access Secret** the project's page shows you, pick the matching **API
    Region**, and click **Save**. The Access Secret is never shown again once saved.
 
@@ -416,8 +422,8 @@ Settings, at the top of the enclosure's page) if you don't see it.
 A **Room** groups Enclosures that share a physical space (e.g. "Living Room", "Reptile Rack"). It's
 optional — an Enclosure with no Room behaves exactly as before.
 
-On **Rooms and Enclosures**, fill out the **"+ Add Room"** form (just a name). Click into the new
-Room's own page to add:
+On **Admin**, fill out the **"+ Add Room"** form (just a name), which takes you to **Rooms and
+Enclosures**. Click into the new Room's own page to add:
 
 - **Sensors** — its own ambient Sensor(s) (Smart or Manual, same forms as an Enclosure's), for
   measuring the room as a whole rather than any one tank.
@@ -444,9 +450,10 @@ If you have a multi-outlet Tuya power strip — several independently-switched r
 physical device and one "master" on/off button — a **Plug Group** gives its outlets a shared
 identity in the UI instead of a handful of unrelated-looking Plug rows.
 
-On **Plugs and Sensors**, the **"Plug Groups"** card sits above the plain "Plugs" card.
+Its member outlets show on **Plugs and Sensors**, in the **"Plug Groups"** card above the plain
+"Plugs" card.
 
-**Creating one**: fill out **"+ Add Plug Group"** — a name, **Belongs to** (same Enclosure/Room
+**Creating one**: on **Admin**, fill out **"+ Add Plug Group"** — a name, **Belongs to** (same Enclosure/Room
 choice as any Plug), and the strip's one shared Tuya device ID/local key/IP. Today there's one
 layout to choose from: 3 independently-switched relay outlets, 1 USB outlet, and 3 always-on
 outlets with no relay at all (hardwired straight to mains). Each outlet gets a pre-filled, fully
@@ -523,7 +530,7 @@ app:
    password-protected, so something like `husbandrytracker-yourname-4821` is safer than plain
    `husbandrytracker`). This is like a private radio channel: whoever subscribes to the same topic
    name gets the same notifications.
-3. On **Plugs and Sensors**, in the **Settings** card at the top, enter:
+3. On **Admin**, in the **Settings** card, enter:
    - **ntfy Server URL**: `https://ntfy.sh` (unless you're self-hosting your own ntfy server)
    - **ntfy Topic**: the exact topic name you subscribed to
    - **Alert Debounce (minutes)**: how long a problem has to persist before you're notified
@@ -544,7 +551,7 @@ Separately from Send Alert, a Smart Plug's own edit page shows its **Detected Sc
 actual on-time and off-time Husbandry Tracker has observed from watching it, once it's seen at
 least one full on/off cycle (until then it says "no data yet," which is expected, not an error).
 If the Detected times drift from the Target Schedule you declared by more than the **Schedule
-Drift Threshold** (an app-wide setting in Plugs and Sensors' Settings card, default 15 minutes),
+Drift Threshold** (an app-wide setting in Admin's Settings card, default 15 minutes),
 the drifting time shows in red with a **Timer Warning** pill, visible there and wherever that Plug
 is listed. Click **Clear warning** once you've acknowledged it — it goes neutral again until the
 schedule drifts to a genuinely different time.
