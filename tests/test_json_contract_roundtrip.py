@@ -18,16 +18,24 @@ Plugin, just anything that speaks the same JSON contract — reports a Log Event
 CONTEXT.md: Log Event; ADR 0044) via the same write_event Plugins already use, and Ingest
 drains it straight into event_log with no Sensor/Plug to resolve against.
 
+Direction 4 (Skill -> Ingest, resolved ids instead of a device Registry): log_husbandry writes a
+Care Event Plugin Event (see CONTEXT.md: Care Event Plugin Event; ADR 0046) the same way via
+write_event, and Ingest resolves/applies it into a real care_event row.
+
 Run with: pytest tests/test_json_contract_roundtrip.py
 """
 from __future__ import annotations
 
+from active_plugins import write_active_plugins
 from ingest.ingest import _drain_inbox, _export_registry, _load_validator
 from plugins.common import read_registry, take_command, write_event
 from web.outbox import write_command
 
 
-def test_registry_to_inbox_roundtrip(json_dirs, temp_db) -> None:
+def test_registry_to_inbox_roundtrip(json_dirs, temp_db, active_plugins_path) -> None:
+    # See CONTEXT.md: Active Plugin; ADR 0047 — govee_ble must be an Active Plugin before Ingest
+    # exports its Registry or accepts its Inbox events at all.
+    write_active_plugins(["govee_ble"])
     temp_db.execute("INSERT INTO room (name) VALUES ('Reptile Room')")
     temp_db.commit()
     room_id = temp_db.execute("SELECT id FROM room WHERE name = 'Reptile Room'").fetchone()["id"]
@@ -96,3 +104,25 @@ def test_skill_log_event_roundtrip(json_dirs, temp_db) -> None:
     assert row["scope"] == "enclosure:3"
     assert row["level"] == "info"
     assert row["message"] == "Logged feeding via voice command"
+
+
+def test_skill_care_event_roundtrip(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["log_husbandry"])
+    temp_db.execute("INSERT INTO enclosure (name) VALUES ('Snake Rack 3')")
+    temp_db.commit()
+    enclosure_id = temp_db.execute("SELECT id FROM enclosure WHERE name = 'Snake Rack 3'").fetchone()["id"]
+
+    # 1. log_husbandry reports a Care Event Plugin Event the same way a Plugin reports any other
+    #    kind — enclosure_id already resolved from its own Registry export, not a raw name.
+    write_event("log_husbandry", f"enclosure:{enclosure_id}", "care_event",
+                {"enclosure_id": enclosure_id, "care_kind": "watering"})
+
+    # 2. Ingest drains the Inbox and writes a real care_event row.
+    _drain_inbox(_load_validator())
+
+    row = temp_db.execute(
+        "SELECT kind, animal_id FROM care_event WHERE enclosure_id = ?", (enclosure_id,)
+    ).fetchone()
+    assert row is not None
+    assert row["kind"] == "watering"
+    assert row["animal_id"] is None

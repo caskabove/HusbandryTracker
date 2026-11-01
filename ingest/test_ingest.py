@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from active_plugins import write_active_plugins
 from ingest.ingest import _drain_inbox, _export_log_husbandry_registry, _export_registry, _load_validator
 
 
@@ -63,7 +64,8 @@ def _care_event(enclosure_id: int, care_kind: str, **payload_extra) -> dict:
 
 # --- _export_registry --------------------------------------------------------------------------
 
-def test_export_registry_writes_one_file_per_plugin(json_dirs, temp_db) -> None:
+def test_export_registry_writes_one_file_per_plugin(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["govee_ble", "tuya_lan"])
     room_id = _make_room(temp_db)
     _make_smart_sensor(temp_db, room_id, "govee_ble", "AA:BB:CC:DD:EE:FF")
     _make_smart_plug(temp_db, "tuya_lan", "dev1:1")
@@ -85,7 +87,7 @@ def test_export_registry_writes_one_file_per_plugin(json_dirs, temp_db) -> None:
     }]
 
 
-def test_export_registry_removes_stale_plugin_file(json_dirs, temp_db) -> None:
+def test_export_registry_removes_stale_plugin_file(json_dirs, temp_db, active_plugins_path) -> None:
     json_dirs["registry"].mkdir(parents=True, exist_ok=True)
     (json_dirs["registry"] / "some_removed_plugin.json").write_text("[]", encoding="utf-8")
 
@@ -94,7 +96,7 @@ def test_export_registry_removes_stale_plugin_file(json_dirs, temp_db) -> None:
     assert not (json_dirs["registry"] / "some_removed_plugin.json").exists()
 
 
-def test_export_registry_excludes_manual_devices(json_dirs, temp_db) -> None:
+def test_export_registry_excludes_manual_devices(json_dirs, temp_db, active_plugins_path) -> None:
     room_id = _make_room(temp_db)
     temp_db.execute(
         "INSERT INTO sensor (room_id, label, tracking_mode) VALUES (?, 'ambient', 'manual')",
@@ -107,6 +109,32 @@ def test_export_registry_excludes_manual_devices(json_dirs, temp_db) -> None:
     assert list(json_dirs["registry"].glob("*.json")) == []
 
 
+def test_export_registry_removes_file_for_registered_but_inactive_plugin(json_dirs, temp_db, active_plugins_path) -> None:
+    # A device Plugin a Sensor/Plug still references, but that isn't (or isn't yet) an Active
+    # Plugin — see CONTEXT.md: Active Plugin; ADR 0047. Different from the stale-file case above:
+    # there IS a registered device, it's just not allowed to export/accept right now.
+    room_id = _make_room(temp_db)
+    _make_smart_sensor(temp_db, room_id, "govee_ble", "AA:BB:CC:DD:EE:FF")
+    json_dirs["registry"].mkdir(parents=True, exist_ok=True)
+    (json_dirs["registry"] / "govee_ble.json").write_text("[]", encoding="utf-8")
+
+    _export_registry()  # govee_ble is not in the (empty) Active Plugin list
+
+    assert not (json_dirs["registry"] / "govee_ble.json").exists()
+
+
+def test_export_registry_never_deletes_log_husbandry_registry(json_dirs, temp_db, active_plugins_path) -> None:
+    # Regression guard: _export_registry()'s stale-file sweep must not treat log_husbandry.json
+    # as an orphaned device-Plugin file and delete it — that's _export_log_husbandry_registry's
+    # own file to own (see CONTEXT.md: Plugin Contract; ADR 0047).
+    json_dirs["registry"].mkdir(parents=True, exist_ok=True)
+    (json_dirs["registry"] / "log_husbandry.json").write_text('{"rooms": [], "enclosures": [], "animals": []}', encoding="utf-8")
+
+    _export_registry()  # no sensor/plug ever references "log_husbandry" — must not be swept as stale
+
+    assert (json_dirs["registry"] / "log_husbandry.json").exists()
+
+
 # --- _drain_inbox --------------------------------------------------------------------------------
 
 def _drop_inbox_file(json_dirs, kind: str, name: str, raw: str) -> None:
@@ -115,7 +143,8 @@ def _drop_inbox_file(json_dirs, kind: str, name: str, raw: str) -> None:
     (kind_dir / name).write_text(raw, encoding="utf-8")
 
 
-def test_drain_inbox_applies_valid_plug_state_event(json_dirs, temp_db) -> None:
+def test_drain_inbox_applies_valid_plug_state_event(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["tuya_lan"])
     plug_id = _make_smart_plug(temp_db, "tuya_lan", "dev1:1")
     event = {
         "schema_version": 1, "plugin": "tuya_lan", "kind": "plug_state", "external_id": "dev1:1",
@@ -130,6 +159,27 @@ def test_drain_inbox_applies_valid_plug_state_event(json_dirs, temp_db) -> None:
     ).fetchone()
     assert row is not None and row["is_on"] == 1
     assert not (json_dirs["inbox"] / "plug_state" / "event1.json").exists()
+
+
+def test_drain_inbox_silently_drops_device_event_for_inactive_plugin(json_dirs, temp_db, active_plugins_path) -> None:
+    # tuya_lan is registered to a real Plug but isn't an Active Plugin — see CONTEXT.md: Active
+    # Plugin; ADR 0047. Silently dropped, same treatment as an unregistered device, not
+    # quarantined — this is routine/high-frequency, unlike a care_event's own stricter handling.
+    plug_id = _make_smart_plug(temp_db, "tuya_lan", "dev1:1")
+    event = {
+        "schema_version": 1, "plugin": "tuya_lan", "kind": "plug_state", "external_id": "dev1:1",
+        "observed_at": "2026-01-01 00:00:00", "payload": {"is_on": True},
+    }
+    _drop_inbox_file(json_dirs, "plug_state", "event1.json", json.dumps(event))
+
+    _drain_inbox(_load_validator())  # must not raise
+
+    row = temp_db.execute(
+        "SELECT is_on FROM plug_state_transition WHERE plug_id = ?", (plug_id,)
+    ).fetchone()
+    assert row is None
+    assert not (json_dirs["inbox"] / "plug_state" / "event1.json").exists()
+    assert not (json_dirs["rejected"] / "plug_state" / "event1.json").exists()
 
 
 def test_drain_inbox_quarantines_invalid_json(json_dirs, temp_db) -> None:
@@ -193,7 +243,8 @@ def test_drain_inbox_log_event_defaults_level_and_data(json_dirs, temp_db) -> No
     assert row["data"] is None
 
 
-def test_care_event_feeding_with_explicit_fields(json_dirs, temp_db) -> None:
+def test_care_event_feeding_with_explicit_fields(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["log_husbandry"])
     enclosure_id = _make_enclosure(temp_db)
     animal_id = _make_animal(temp_db, enclosure_id)
     event = _care_event(enclosure_id, "feeding", animal_id=animal_id, food="large mouse",
@@ -216,7 +267,8 @@ def test_care_event_feeding_with_explicit_fields(json_dirs, temp_db) -> None:
     assert not (json_dirs["inbox"] / "care_event" / "event1.json").exists()
 
 
-def test_care_event_feeding_falls_back_to_last_feeding_detail(json_dirs, temp_db) -> None:
+def test_care_event_feeding_falls_back_to_last_feeding_detail(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["log_husbandry"])
     enclosure_id = _make_enclosure(temp_db)
     animal_id = _make_animal(temp_db, enclosure_id)
     # A prior Feeding with a real prey_state/result to repeat.
@@ -248,7 +300,8 @@ def test_care_event_feeding_falls_back_to_last_feeding_detail(json_dirs, temp_db
     assert row["result"] == "refused"  # repeated from the last Feeding
 
 
-def test_care_event_feeding_falls_back_to_frozen_thawed_with_no_prior_feeding(json_dirs, temp_db) -> None:
+def test_care_event_feeding_falls_back_to_frozen_thawed_with_no_prior_feeding(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["log_husbandry"])
     enclosure_id = _make_enclosure(temp_db)
     animal_id = _make_animal(temp_db, enclosure_id)
     event = _care_event(enclosure_id, "feeding", animal_id=animal_id, food="large mouse")
@@ -265,7 +318,8 @@ def test_care_event_feeding_falls_back_to_frozen_thawed_with_no_prior_feeding(js
     assert row["result"] == "accepted"
 
 
-def test_care_event_watering_is_enclosure_scoped(json_dirs, temp_db) -> None:
+def test_care_event_watering_is_enclosure_scoped(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["log_husbandry"])
     enclosure_id = _make_enclosure(temp_db)
     event = _care_event(enclosure_id, "watering")
     _drop_inbox_file(json_dirs, "care_event", "event1.json", json.dumps(event))
@@ -279,7 +333,8 @@ def test_care_event_watering_is_enclosure_scoped(json_dirs, temp_db) -> None:
     assert row["animal_id"] is None
 
 
-def test_care_event_quarantines_on_nonexistent_enclosure(json_dirs, temp_db) -> None:
+def test_care_event_quarantines_on_nonexistent_enclosure(json_dirs, temp_db, active_plugins_path) -> None:
+    write_active_plugins(["log_husbandry"])
     event = _care_event(999, "watering")
     _drop_inbox_file(json_dirs, "care_event", "event1.json", json.dumps(event))
 
@@ -289,8 +344,23 @@ def test_care_event_quarantines_on_nonexistent_enclosure(json_dirs, temp_db) -> 
     assert (json_dirs["rejected"] / "care_event" / "event1.json").exists()
 
 
-def test_care_event_quarantines_when_animal_belongs_to_different_enclosure(json_dirs, temp_db) -> None:
+def test_care_event_quarantines_when_plugin_not_active(json_dirs, temp_db, active_plugins_path) -> None:
+    # log_husbandry wrote this while Active, then got deactivated before Ingest drained it — see
+    # CONTEXT.md: Active Plugin; ADR 0047. Quarantined, not silently dropped — same "stay visible"
+    # reasoning as a stale enclosure_id/animal_id.
+    enclosure_id = _make_enclosure(temp_db)
+    event = _care_event(enclosure_id, "watering")
+    _drop_inbox_file(json_dirs, "care_event", "event1.json", json.dumps(event))
+
+    _drain_inbox(_load_validator())  # must not raise; log_husbandry is not in the (empty) Active Plugin list
+
+    assert not (json_dirs["inbox"] / "care_event" / "event1.json").exists()
+    assert (json_dirs["rejected"] / "care_event" / "event1.json").exists()
+
+
+def test_care_event_quarantines_when_animal_belongs_to_different_enclosure(json_dirs, temp_db, active_plugins_path) -> None:
     # The Skill's own Registry snapshot was stale — the Animal moved Enclosures in the meantime.
+    write_active_plugins(["log_husbandry"])
     real_enclosure_id = _make_enclosure(temp_db, "Reef Tank")
     other_enclosure_id = _make_enclosure(temp_db, "Snake Rack 3")
     animal_id = _make_animal(temp_db, real_enclosure_id)
@@ -335,8 +405,9 @@ def test_export_log_husbandry_registry_removes_file_when_not_active(
     assert not (json_dirs["registry"] / "log_husbandry.json").exists()
 
 
-def test_drain_inbox_ignores_event_for_deregistered_device(json_dirs, temp_db) -> None:
+def test_drain_inbox_ignores_event_for_deregistered_device(json_dirs, temp_db, active_plugins_path) -> None:
     # No plug row registered for "dev1:1" at all.
+    write_active_plugins(["tuya_lan"])
     event = {
         "schema_version": 1, "plugin": "tuya_lan", "kind": "plug_state", "external_id": "dev1:1",
         "observed_at": "2026-01-01 00:00:00", "payload": {"is_on": True},

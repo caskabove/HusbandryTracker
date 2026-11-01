@@ -78,14 +78,13 @@
 
         <section class="admin-card">
             <h2>Plugins</h2>
-            {# See CONTEXT.md: Plugin, Plugin Contract, Active Plugin, Skill; ADR 0045/0046.
-               "Available" here means a plugins/<name>/ folder satisfies the new Plugin Contract
-               (manifest.json + init.py) — tuya_lan/govee_ble aren't retrofitted onto it yet, so
-               they deliberately don't show up in this list even though they're the Plugins
-               actually driving Sensors/Plugs below. #}
+            {# See CONTEXT.md: Plugin, Plugin Contract, Active Plugin, Skill; ADR 0045/0046/0047.
+               "Available" here means a plugins/<name>/ folder satisfies the Plugin Contract
+               (manifest.json + init.py) — every Plugin does now, including tuya_lan/govee_ble. #}
             <p class="empty">Independent integrations (device Plugins) and Skills (AI-driven helpers —
-                see Skill) that this install knows about. <code>tuya_lan</code>/<code>govee_ble</code> aren't
-                listed here yet; they don't need activation to keep working.</p>
+                see Skill) that this install knows about. A device Plugin must be Active for its
+                Sensors/Plugs below to actually update — deactivating one pauses them the same way
+                deregistering their last device would.</p>
             {% if plugins %}
             <table class="admin-table">
                 <thead><tr><th>Name</th><th>Kind</th><th>Description</th><th>Status</th><th></th></tr></thead>

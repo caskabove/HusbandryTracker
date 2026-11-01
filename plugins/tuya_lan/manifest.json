@@ -1,0 +1,5 @@
+{
+  "name": "tuya_lan",
+  "description": "Polls local Tuya/Gosund smart plugs over LAN for on/off state and telemetry (watts/volts/amps).",
+  "kind": "device"
+}

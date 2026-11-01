@@ -1,0 +1,5 @@
+{
+  "name": "govee_ble",
+  "description": "Listens for Govee H5074 BLE temperature/humidity broadcasts.",
+  "kind": "device"
+}

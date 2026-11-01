@@ -2,14 +2,19 @@
 
 1. Exports each Plugin's Registry (data/registry/<plugin>.json) from the sensor/plug tables, so a
    Plugin never queries the database directly to learn what to watch — plus one Skill-specific
-   export, log_husbandry's own Rooms/Enclosures/Animals snapshot (see CONTEXT.md: Skill; ADR 0046),
-   gated on it being an Active Plugin (see CONTEXT.md: Active Plugin; ADR 0045).
+   export, log_husbandry's own Rooms/Enclosures/Animals snapshot (see CONTEXT.md: Skill; ADR 0046).
+   Every Registry export, device Plugin or Skill alike, is gated on being an Active Plugin (see
+   CONTEXT.md: Active Plugin; ADR 0045/0047) — deactivating one removes its file the same way
+   deregistering its last device already did.
 2. Drains the Inbox (data/inbox/<kind>/*.json), validating every Plugin Event against
    schemas/plugin_event.schema.json before writing the resulting Reading/Plug State Transition/
-   Data Capture/Log Event/Care Event, then evaluating Alert Conditions (a Log Event and a Care
-   Event Plugin Event both skip Alert evaluation — neither is about a registered Sensor/Plug —
-   and a Care Event Plugin Event quarantines rather than silently drops on a stale reference,
-   unlike every other kind — see CONTEXT.md: Log Event, Care Event Plugin Event; ADR 0044/0046).
+   Data Capture/Log Event/Care Event, then evaluating Alert Conditions. A device-observation kind
+   whose Plugin isn't Active is silently dropped, same as an unregistered device (routine, not
+   worth surfacing); a Log Event skips Alert evaluation entirely (it's not about a registered
+   Sensor/Plug); a Care Event Plugin Event also skips it, and quarantines — rather than silently
+   dropping — on a stale entity reference *or* an inactive Plugin, since it represents a specific,
+   human-confirmed action, not a routine poll (see CONTEXT.md: Log Event, Care Event Plugin Event,
+   Active Plugin; ADR 0044/0045/0046/0047).
 3. Periodically re-evaluates Unreachable for every registered Smart Sensor/Plug, since that
    condition needs to fire even when *nothing* arrives, not just when something does.
 
@@ -71,11 +76,20 @@ def _atomic_write_json(path: Path, data) -> None:
     os.replace(tmp_path, path)
 
 
+# log_husbandry's own Registry export (_export_log_husbandry_registry) is a Skill, not a device
+# Plugin — it's never a key in _export_registry()'s entries_by_plugin (no sensor/plug row ever
+# references it), so _export_registry()'s own stale-file cleanup below must not treat its file as
+# an orphan and delete it out from under that other function. See CONTEXT.md: Plugin Contract.
+_SKILL_REGISTRY_NAMES = {"log_husbandry"}
+
+
 def _export_registry() -> None:
-    """See CONTEXT.md: Registry. Fully generic — groups every Smart Sensor/Plug row by its own
-    `plugin` value, whatever that happens to be, and writes/removes files to match exactly what's
-    currently registered (a Plugin whose last device was just deleted gets its file removed, not
-    left stale)."""
+    """See CONTEXT.md: Registry, Active Plugin; ADR 0013/0045/0047. Groups every Smart Sensor/Plug
+    row by its own `plugin` value, whatever that happens to be, but only actually writes a
+    Registry file for one that's currently an Active Plugin — a device Plugin referenced by a
+    registered device but not (yet, or anymore) Active has its file removed, same treatment as one
+    with no devices registered to it at all."""
+    active = set(read_active_plugins())
     entries_by_plugin: dict[str, list[dict]] = {}
     with get_connection() as conn:
         for table in ("sensor", "plug"):
@@ -93,8 +107,11 @@ def _export_registry() -> None:
     REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
     existing_files = {p.stem for p in REGISTRY_DIR.glob("*.json")}
     for plugin_name, entries in entries_by_plugin.items():
-        _atomic_write_json(REGISTRY_DIR / f"{plugin_name}.json", entries)
-    for stale in existing_files - entries_by_plugin.keys():
+        if plugin_name in active:
+            _atomic_write_json(REGISTRY_DIR / f"{plugin_name}.json", entries)
+        else:
+            (REGISTRY_DIR / f"{plugin_name}.json").unlink(missing_ok=True)
+    for stale in existing_files - entries_by_plugin.keys() - _SKILL_REGISTRY_NAMES:
         (REGISTRY_DIR / f"{stale}.json").unlink(missing_ok=True)
 
 
@@ -136,6 +153,14 @@ def _apply_event(event: dict) -> None:
     kind = event["kind"]
     observed_at = event["observed_at"]
     payload = event["payload"]
+
+    # See CONTEXT.md: Active Plugin; ADR 0045/0047. Only the three device-observation kinds are
+    # gated here — a device Plugin deactivated mid-flight is the same as it never having watched
+    # that device at all, so this is silently dropped exactly like the "not registered" case just
+    # below, not quarantined. `log`/`care_event` have their own, kind-specific handling further
+    # down (care_event's own Active check raises instead of silently dropping — see its branch).
+    if kind in ("sensor_reading", "plug_state", "plug_telemetry") and plugin not in read_active_plugins():
+        return
 
     if kind == "sensor_reading":
         with get_connection() as conn:
@@ -228,6 +253,13 @@ def _apply_event(event: dict) -> None:
         # web/queries.py's _normalize_datetime_local), and this Skill doesn't support backdating
         # yet anyway (ADR 0046) — passing occurred_at=None lets it default to "now" in the right
         # timezone instead of misinterpreting a UTC stamp as local.
+        #
+        # Unlike the three device kinds above (silently dropped when their Plugin isn't Active —
+        # see this function's own top), a care_event whose Plugin isn't currently Active raises
+        # instead, for the same "stay visible" reason as a stale enclosure_id/animal_id below —
+        # e.g. the Skill wrote this while Active, then got deactivated before Ingest drained it.
+        if plugin not in read_active_plugins():
+            raise ValueError(f"{plugin!r} is not an Active Plugin")
         enclosure_id = payload["enclosure_id"]
         animal_id = payload.get("animal_id")
         care_kind = payload["care_kind"]
