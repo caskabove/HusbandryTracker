@@ -317,11 +317,15 @@ button.danger {
     transition: background-color 0.1s;
 }
 
-/* Drag-and-drop Enclosure -> Room reassignment (see CONTEXT.md: Room). .dragging is the panel
-   being dragged; .drop-target is the Room section (or Ungrouped) currently under the cursor. */
+/* Drag-and-drop Enclosure -> Room reassignment, and Room -> Room reordering (see CONTEXT.md: Room).
+   .dragging is whatever's being dragged (an Enclosure panel, or a Room section via its own
+   .drag-handle); .drop-target is the Room section (or Ungrouped) currently under the cursor. */
 .room-section.drop-target { background: rgba(79, 157, 118, 0.15); outline: 2px dashed var(--primary-bright); outline-offset: 4px; }
 .panel { cursor: grab; }
-.panel.dragging { opacity: 0.4; cursor: grabbing; }
+.panel.dragging, .room-section.dragging { opacity: 0.4; }
+.panel.dragging { cursor: grabbing; }
+.room-header .drag-handle { cursor: grab; }
+.room-header .drag-handle:active { cursor: grabbing; }
 
 /* Collapsible Rooms and Enclosure panels — a Room/Enclosure with no sensor data of its own starts
    collapsed (server-decided, fresh each page load) so the dashboard leads with what actually has

@@ -136,10 +136,16 @@ function toggleCollapse(button) {
 
 applySavedCollapseState();
 
-// Dashboard drag-and-drop: drag an Enclosure panel onto a Room (or Ungrouped) to reassign it (see
-// CONTEXT.md: Room). Native HTML5 Drag and Drop, no library. There's no single <form> spanning the
-// drag source and drop target, so the actual reassignment is a plain fetch() POST — matching every
-// other action in this app, the result is a full page reload rather than a partial DOM update.
+// Dashboard drag-and-drop: drag an Enclosure panel onto a Room (or Ungrouped) to reassign it, or
+// drag a Room section's own handle up/down to reorder Rooms (see CONTEXT.md: Room). Native HTML5
+// Drag and Drop, no library. There's no single <form> spanning the drag source and drop target, so
+// the actual change is a plain fetch() POST — matching every other action in this app, the result
+// is a full page reload rather than a partial DOM update.
+//
+// Both drag sources share the same room-section ondragover/ondrop handlers below; onRoomDrop tells
+// them apart by dataTransfer type — "text/plain" (an Enclosure's id) vs "application/x-room-id" (a
+// Room's own id, set only by onRoomDragStart) — rather than by two separate drop handlers, since a
+// single drop target still needs to pick exactly one interpretation of whatever was dropped on it.
 function onEnclosureDragStart(event) {
     event.dataTransfer.setData("text/plain", event.currentTarget.dataset.enclosureId);
     event.dataTransfer.effectAllowed = "move";
@@ -148,6 +154,20 @@ function onEnclosureDragStart(event) {
 
 function onEnclosureDragEnd(event) {
     event.currentTarget.classList.remove("dragging");
+}
+
+// The handle is the drag source, not the whole .room-header (which also hosts the "edit this Room"
+// link, Refresh button, and Log Reading forms) — but it's the Room's .room-section that needs the
+// .dragging styling and that onRoomDrop below reorders, so this reaches up to it.
+function onRoomDragStart(event) {
+    const section = event.currentTarget.closest(".room-section");
+    event.dataTransfer.setData("application/x-room-id", section.dataset.roomId);
+    event.dataTransfer.effectAllowed = "move";
+    section.classList.add("dragging");
+}
+
+function onRoomDragEnd(event) {
+    event.currentTarget.closest(".room-section").classList.remove("dragging");
 }
 
 function onRoomDragOver(event) {
@@ -162,6 +182,11 @@ function onRoomDragLeave(event) {
 async function onRoomDrop(event) {
     event.preventDefault();
     event.currentTarget.classList.remove("drop-target");
+    const draggedRoomId = event.dataTransfer.getData("application/x-room-id");
+    if (draggedRoomId) {
+        await reorderRoom(draggedRoomId, event.currentTarget);
+        return;
+    }
     const enclosureId = event.dataTransfer.getData("text/plain");
     if (!enclosureId) return;
     const roomId = event.currentTarget.dataset.roomId;  // "" means Ungrouped (room_id -> NULL)
@@ -178,6 +203,36 @@ async function onRoomDrop(event) {
         }
     } catch (err) {
         alert("Couldn't move that enclosure — try again.");
+    }
+}
+
+// Moves draggedRoomId to just before targetSection's current position among every real Room
+// section (Ungrouped has no data-room-id value and isn't a Room to order against, so a drop there
+// is ignored — same for dropping a Room back onto itself). Sends the whole new top-to-bottom order
+// rather than just a swap, since app.js has no persistent notion of "adjacent" beyond the live DOM.
+async function reorderRoom(draggedRoomId, targetSection) {
+    const targetRoomId = targetSection.dataset.roomId;
+    if (!targetRoomId || targetRoomId === draggedRoomId) return;
+    const order = Array.from(document.querySelectorAll(".room-section"))
+        .map(function (section) { return section.dataset.roomId; })
+        .filter(function (roomId) { return roomId; });
+    const fromIndex = order.indexOf(draggedRoomId);
+    if (fromIndex === -1) return;
+    order.splice(fromIndex, 1);
+    order.splice(order.indexOf(targetRoomId), 0, draggedRoomId);
+    try {
+        const response = await fetch("/rooms/reorder", {
+            method: "POST",
+            headers: {"Content-Type": "application/x-www-form-urlencoded"},
+            body: new URLSearchParams({room_ids: order.join(",")}),
+        });
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert("Couldn't reorder rooms — try again.");
+        }
+    } catch (err) {
+        alert("Couldn't reorder rooms — try again.");
     }
 }
 

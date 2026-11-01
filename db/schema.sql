@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS room (
     light_on_time   TEXT,    -- "HH:MM", Light Schedule — both-or-neither with light_off_time
     light_off_time  TEXT,    -- "HH:MM"
     light_notes     TEXT,    -- free text, independent of whether a time is set
+    -- Dashboard display order (see CONTEXT.md: Room) — user-set by dragging a Room section up/down
+    -- on the dashboard (web/static/app.js's onRoomDrop); web/queries.py's get_dashboard_data()
+    -- orders by this, not name. New Rooms default to 0 at the DB level but web/admin_queries.py's
+    -- create_room() always overrides that to append at the end (max + 1), so 0 is never actually
+    -- meaningful for a Room created through the app.
+    sort_order      INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

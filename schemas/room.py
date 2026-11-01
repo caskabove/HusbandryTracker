@@ -41,6 +41,9 @@ class RoomUpdate(RoomCreate):
 
 
 class RoomRead(RoomBase):
-    """Full row as stored — adds the DB-assigned id/created_at on top of RoomBase."""
+    """Full row as stored — adds the DB-assigned id/created_at on top of RoomBase, plus
+    sort_order (see db/schema.sql; CONTEXT.md: Room) — set via create_room()/reorder_rooms(),
+    never through RoomCreate/RoomUpdate, so it stays off RoomBase."""
     id: int
+    sort_order: int
     created_at: str

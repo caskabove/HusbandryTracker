@@ -32,7 +32,7 @@ from schemas import enclosure_types as et
 from web.govee_refresh import refresh_sensors
 from web.admin import router as admin_router
 from web.admin_queries import get_settings, is_fresh_install
-from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading
+from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading, reorder_rooms
 from web.setup import router as setup_router
 from web.status import care_interval_status, target_range_status
 
@@ -173,6 +173,14 @@ def assign_room(enclosure_id: int, room_id: str = Form(default="")):
     """Dashboard drag-and-drop target (see CONTEXT.md: Room; web/static/app.js's onRoomDrop) —
     room_id "" (dropped on Ungrouped) means None."""
     assign_enclosure_room(enclosure_id, int(room_id) if room_id else None)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/rooms/reorder")
+def reorder_rooms_route(room_ids: str = Form(...)):
+    """Dashboard drag-and-drop target (see CONTEXT.md: Room; web/static/app.js's onRoomDrop) —
+    room_ids is every Room's id, comma-separated, in its new top-to-bottom display order."""
+    reorder_rooms([int(rid) for rid in room_ids.split(",") if rid])
     return RedirectResponse(url="/", status_code=303)
 
 

@@ -1425,7 +1425,11 @@ def list_rooms() -> list[dict]:
 
 def create_room(name: str) -> int:
     with get_connection() as conn:
-        cur = conn.execute("INSERT INTO room (name) VALUES (?)", (name,))
+        # Appends to the end of the dashboard's drag-ordered Room list (see CONTEXT.md: Room;
+        # web/queries.py's reorder_rooms()) rather than defaulting to sort_order 0, which would
+        # jump a brand-new Room to the front.
+        (next_order,) = conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM room").fetchone()
+        cur = conn.execute("INSERT INTO room (name, sort_order) VALUES (?, ?)", (name, next_order))
         return cur.lastrowid
 
 

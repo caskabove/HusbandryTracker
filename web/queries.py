@@ -363,7 +363,10 @@ def get_dashboard_data() -> dict:
                 care[kind] = {"occurred_at": occurred_at, "days_since": days_since(occurred_at)}
             enclosure["care"] = care
 
-        rooms = [dict(row) for row in conn.execute("SELECT * FROM room ORDER BY name")]
+        # sort_order (see CONTEXT.md: Room) is the user's own drag-set display order — app.js's
+        # onRoomDrop/reorderRoom, persisted via reorder_rooms() below. `name` only breaks ties
+        # among Rooms that happen to share a sort_order (e.g. two never reordered since creation).
+        rooms = [dict(row) for row in conn.execute("SELECT * FROM room ORDER BY sort_order, name")]
         for room in rooms:
             room_sensors = [dict(row) for row in conn.execute("SELECT * FROM sensor WHERE room_id = ?", (room["id"],))]
             for sensor in room_sensors:
@@ -449,4 +452,15 @@ def assign_enclosure_room(enclosure_id: int, room_id: int | None) -> None:
         conn.execute(
             "UPDATE enclosure SET room_id = ?, fallback_sensor_id = NULL WHERE id = ?",
             (room_id, enclosure_id),
+        )
+
+
+def reorder_rooms(room_ids: list[int]) -> None:
+    """Dashboard drag-and-drop display-order change (see CONTEXT.md: Room; web/static/app.js's
+    onRoomDragStart/onRoomDrop) — room_ids is every Room's id in its new top-to-bottom order;
+    each one's sort_order becomes its index in that list."""
+    with get_connection() as conn:
+        conn.executemany(
+            "UPDATE room SET sort_order = ? WHERE id = ?",
+            list(enumerate(room_ids)),
         )

@@ -10,7 +10,7 @@ The physical housing unit (tank, tub, rack tray) that an environmental sensor an
 _Avoid_: Tank, cage, habitat (use only when quoting a specific product/UI)
 
 **Room**:
-A named grouping of Enclosures sharing a physical space (e.g. "Living Room", "Reptile Rack"), with its own ambient Sensor(s) and Light Schedule. Optional — an Enclosure need not belong to one. Unlike an Enclosure, a Room has no Animals, no Bioactive flag, and no Care Events; it exists purely to group Enclosures on the dashboard and to monitor/schedule the shared space around them.
+A named grouping of Enclosures sharing a physical space (e.g. "Living Room", "Reptile Rack"), with its own ambient Sensor(s) and Light Schedule. Optional — an Enclosure need not belong to one. Unlike an Enclosure, a Room has no Animals, no Bioactive flag, and no Care Events; it exists purely to group Enclosures on the dashboard and to monitor/schedule the shared space around them. Its dashboard display order is user-set by dragging a Room section's handle up/down (`sort_order`) rather than fixed alphabetically — a new Room starts at the end of that order.
 
 **Animal**:
 An individual reptile with a name, species (common + scientific name), and DOB. Belongs to exactly one Enclosure. Whether an Animal's card shows on the Dashboard's Enclosure panel is its own per-Animal flag (`show_on_dashboard`), toggled from a checkbox on the Enclosure's Admin page — the Admin page itself always lists every Animal regardless. Defaults on for the first 3 Animals registered to an Enclosure, off after that; the user can flip any Animal's flag either way at any time.

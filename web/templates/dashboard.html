@@ -360,6 +360,15 @@
         <section class="room-section" data-room-id="{{ room.id }}" data-collapse-key="room:{{ room.id }}"
                  ondragover="onRoomDragOver(event)" ondragleave="onRoomDragLeave(event)" ondrop="onRoomDrop(event)">
             <header class="room-header">
+                {# Drag handle for reordering Rooms on the dashboard (see CONTEXT.md: Room) — the
+                   handle itself is the drag source (not the whole header, which also hosts the
+                   "edit this Room" link, Refresh button, and Log Reading forms); dropping it onto
+                   another Room's section reorders them, persisted via app.js's onRoomDrop ->
+                   reorder_rooms(). Same room-section ondragover/ondrop above also handles an
+                   Enclosure panel dropped here to reassign it (CONTEXT.md: Room) — onRoomDrop
+                   tells the two apart by dataTransfer type. #}
+                <button type="button" class="collapse-toggle drag-handle" draggable="true" title="Drag to reorder"
+                        ondragstart="onRoomDragStart(event)" ondragend="onRoomDragEnd(event)">&#9776;</button>
                 <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
                 <div class="room-header-main">
                 {# The Sparkline click-through (ADR 0024) makes room-summary's own charts into real
