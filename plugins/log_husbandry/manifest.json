@@ -1,0 +1,5 @@
+{
+  "name": "log_husbandry",
+  "description": "Interprets natural-language husbandry notes (e.g. \"fed Bob a large mouse and cleaned his water\") into Care Events logged in Husbandry Tracker.",
+  "kind": "skill"
+}

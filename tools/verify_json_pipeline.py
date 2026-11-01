@@ -44,7 +44,7 @@ INBOX_DIR = REPO_ROOT / "data" / "inbox"
 REGISTRY_DIR = REPO_ROOT / "data" / "registry"
 OUTBOX_DIR = REPO_ROOT / "data" / "outbox"
 REJECTED_DIR = INBOX_DIR / "_rejected"
-EVENT_KINDS = ["sensor_reading", "plug_state", "plug_telemetry", "log"]
+EVENT_KINDS = ["sensor_reading", "plug_state", "plug_telemetry", "log", "care_event"]
 
 PLUGIN_EVENT_SCHEMA_PATH = REPO_ROOT / "schemas" / "plugin_event.schema.json"
 PLUG_COMMAND_SCHEMA_PATH = REPO_ROOT / "schemas" / "plug_command.schema.json"

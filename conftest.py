@@ -42,6 +42,19 @@ def json_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path
 
 
 @pytest.fixture()
+def active_plugins_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirects active_plugins.py's view of data/active_plugins.json to a private tmp_path file
+    — see CONTEXT.md: Active Plugin; ADR 0045. Separate from json_dirs above since this file isn't
+    part of the Inbox/Registry/Outbox contract; ingest.ingest imported read_active_plugins by
+    name, but it still reads active_plugins.ACTIVE_PLUGINS_PATH fresh on every call, so patching it
+    here is enough regardless of which module holds a reference to the function."""
+    import active_plugins
+    path = tmp_path / "active_plugins.json"
+    monkeypatch.setattr(active_plugins, "ACTIVE_PLUGINS_PATH", path)
+    return path
+
+
+@pytest.fixture()
 def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> sqlite3.Connection:
     """Points db.db.DB_PATH at a private tmp_path file and initializes it from the real
     db/schema.sql, so ingest._apply_event's own get_connection() calls (it opens a fresh

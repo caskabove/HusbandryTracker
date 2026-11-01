@@ -22,6 +22,7 @@ from app_paths import APP_ROOT
 from schemas import enclosure_types as et
 from web import admin_queries as q
 from web import graphs_queries as gq
+from web import plugin_catalog
 from web import view_data_queries as vd
 from web.govee_refresh import discover_govee, refresh_sensors
 from web.plug_probe import probe_plug
@@ -169,9 +170,32 @@ def admin_index(request: Request):
         {
             "enclosures": enclosures, "rooms": rooms, "sensors": q.list_sensors(), "plugs": q.list_plugs(),
             "plug_groups": q.list_plug_groups(),
-            "settings": q.get_settings(), "error": request.query_params.get("error"),
+            "settings": q.get_settings(), "plugins": plugin_catalog.list_plugins(),
+            "error": request.query_params.get("error"),
         }
     )
+
+
+@router.post("/plugins/{name}/activate")
+def admin_activate_plugin(name: str):
+    # See CONTEXT.md: Active Plugin, Plugin Contract; ADR 0045 — activation is one atomic action:
+    # the Plugin's own init.activate() runs first, and only on success does plugin_catalog actually
+    # add it to data/active_plugins.json, so there's never a state where a Plugin is listed Active
+    # but its init never ran.
+    try:
+        plugin_catalog.activate_plugin(name)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
+
+
+@router.post("/plugins/{name}/deactivate")
+def admin_deactivate_plugin(name: str):
+    try:
+        plugin_catalog.deactivate_plugin(name)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url="/admin/", status_code=303)
 
 
 @router.post("/settings")

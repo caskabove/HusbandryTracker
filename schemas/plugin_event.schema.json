@@ -16,7 +16,7 @@
       "minLength": 1
     },
     "kind": {
-      "enum": ["sensor_reading", "plug_state", "plug_telemetry", "log"]
+      "enum": ["sensor_reading", "plug_state", "plug_telemetry", "log", "care_event"]
     },
     "external_id": {
       "description": "The opaque per-Plugin device id this event is about — matches sensor.external_id/plug.external_id for the same plugin. For a \"log\" event this is repurposed as a free-form scope reference instead (e.g. \"enclosure:3\", \"animal:12\", or \"app\" when the entry isn't about any specific entity) — see CONTEXT.md: External ID, Log Event.",
@@ -48,6 +48,10 @@
     {
       "if": { "properties": { "kind": { "const": "log" } } },
       "then": { "properties": { "payload": { "$ref": "#/$defs/log_payload" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "care_event" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/care_event_payload" } } }
     }
   ],
   "$defs": {
@@ -90,6 +94,22 @@
         "level": { "enum": ["debug", "info", "warning", "error"] },
         "message": { "type": "string", "minLength": 1 },
         "data": { "type": "object" }
+      }
+    },
+    "care_event_payload": {
+      "description": "See CONTEXT.md: Care Event Plugin Event; ADR 0046. Written by a Skill (today, only log_husbandry) that has already resolved a Room/Enclosure/Animal name to a real id using its own Registry export — Ingest re-validates enclosure_id/animal_id still exist and still relate the way the event claims, and quarantines (rather than silently dropping) on a mismatch, since this represents a specific, human-confirmed action rather than a routine device poll.",
+      "type": "object",
+      "required": ["enclosure_id", "care_kind"],
+      "additionalProperties": false,
+      "properties": {
+        "enclosure_id": { "type": "integer" },
+        "animal_id": { "type": ["integer", "null"], "description": "Spot-feed only — see CONTEXT.md: Spot-feed. Omit/null for a whole-Enclosure event." },
+        "care_kind": { "enum": ["feeding", "watering", "spot_clean", "deep_clean"] },
+        "note": { "type": ["string", "null"] },
+        "food": { "type": ["string", "null"], "description": "Feeding only. Omit/null when the sentence didn't say — Ingest fills it in from the last Feeding." },
+        "count": { "type": ["integer", "null"], "description": "Feeding only. Omit/null when the sentence didn't say." },
+        "prey_state": { "enum": ["live", "frozen_thawed", "dry", null], "description": "Feeding only. Omit/null when the sentence didn't say — Ingest falls back to the last Feeding's own value, or frozen_thawed if there's no prior Feeding." },
+        "result": { "enum": ["accepted", "refused", null], "description": "Feeding only. Omit/null when the sentence didn't say — Ingest falls back to the last Feeding's own value, or accepted if there's no prior Feeding." }
       }
     }
   }

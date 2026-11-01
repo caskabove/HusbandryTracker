@@ -1,17 +1,23 @@
 """Ingest — see CONTEXT.md: Ingest; ADR 0013. The one core process that:
 
 1. Exports each Plugin's Registry (data/registry/<plugin>.json) from the sensor/plug tables, so a
-   Plugin never queries the database directly to learn what to watch.
+   Plugin never queries the database directly to learn what to watch — plus one Skill-specific
+   export, log_husbandry's own Rooms/Enclosures/Animals snapshot (see CONTEXT.md: Skill; ADR 0046),
+   gated on it being an Active Plugin (see CONTEXT.md: Active Plugin; ADR 0045).
 2. Drains the Inbox (data/inbox/<kind>/*.json), validating every Plugin Event against
    schemas/plugin_event.schema.json before writing the resulting Reading/Plug State Transition/
-   Data Capture/Log Event, then evaluating Alert Conditions (a Log Event skips both the Registry
-   match and Alert evaluation — see CONTEXT.md: Log Event; ADR 0044).
+   Data Capture/Log Event/Care Event, then evaluating Alert Conditions (a Log Event and a Care
+   Event Plugin Event both skip Alert evaluation — neither is about a registered Sensor/Plug —
+   and a Care Event Plugin Event quarantines rather than silently drops on a stale reference,
+   unlike every other kind — see CONTEXT.md: Log Event, Care Event Plugin Event; ADR 0044/0046).
 3. Periodically re-evaluates Unreachable for every registered Smart Sensor/Plug, since that
    condition needs to fire even when *nothing* arrives, not just when something does.
 
-Deliberately contains no vendor-specific code — resolving a Plugin Event only ever keys off its
-generic (plugin, external_id) pair, never a vendor's own field names. Adding a new Plugin type
-never requires a change here.
+Device-observation kinds (sensor_reading/plug_state/plug_telemetry) deliberately contain no
+vendor-specific code — resolving one only ever keys off its generic (plugin, external_id) pair,
+never a vendor's own field names, and adding a new device Plugin never requires a change here.
+log_husbandry's own Registry export and its care_event handling are the one deliberate exception
+— see each one's own docstring/comment for why a Skill doesn't fit that same generic shape yet.
 """
 from __future__ import annotations
 
@@ -25,15 +31,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import jsonschema
 
+from active_plugins import read_active_plugins
 from app_paths import APP_ROOT
 from db.db import backup_database, get_connection, init_db
 from ingest import alerts
+from web.admin_queries import get_last_feeding_detail, log_feeding
+from web.queries import log_care_event
 
 INBOX_DIR = APP_ROOT / "data" / "inbox"
 REGISTRY_DIR = APP_ROOT / "data" / "registry"
 REJECTED_DIR = INBOX_DIR / "_rejected"
 SCHEMA_PATH = APP_ROOT / "schemas" / "plugin_event.schema.json"
-EVENT_KINDS = ["sensor_reading", "plug_state", "plug_telemetry", "log"]
+EVENT_KINDS = ["sensor_reading", "plug_state", "plug_telemetry", "log", "care_event"]
 
 DEFAULT_SCAN_INTERVAL_SECONDS = 5
 
@@ -87,6 +96,25 @@ def _export_registry() -> None:
         _atomic_write_json(REGISTRY_DIR / f"{plugin_name}.json", entries)
     for stale in existing_files - entries_by_plugin.keys():
         (REGISTRY_DIR / f"{stale}.json").unlink(missing_ok=True)
+
+
+def _export_log_husbandry_registry() -> None:
+    """See CONTEXT.md: Skill, Registry; ADR 0046. Unlike _export_registry() above — fully generic,
+    one device list per device Plugin — log_husbandry's Registry export is specific to what this
+    one Skill actually needs (Rooms/Enclosures/Animals, not devices), since there's currently no
+    generic way for a Skill to declare what domain data it wants (manifest.json's scope is
+    narrower than that for now — see CONTEXT.md: Plugin Contract). Only exported while
+    log_husbandry is itself an Active Plugin — removed the moment it's deactivated, same
+    stale-file cleanup _export_registry() already does for a deregistered device Plugin."""
+    path = REGISTRY_DIR / "log_husbandry.json"
+    if "log_husbandry" not in read_active_plugins():
+        path.unlink(missing_ok=True)
+        return
+    with get_connection() as conn:
+        rooms = [dict(row) for row in conn.execute("SELECT id, name FROM room")]
+        enclosures = [dict(row) for row in conn.execute("SELECT id, name, room_id FROM enclosure")]
+        animals = [dict(row) for row in conn.execute("SELECT id, name, enclosure_id FROM animal")]
+    _atomic_write_json(path, {"rooms": rooms, "enclosures": enclosures, "animals": animals})
 
 
 def _quarantine(path: Path, reason: str) -> None:
@@ -185,6 +213,56 @@ def _apply_event(event: dict) -> None:
                 (plugin, external_id, payload.get("level", "info"), payload["message"],
                  json.dumps(payload["data"]) if "data" in payload else None, observed_at),
             )
+
+    elif kind == "care_event":
+        # See CONTEXT.md: Care Event Plugin Event; ADR 0046. enclosure_id/animal_id are already
+        # resolved ids from the Skill's own Registry snapshot (_export_log_husbandry_registry) —
+        # re-validated here since that snapshot can be stale by the time this file is actually
+        # drained (the Skill may have written it while nothing was even running). A mismatch
+        # raises ValueError, which _drain_inbox's own try/except already quarantines rather than
+        # silently dropping — this is a specific, human-confirmed action, not a routine device
+        # poll, so a failure needs to stay visible.
+        #
+        # occurred_at is deliberately NOT taken from this event's own observed_at (UTC) — unlike
+        # every other kind above, care_event.occurred_at is stored as LOCAL wall-clock time (see
+        # web/queries.py's _normalize_datetime_local), and this Skill doesn't support backdating
+        # yet anyway (ADR 0046) — passing occurred_at=None lets it default to "now" in the right
+        # timezone instead of misinterpreting a UTC stamp as local.
+        enclosure_id = payload["enclosure_id"]
+        animal_id = payload.get("animal_id")
+        care_kind = payload["care_kind"]
+        note = payload.get("note")
+
+        with get_connection() as conn:
+            if conn.execute("SELECT 1 FROM enclosure WHERE id = ?", (enclosure_id,)).fetchone() is None:
+                raise ValueError(f"Enclosure {enclosure_id} does not exist")
+            if animal_id is not None and conn.execute(
+                "SELECT 1 FROM animal WHERE id = ? AND enclosure_id = ?", (animal_id, enclosure_id)
+            ).fetchone() is None:
+                raise ValueError(f"Animal {animal_id} does not belong to Enclosure {enclosure_id}")
+
+        if care_kind == "feeding":
+            food = payload.get("food")
+            count = payload.get("count")
+            prey_state = payload.get("prey_state")
+            result = payload.get("result")
+            if food is None or count is None or prey_state is None or result is None:
+                # "Repeat last Feeding" fallback — same rule the Log Feeding Dialog's quick-log
+                # buttons already use (ADR 0042), applied per-field rather than all-or-nothing,
+                # since a sentence often states some Feeding Detail fields but not others.
+                last = get_last_feeding_detail(enclosure_id, animal_id)
+                if food is None and last is not None:
+                    food = last["food"]
+                if count is None and last is not None:
+                    count = last["count"]
+                if prey_state is None:
+                    prey_state = last["prey_state"] if last is not None else "frozen_thawed"
+                if result is None:
+                    result = last["result"] if last is not None else "accepted"
+            log_feeding(enclosure_id, note=note, animal_id=animal_id,
+                        food=food, count=count, prey_state=prey_state, result=result)
+        else:
+            log_care_event(enclosure_id, care_kind, note=note, animal_id=animal_id)
 
 
 def _drain_inbox(validator: jsonschema.Draft202012Validator) -> None:
@@ -290,6 +368,7 @@ def main() -> None:
     try:
         while True:
             _export_registry()
+            _export_log_husbandry_registry()
             _drain_inbox(validator)
             _run_periodic_unreachable_checks()
             _run_backup_check()
