@@ -114,6 +114,12 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             return None
         enclosure = dict(row)
         enclosure["animals"] = [dict(r) for r in conn.execute("SELECT * FROM animal WHERE enclosure_id = ? ORDER BY name", (enclosure_id,))]
+        # Quick Log popup (see CONTEXT.md: Quick Log) — each Animal's own Animal Log/Shed Log
+        # history, the same lookups admin_edit_animal() already does for the Animal's own Edit
+        # page, so the popup can show it without a second request.
+        for animal in enclosure["animals"]:
+            animal["logs"] = list_animal_logs(animal["id"])
+            animal["shed_logs"] = list_shed_logs(animal["id"])
         enclosure["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
         # Current Reading — same "what's actually happening right now" info the Dashboard already
         # shows for this Enclosure's Sensors, and Room Sensors already get on their own Admin page

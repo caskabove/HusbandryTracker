@@ -305,6 +305,24 @@ function dismissCarePrompt() {
     if (dialog && dialog.open) dialog.close();
 }
 
+// Quick Log popup (see CONTEXT.md: Quick Log) — one <dialog> per Animal on the Enclosure's Admin
+// page (admin_enclosure.html), each holding that Animal's own Growth & Condition Log and Shed Log
+// cards. Parameterized by dialogId rather than a fixed id, since an Enclosure can have several
+// Animals and so several of these dialogs on one page.
+function openQuickLogDialog(dialogId) {
+    const dialog = document.getElementById(dialogId);
+    if (!dialog) return;
+    dialog.addEventListener("click", function (e) {
+        if (e.target === dialog) dismissQuickLogDialog(dialogId);
+    }, { once: true });
+    if (!dialog.open) dialog.showModal();
+}
+
+function dismissQuickLogDialog(dialogId) {
+    const dialog = document.getElementById(dialogId);
+    if (dialog && dialog.open) dialog.close();
+}
+
 function useOwnCareDates() {
     dismissCarePrompt();
     document.querySelectorAll('.care-row[data-unlogged="true"] .care-advanced').forEach(function (details) {

@@ -675,6 +675,13 @@ a.pill:hover { opacity: 0.85; }
     max-width: 65%;
 }
 
+/* Quick Log popup (see CONTEXT.md: Quick Log) — reuses .care-prompt-modal's own shell/header
+   styling, just wider and scrollable since it holds two full cards' worth of history tables and
+   forms (same markup as the Animal's own Edit page, admin_animal_edit.html). */
+.quick-log-modal { width: min(94vw, 640px); max-height: 85vh; overflow-y: auto; }
+.quick-log-section + .quick-log-section { margin-top: 1.2rem; }
+.quick-log-section h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+
 .care-row { justify-content: space-between; }
 .care-actions {
     margin-left: auto;

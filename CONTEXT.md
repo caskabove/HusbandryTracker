@@ -22,6 +22,9 @@ A manually-logged, backdatable, self-reported observation about one Animal — W
 **Shed Log**:
 A manually-logged, backdatable observation of one Animal shedding, shown as history on the Animal's own Edit page alongside Animal Log — **Completeness** (Full or Partial), and for a Partial shed only, **Stuck Shed Location** (a multi-select checklist — Eye caps, Tail tip, Toes — plus free text for anything not listed), and an optional note. Not a Care Event: nothing was "done," and there's no Care Interval/staleness tracking for it, same reasoning Animal Log and Plant Health already use — kept in its own table (`shed_log`), scoped to one Animal the same way Animal Log is. A photo attachment was considered but deferred to its own ticket (RHA-97) rather than this one, since there's no file-upload capability anywhere in this app yet. See ADR 0042.
 
+**Quick Log**:
+A popup on the Enclosure's own Admin page, opened per-Animal from a "quick log" button in the Animals card — holds that Animal's Growth & Condition Log and Shed Log cards verbatim (same history tables, same forms as the Animal's own Edit page), so a Weight/Length/Count/Condition/Shed entry can be logged without navigating away from the Enclosure. Not a separate feature or table — the popup's forms post to the same routes Animal Log/Shed Log's own Edit-page forms already use, with a hidden Enclosure id that only changes where the redirect lands (back to this Enclosure's Animals card, scrolled to that Animal's row, instead of the Edit page). The Edit Animal page itself is unchanged.
+
 **Plant**:
 An individual live plant tracked within a Bioactive Enclosure, with a name and species (optional) — analogous to Animal, but only creatable on an Enclosure with Bioactive set. Not required: a Bioactive Enclosure's plants can be logged purely at the Enclosure level (see Plant Health) without ever naming an individual Plant.
 

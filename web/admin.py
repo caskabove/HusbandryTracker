@@ -312,6 +312,11 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
             "recent_foods": q.list_recent_foods(enclosure_id),
             "prey_states": PREY_STATES, "prey_state_labels": PREY_STATE_LABELS,
             "feeding_results": FEEDING_RESULTS, "feeding_result_labels": FEEDING_RESULT_LABELS,
+            # Quick Log popup (see CONTEXT.md: Quick Log) — same vocab admin_edit_animal() passes
+            # its own Growth & Condition / Shed Log forms below.
+            "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
+            "shed_completeness": SHED_COMPLETENESS, "shed_completeness_labels": SHED_COMPLETENESS_LABELS,
+            "shed_stuck_locations": SHED_STUCK_LOCATIONS, "shed_stuck_location_labels": SHED_STUCK_LOCATION_LABELS,
             "error": request.query_params.get("error"),
         }
     )
@@ -498,48 +503,72 @@ def admin_update_animal(
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
+def _quick_log_redirect(animal_id: int, enclosure_id: str, error: str | None = None, edit_anchor: str = "") -> str:
+    """Growth & Condition / Shed quick-log forms (see CONTEXT.md: Animal Log, Shed Log, Quick Log)
+    are rendered in two places sharing these same POST routes — the Animal's own Edit page, and
+    the Quick Log popup on its Enclosure's Admin page (admin_enclosure.html). enclosure_id is only
+    populated by the popup's own forms (a hidden field) — its presence is what picks which page to
+    send the redirect back to; edit_anchor only applies on the Edit-page fallback, matching each
+    route's previous anchor behavior exactly."""
+    if enclosure_id:
+        base, frag = f"/admin/enclosures/{enclosure_id}", f"#animal-row-{animal_id}"
+    else:
+        base, frag = f"/admin/animals/{animal_id}/edit", (f"#{edit_anchor}" if edit_anchor else "")
+    if error:
+        return f"{base}?error={quote(error)}{frag}"
+    return f"{base}{frag}"
+
+
 @router.post("/animals/{animal_id}/log-weight")
-def admin_log_animal_weight(animal_id: int, weight_g: float = Form(...), occurred_at: str = Form("")):
+def admin_log_animal_weight(
+    animal_id: int, weight_g: float = Form(...), occurred_at: str = Form(""), enclosure_id: str = Form(""),
+):
     try:
         q.log_animal_weight(animal_id, weight_g, occurred_at)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+        return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id, str(exc)), status_code=303)
+    return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id), status_code=303)
 
 
 @router.post("/animals/{animal_id}/log-length")
-def admin_log_animal_length(animal_id: int, length_cm: float = Form(...), occurred_at: str = Form("")):
+def admin_log_animal_length(
+    animal_id: int, length_cm: float = Form(...), occurred_at: str = Form(""), enclosure_id: str = Form(""),
+):
     try:
         q.log_animal_length(animal_id, length_cm, occurred_at)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+        return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id, str(exc)), status_code=303)
+    return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id), status_code=303)
 
 
 @router.post("/animals/{animal_id}/log-count")
-def admin_log_animal_count(animal_id: int, count: int = Form(...), occurred_at: str = Form("")):
+def admin_log_animal_count(
+    animal_id: int, count: int = Form(...), occurred_at: str = Form(""), enclosure_id: str = Form(""),
+):
     try:
         q.log_animal_count(animal_id, count, occurred_at)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+        return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id, str(exc)), status_code=303)
+    return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id), status_code=303)
 
 
 @router.post("/animals/{animal_id}/log-condition")
 def admin_log_animal_condition(
     animal_id: int, condition: str = Form(...), note: str = Form(""), occurred_at: str = Form(""),
+    enclosure_id: str = Form(""),
 ):
     try:
         q.log_animal_condition(animal_id, condition, note, occurred_at)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+        return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id, str(exc)), status_code=303)
+    return RedirectResponse(url=_quick_log_redirect(animal_id, enclosure_id), status_code=303)
 
 
 @router.post("/animals/{animal_id}/log-shed")
 def admin_log_shed(
     animal_id: int, completeness: str = Form(...), stuck_locations: list[str] = Form(default=[]),
     stuck_location_other: str = Form(""), note: str = Form(""), occurred_at: str = Form(""),
+    enclosure_id: str = Form(""),
 ):
     locations = list(stuck_locations)
     if stuck_location_other.strip():
@@ -547,8 +576,12 @@ def admin_log_shed(
     try:
         q.create_shed_log(animal_id, completeness, locations, note, occurred_at)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit#shed-log", status_code=303)
+        return RedirectResponse(
+            url=_quick_log_redirect(animal_id, enclosure_id, str(exc), edit_anchor="shed-log"), status_code=303
+        )
+    return RedirectResponse(
+        url=_quick_log_redirect(animal_id, enclosure_id, edit_anchor="shed-log"), status_code=303
+    )
 
 
 @router.post("/sensors/discover")
