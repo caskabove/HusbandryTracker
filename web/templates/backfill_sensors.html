@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Backfill Data</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Backfill Data — {{ enclosure.name }}</h1>
+        <nav><a href="/admin/app">Cancel</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Step 3 of 4 — Sensors</h2>
+            <p class="setup-intro">
+                Fill the last {{ range_label }} for which of this Enclosure's Manual Sensors?
+                Each one fills from its own Target Range — a Smart Sensor isn't offered here,
+                since its history comes from a real device. Any day that already has a Reading
+                is left untouched; only the gaps get filled.
+            </p>
+
+            {% if sensors %}
+            <form method="post" action="/backfill/enclosures/{{ enclosure.id }}/fill" class="admin-form">
+                <input type="hidden" name="range" value="{{ range }}">
+                {% for sensor in sensors %}
+                <label class="checkbox">
+                    <input type="checkbox" name="sensor_id" value="{{ sensor.id }}" checked>
+                    <strong>{{ sensor.label }}</strong>
+                    — {% for m in sensor.metrics %}{{ m.label }}: {{ m.min }}&ndash;{{ m.max }}{{ m.unit }}{% if not loop.last %}, {% endif %}{% endfor %}
+                    {% if sensor.existing_reading_count %}
+                    <br><span class="empty">Already has {{ sensor.existing_reading_count }} Reading(s) — those days are left as they are.</span>
+                    {% endif %}
+                </label>
+                {% endfor %}
+                <button type="submit">Fill {{ range_label }}</button>
+            </form>
+            {% else %}
+            <p class="empty">
+                No Manual Sensor on {{ enclosure.name }} has a Target Range set yet. Add one
+                (or set a Target Range on an existing one) from
+                <a href="/admin/enclosures/{{ enclosure.id }}">{{ enclosure.name }}'s own Admin page</a> first.
+            </p>
+            {% endif %}
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

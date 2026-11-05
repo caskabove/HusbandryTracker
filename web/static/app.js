@@ -75,6 +75,111 @@ function onAddPlugGroupChange(select, belongsToBlockId, tuyaCredsBlockId) {
     setToggleBlock(document.getElementById(tuyaCredsBlockId), standalone);
 }
 
+// Add Plug / Add Plug Group: the "exactly one parent" rule (see CONTEXT.md: Plug, Plug Group) is
+// fully checkable client-side, so catch it here instead of letting it round-trip through the
+// server's redirect-and-redisplay error flow, which would otherwise clear every field the user
+// already filled in. Picking a Plug Group (Add Plug only, hence the optional groupSelectId) supplies
+// its own parent and skips this check entirely — see onAddPlugGroupChange.
+function validatePlugParentOnSubmit(event, parentSelectId, enclosuresBlockId, errorId, groupSelectId) {
+    const enclosuresBlock = document.getElementById(enclosuresBlockId);
+    const errorEl = document.getElementById(errorId);
+    enclosuresBlock.classList.remove("field-error");
+    errorEl.style.display = "none";
+    const groupSelect = groupSelectId ? document.getElementById(groupSelectId) : null;
+    if (groupSelect && groupSelect.value) return true;
+    if (document.getElementById(parentSelectId).value !== "enclosures") return true;
+    const anyChecked = Array.from(enclosuresBlock.querySelectorAll('input[type="checkbox"]')).some((cb) => cb.checked);
+    if (anyChecked) return true;
+    event.preventDefault();
+    enclosuresBlock.classList.add("field-error");
+    errorEl.style.display = "";
+    errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
+}
+
+// Clears the field-error highlight above as soon as the user starts fixing it (checking a box, or
+// switching "Belongs to" away from Enclosure(s)), rather than leaving it lit until the next submit.
+function clearPlugParentError(enclosuresBlockId, errorId) {
+    document.getElementById(enclosuresBlockId).classList.remove("field-error");
+    document.getElementById(errorId).style.display = "none";
+}
+
+// Admin's Users card "Reset Password" button (see admin_app.html; RHA-99) — a plain confirm-style
+// prompt rather than a dedicated page, since this is a single hidden field on an otherwise-empty
+// form. Blocks the submit (returns false) if the admin cancels or leaves it too short.
+function promptResetPassword(event, form) {
+    const newPassword = window.prompt("New password for this user (at least 8 characters):");
+    if (!newPassword || newPassword.length < 8) return false;
+    form.querySelector('[name="new_password"]').value = newPassword;
+    return true;
+}
+
+// Two fields that must be both filled in or both left blank (e.g. a Timer/Light schedule's on-
+// time and off-time — see CONTEXT.md: Target Schedule) — matched by `name` rather than `id` so one
+// call works regardless of which form it's in. Skipped entirely while disabled (a hidden
+// Controller-Kind-gated block, say), since a disabled field never submits either way.
+function validateBothOrNeitherOnSubmit(event, name1, name2, errorId) {
+    const form = event.target;
+    const el1 = form.elements[name1];
+    const el2 = form.elements[name2];
+    const errorEl = errorId ? document.getElementById(errorId) : null;
+    if (errorEl) errorEl.style.display = "none";
+    if (!el1 || !el2 || el1.disabled || el2.disabled) return true;
+    if (!!el1.value === !!el2.value) return true;
+    event.preventDefault();
+    if (errorEl) { errorEl.style.display = ""; errorEl.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    return false;
+}
+
+// Manual Sensor: needs at least one complete Target Range (min *and* max) on some metric — see
+// CONTEXT.md: Target Range. Scans the submitting form for every enabled "..min.."/"..max.." pair
+// (by swapping "min" for "max" in the field's own name) rather than hardcoding metric names, so it
+// works unchanged across Enclosure Types, the Room-owned Sensor's fixed temp/humidity pair, and
+// both the "foo_min"/"foo_max" and "min_foo"/"max_foo" naming conventions already in use.
+// trackingSelectId is optional — omit it where the form has no Tracking Mode picker at all (every
+// Sensor the Add-Pet/Setup wizards create is Manual by definition).
+function validateSensorTargetRangeOnSubmit(event, trackingSelectId, errorId) {
+    const trackingSelect = trackingSelectId ? document.getElementById(trackingSelectId) : null;
+    const errorEl = document.getElementById(errorId);
+    errorEl.style.display = "none";
+    if (trackingSelect && trackingSelect.value !== "manual") return true;
+    const form = event.target;
+    const inputs = Array.from(form.querySelectorAll('input[type="number"]')).filter((el) => !el.disabled);
+    const hasPair = inputs.some((el) => {
+        if (!el.name.includes("min") || el.value === "") return false;
+        const maxEl = inputs.find((o) => o.name === el.name.replace("min", "max"));
+        return !!maxEl && maxEl.value !== "";
+    });
+    if (hasPair) return true;
+    event.preventDefault();
+    errorEl.style.display = "";
+    errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
+}
+
+// At least one of several optional fields must be filled in (e.g. logging a Reading needs at
+// least one metric value — see CONTEXT.md: Reading) — `selector` scopes the check to this one
+// form/row rather than the whole page, since e.g. an Enclosure can list several Sensors' own
+// "Log Reading" forms at once. Falls back to a plain alert() when there's no dedicated error
+// element for this row (cheaper than threading a uniquely-id'd message into every repeated row).
+function validateAtLeastOneOnSubmit(event, selector, errorId) {
+    const form = event.target;
+    const inputs = Array.from(form.querySelectorAll(selector)).filter((el) => !el.disabled);
+    const errorEl = errorId ? document.getElementById(errorId) : null;
+    if (inputs.some((el) => el.value !== "")) {
+        if (errorEl) errorEl.style.display = "none";
+        return true;
+    }
+    event.preventDefault();
+    if (errorEl) {
+        errorEl.style.display = "";
+        errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+        alert("Enter at least one value.");
+    }
+    return false;
+}
+
 function onAlwaysOnChange(checkbox, onTimeId, offTimeId) {
     const disabled = checkbox.checked;
     [onTimeId, offTimeId].forEach(function (id) {
@@ -323,6 +428,24 @@ function dismissQuickLogDialog(dialogId) {
     if (dialog && dialog.open) dialog.close();
 }
 
+// Image Lightbox (see CONTEXT.md: Animal Photo, Enclosure Photo, Dashboard Thumbnail) — one shared
+// #image-lightbox <dialog> per page, opened by clicking any photo thumbnail (an Animal card, an
+// Enclosure's own photo, or a Dashboard panel's thumbnail) to show it at full size.
+function openImageLightbox(src) {
+    const dialog = document.getElementById("image-lightbox");
+    if (!dialog) return;
+    dialog.querySelector("img").src = src;
+    dialog.addEventListener("click", function (e) {
+        if (e.target === dialog) dismissImageLightbox();
+    }, { once: true });
+    if (!dialog.open) dialog.showModal();
+}
+
+function dismissImageLightbox() {
+    const dialog = document.getElementById("image-lightbox");
+    if (dialog && dialog.open) dialog.close();
+}
+
 function useOwnCareDates() {
     dismissCarePrompt();
     document.querySelectorAll('.care-row[data-unlogged="true"] .care-advanced').forEach(function (details) {
@@ -452,74 +575,15 @@ async function onDiscoverTuyaClick(button) {
     }
 }
 
-// Species Profile (see CONTEXT.md: Species Profile) — an optional, never-persisted picker on the
-// Add-Enclosure and Add-Sensor forms (Setup Wizard and ordinary Admin alike) that only pre-fills
-// other fields with suggested starting values; the pick itself is never submitted anywhere. Ranges
-// sourced from docs/reference/Reptile Care Parameters Knowledge Base.md. `basking`/`cool`/`night`
-// are [min, max] °F; `humidity` is [min, max] %; `scientific` is the species' Latin name — present
-// only on a real, specific species (never the "(other/unlisted)" catch-alls, Tortoise, Insect, or
-// an aquatic value), so it doubles as the signal that this entry is specific enough to also carry
-// forward onto the Setup Wizard's Animal step (see prefillAnimalSpecies below). `feeding` is
-// {baby, adult} feeding_interval_days —
-// a KB range like "every 5-7 days" is stored here already collapsed to its rounded midpoint (an
-// omnivore/herbivore lizard with two parallel feeding tracks, e.g. a bearded dragon's daily salad
-// alongside twice-weekly insects, is stored as whichever track recurs more often). A profile with no
-// numeric fields at all (the "(other/unlisted)" catch-alls, Tortoise, Insect, and every aquatic
-// value today) exists only so the dropdown represents everything its Enclosure Type can hold —
-// picking one pre-fills nothing, same as picking no profile. "Lizard (other/unlisted)" in particular
-// is deliberately never given an averaged number: the ten listed lizards alone span a 78-135°F
-// basking range, so a single blanket "Lizard" figure would be badly wrong for most individual
-// species, not just imprecise.
-const SPECIES_PROFILES = {
-    ball_python: { label: "Ball Python", scientific: "Python regius", basking: [88, 95], cool: [75, 80], night: [72, 78], humidity: [50, 70], feeding: { baby: 6, adult: 21 } },
-    corn_snake: { label: "Corn Snake", scientific: "Pantherophis guttatus", basking: [85, 90], cool: [72, 78], night: [65, 70], humidity: [40, 60], feeding: { baby: 6, adult: 16 } },
-    california_kingsnake: { label: "California Kingsnake", scientific: "Lampropeltis californiae", basking: [85, 90], cool: [70, 80], night: [65, 70], humidity: [40, 60], feeding: { baby: 6, adult: 11 } },
-    western_hognose: { label: "Western Hognose Snake", scientific: "Heterodon nasicus", basking: [90, 95], cool: [70, 75], night: [60, 75], humidity: [30, 50], feeding: { baby: 6, adult: 12 } },
-    boa_constrictor: { label: "Boa Constrictor", scientific: "Boa constrictor, Boa imperator", basking: [88, 95], cool: [75, 80], night: [72, 78], humidity: [60, 70], feeding: { baby: 9, adult: 21 } },
-    honduran_milk_snake: { label: "Honduran Milk Snake", scientific: "Lampropeltis hondurensis", basking: [85, 88], cool: [72, 78], night: [65, 75], humidity: [40, 60], feeding: { baby: 6, adult: 11 } },
-    rosy_boa: { label: "Rosy Boa", scientific: "Lichanura trivirgata", basking: [90, 95], cool: [75, 85], night: [65, 70], humidity: [30, 50], feeding: { baby: 9, adult: 16 } },
-    kenyan_sand_boa: { label: "Kenyan Sand Boa", scientific: "Eryx colubrinus", basking: [90, 95], cool: [75, 80], night: [70, 75], humidity: [30, 50], feeding: { baby: 6, adult: 21 } },
-    gopher_snake: { label: "Gopher Snake / Bullsnake", scientific: "Pituophis catenifer", basking: [85, 90], cool: [75, 80], night: [65, 70], humidity: [30, 50], feeding: { baby: 6, adult: 11 } },
-    carpet_python: { label: "Carpet Python", scientific: "Morelia spilota", basking: [88, 95], cool: [75, 80], night: [70, 75], humidity: [50, 60], feeding: { baby: 9, adult: 18 } },
-    snake_other: { label: "Snake (other/unlisted)", basking: [85, 95], cool: [70, 80], night: [65, 75], humidity: [30, 70], feeding: { baby: 7, adult: 14 } },
-    bearded_dragon: { label: "Bearded Dragon", scientific: "Pogona vitticeps", basking: [105, 115], cool: [70, 85], night: [60, 72], humidity: [30, 40], feeding: { baby: 1, adult: 1 } },
-    leopard_gecko: { label: "Leopard Gecko", scientific: "Eublepharis macularius", basking: [90, 95], cool: [70, 80], night: [60, 75], humidity: [30, 40], feeding: { baby: 1, adult: 3 } },
-    crested_gecko: { label: "Crested Gecko", scientific: "Correlophus ciliatus", basking: [78, 82], cool: [70, 75], night: [65, 72], humidity: [60, 80], feeding: { baby: 1, adult: 2 } },
-    blue_tongue_skink: { label: "Blue-Tongued Skink", scientific: "Tiliqua scincoides intermedia", basking: [105, 115], cool: [70, 80], night: [65, 75], humidity: [40, 60], feeding: { baby: 1, adult: 2 } },
-    african_fat_tailed_gecko: { label: "African Fat-Tailed Gecko", scientific: "Hemitheconyx caudicinctus", basking: [88, 92], cool: [70, 80], night: [70, 75], humidity: [50, 70], feeding: { baby: 1, adult: 2 } },
-    veiled_chameleon: { label: "Veiled Chameleon", scientific: "Chamaeleo calyptratus", basking: [85, 90], cool: [72, 78], night: [55, 65], humidity: [30, 50], feeding: { baby: 1, adult: 2 } },
-    gargoyle_gecko: { label: "Gargoyle Gecko", scientific: "Rhacodactylus auriculatus", basking: [82, 85], cool: [70, 75], night: [65, 72], humidity: [50, 70], feeding: { baby: 1, adult: 2 } },
-    tegu: { label: "Argentine Black and White Tegu", scientific: "Salvator merianae", basking: [120, 135], cool: [75, 85], night: [70, 75], humidity: [60, 80], feeding: { baby: 1, adult: 3 } },
-    green_iguana: { label: "Green Iguana", scientific: "Iguana iguana", basking: [115, 125], cool: [75, 85], night: [73, 80], humidity: [60, 80], feeding: { baby: 1, adult: 1 } },
-    uromastyx: { label: "Uromastyx", scientific: "Uromastyx spp.", basking: [120, 130], cool: [80, 85], night: [70, 80], humidity: [10, 35], feeding: { baby: 1, adult: 1 } },
-    lizard_other: { label: "Lizard (other/unlisted)" },
-    tortoise: { label: "Tortoise" },
-    insect: { label: "Insect" },
-    freshwater: { label: "Freshwater" },
-    freshwater_planted: { label: "Freshwater (planted)" },
-    saltwater_fish_only: { label: "Saltwater — Fish-Only" },
-    saltwater_mixed: { label: "Saltwater — Mixed" },
-    saltwater_reef: { label: "Saltwater — Reef" },
-};
-
-// Which profile keys are offered for each Enclosure Type, grouped for display — see CONTEXT.md:
-// Species Profile. Amphibian has none yet (no reference data), same reason the aquatic groups below
-// carry no numbers: the picker still exists everywhere so the dropdown's shape never changes as
-// data gets added later, it's just empty for Amphibian today.
-const SPECIES_PROFILE_GROUPS = {
-    basic: [
-        { label: "Snakes", keys: ["ball_python", "corn_snake", "california_kingsnake", "western_hognose", "boa_constrictor", "honduran_milk_snake", "rosy_boa", "kenyan_sand_boa", "gopher_snake", "carpet_python", "snake_other"] },
-        { label: "Lizards", keys: ["bearded_dragon", "leopard_gecko", "crested_gecko", "blue_tongue_skink", "african_fat_tailed_gecko", "veiled_chameleon", "gargoyle_gecko", "tegu", "green_iguana", "uromastyx", "lizard_other"] },
-        { label: "Other", keys: ["tortoise", "insect"] },
-    ],
-    freshwater: [
-        { label: "", keys: ["freshwater", "freshwater_planted"] },
-    ],
-    saltwater: [
-        { label: "", keys: ["saltwater_fish_only", "saltwater_mixed", "saltwater_reef"] },
-    ],
-    amphibian: [],
-};
+// Species Profile (see CONTEXT.md: Species Profile, Knowledge Base; ADR 0054) — an optional,
+// never-persisted picker on the Add-Enclosure and Add-Sensor forms (Setup Wizard, Add New Pet
+// Wizard, and ordinary Admin alike) that only pre-fills other fields with suggested starting
+// values; the pick itself is never submitted anywhere. SPECIES_PROFILES/SPECIES_PROFILE_GROUPS used
+// to be hardcoded literals right here — they're now server-rendered from the editable Knowledge
+// Base tables (see web/species_kb_queries.py's species_profile_js_context, schemas/
+// species_profile_kb.py) by web/templates/_species_profile_data.html, included on every page that
+// needs them, before this file's own <script> tag. Every function below still reads the two
+// globals exactly as it always did — only where the data comes from changed.
 
 // Rebuilds a Species Profile <select>'s options for the given Enclosure Type, keeping its current
 // selection if that profile is still offered under the new type. Called once on page load (Sensor
@@ -653,9 +717,9 @@ function _setFieldInContainer(container, name, value) {
     if (field) { field.value = value; revealField(field); }
 }
 
-// Admin's global Add Sensor form only (see admin_app.html; ADR 0050) — merges the per-Enclosure
-// and per-Room Add Sensor forms into one, so it needs this scoped sibling of
-// onSensorSpeciesProfileChange above: admin_app.html renders all four Enclosure Types' Target
+// Plugs and Sensors' global Add Sensor form only (see admin_index.html; ADR 0050/0055) — merges
+// the per-Enclosure and per-Room Add Sensor forms into one, so it needs this scoped sibling of
+// onSensorSpeciesProfileChange above: admin_index.html renders all four Enclosure Types' Target
 // Range/Volatility blocks at once (one shown+enabled, three hidden+disabled, picked by the chosen
 // Enclosure's own data-enclosure-type), so looking a field up by name alone across the whole form
 // (as _setNamedField does) would be ambiguous — "temperature" alone appears in every block. This
@@ -751,4 +815,21 @@ function onWizardContinueClick(event, formId, entityLabel, addButtonLabel) {
         return false;
     }
     return true;
+}
+
+// Knowledge Base search (see CONTEXT.md: Knowledge Base; ADR 0054) — one search box filters every
+// category table's rows live, by common name or scientific name, across all 7 tables at once. A
+// category with zero matches collapses its whole section rather than leaving an empty heading and
+// table behind.
+function filterKnowledgeBase(query) {
+    const needle = query.trim().toLowerCase();
+    document.querySelectorAll(".kb-category").forEach(function (section) {
+        let anyVisible = false;
+        section.querySelectorAll("tbody tr[data-search]").forEach(function (row) {
+            const match = !needle || row.dataset.search.indexOf(needle) !== -1;
+            row.style.display = match ? "" : "none";
+            if (match) anyVisible = true;
+        });
+        section.style.display = (anyVisible || !needle) ? "" : "none";
+    });
 }

@@ -20,6 +20,48 @@ CREATE TABLE IF NOT EXISTS app_setting (
 );
 INSERT OR IGNORE INTO app_setting (id) VALUES (1);
 
+-- Login/roles (see CONTEXT.md: User Account, Role, Session, Audit Log; ADR 0058; RHA-99 Phase 1).
+-- is_active = 0 disables an account without losing its history (sessions, audit rows); the app
+-- itself enforces "at least one active admin always exists" in code (web/auth_queries.py), not a
+-- CHECK here, same pattern as every other cross-row invariant in this file.
+CREATE TABLE IF NOT EXISTS user (
+    id              INTEGER PRIMARY KEY,
+    username        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash   TEXT NOT NULL,
+    role            TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A logged-in session, keyed by the random token stored (HttpOnly, SameSite=Lax) in the browser's
+-- cookie. No expires_at: the ticket's model is explicit revocation (logout, an admin resetting a
+-- password, "sign out everywhere") rather than idle timeout, so a session lives until deleted.
+CREATE TABLE IF NOT EXISTS session (
+    token           TEXT PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_session_user ON session (user_id);
+
+-- Login/logout/user-management audit trail (see CONTEXT.md: Audit Log) — also the source of truth
+-- for rate-limiting failed logins (see web/auth_queries.py's is_rate_limited()), rather than a
+-- separate counters table: a login dependency just counts recent login_failed rows by username
+-- and by IP. actor_user_id is NULL for a failed/anonymous attempt; username_attempted is set only
+-- on login_failed, when the typed username doesn't resolve to a real row.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id                  INTEGER PRIMARY KEY,
+    at                  TEXT NOT NULL DEFAULT (datetime('now')),
+    actor_user_id       INTEGER REFERENCES user(id) ON DELETE SET NULL,
+    username_attempted  TEXT,
+    ip_address          TEXT,
+    action              TEXT NOT NULL,  -- login_success | login_failed | logout | user_created |
+                                         -- user_disabled | user_enabled | user_role_changed |
+                                         -- password_reset | password_reset_tray
+    detail              TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action_at ON audit_log (action, at);
+
 -- A named grouping of Enclosures sharing a physical space. See CONTEXT.md: Room, Light Schedule.
 -- No Animals, Bioactive flag, or Care Events here — a Room isn't a housing unit, it's a grouping +
 -- ambient-monitoring layer around one or more Enclosures.
@@ -75,6 +117,18 @@ CREATE TABLE IF NOT EXISTS enclosure (
     spot_clean_nag_last_date  TEXT,
     deep_clean_nag_count      INTEGER NOT NULL DEFAULT 0,
     deep_clean_nag_last_date  TEXT,
+    -- Enclosure Photo (see CONTEXT.md: Enclosure Photo) — same shape as animal.image_filename,
+    -- just the filename under data/images/enclosures/; NULL means none uploaded.
+    image_filename            TEXT,
+    -- Dashboard Thumbnail (see CONTEXT.md: Dashboard Thumbnail) — which photo, if any, this
+    -- Enclosure's own Dashboard panel shows: either its own Enclosure Photo, or one specific
+    -- Animal's Photo (never both at once — see CONTEXT.md). dashboard_thumbnail_animal_id is only
+    -- meaningful when the source is 'animal'; ON DELETE SET NULL (same pattern as
+    -- fallback_sensor_id) means a deleted Animal just leaves the Dashboard panel with no thumbnail
+    -- rather than an error — see web/queries.py's get_dashboard_data().
+    dashboard_thumbnail_source     TEXT NOT NULL DEFAULT 'enclosure'
+                                       CHECK (dashboard_thumbnail_source IN ('enclosure', 'animal')),
+    dashboard_thumbnail_animal_id  INTEGER REFERENCES animal(id) ON DELETE SET NULL,
     created_at                TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -121,7 +175,11 @@ CREATE TABLE IF NOT EXISTS animal (
     -- toggled from the Enclosure's own Admin page. Defaults on; web/admin_queries.py's
     -- create_animal() only auto-enables it for the first 3 Animals in an Enclosure (see
     -- CONTEXT.md: Animal) — after that, a new Animal defaults off until the user picks it.
-    show_on_dashboard   INTEGER NOT NULL DEFAULT 1
+    show_on_dashboard   INTEGER NOT NULL DEFAULT 1,
+    -- Animal Photo (see CONTEXT.md: Animal Photo) — just the filename (e.g. "14.jpg"), stored
+    -- under data/images/animals/ (web/image_storage.py); NULL means no photo uploaded yet. One
+    -- image per Animal, replaced wholesale on a new upload — never a history/gallery.
+    image_filename      TEXT
 );
 
 -- A manually-logged, backdatable Animal Log entry (see CONTEXT.md: Animal Log) — Weight/Length/
@@ -258,13 +316,15 @@ CREATE TABLE IF NOT EXISTS sensor_alert_state (
 -- 0013). tracking_mode = 'manual': no device, e.g. a mechanical timer — plugin/external_id/
 -- plugin_config all stay NULL.
 --
--- target_on_time/target_off_time hold the Target Schedule (see CONTEXT.md: Target Schedule, ADR
--- 0012) — available on any Plug without a Controller Kind, Smart or Manual alike. For a Manual
--- Plug it's the only schedule info there is (nothing to observe). For a Smart Plug it's compared
--- against the Detected Schedule (computed from plug_state_transition, not stored), flagged as a
--- Timer Warning when they drift apart by more than schedule_drift_threshold_minutes
--- (app_setting). Superseded "Declared Schedule" from earlier versions of this app, which only ever
--- existed for a Manual Plug with no comparison possible.
+-- target_on_time/target_off_time (plus optional target_on_time_2/3, target_off_time_2/3 — up to 3
+-- on/off cycles total) hold the Target Schedule (see CONTEXT.md: Target Schedule, ADR 0012,
+-- ADR 0057) — available on any Plug without a Controller Kind, Smart or Manual alike. For a Manual
+-- Plug it's the only schedule info there is (nothing to observe). For a Smart Plug each detected
+-- on/off time is compared against whichever cycle's target is nearest to it (the Detected Schedule
+-- itself, computed from plug_state_transition, not stored, stays a single most-recent on-time and
+-- off-time — not cycle-aware), flagged as a Timer Warning when they drift apart by more than
+-- schedule_drift_threshold_minutes (app_setting). Superseded "Declared Schedule" from earlier
+-- versions of this app, which only ever existed for a Manual Plug with no comparison possible.
 --
 -- Not every physical Tuya device is a single-outlet plug: multi-outlet power strips expose several
 -- independently-switched DPS keys (e.g. "1"/"2"/"3" for three AC outlets, "7" for a USB port) on
@@ -321,8 +381,17 @@ CREATE TABLE IF NOT EXISTS plug (
     show_on_dashboard   INTEGER NOT NULL DEFAULT 1,
     -- "HH:MM", only ever set together with controller_kind = 'timer' (see CONTEXT.md: Target
     -- Schedule; RHA-95 split this out of 'none', which carries no schedule at all any more).
+    -- This is Cycle 1 of up to 3 on/off cycles a Timer-Controlled Plug can carry — Cycles 2/3
+    -- below are optional, contiguous (2 needs 1, 3 needs 2 — enforced in web/admin_queries.py, not
+    -- a CHECK here, same as this table's other cross-column Plug rules) extensions of the same
+    -- idea, for a Plug that cycles more than once a day (e.g. a basking light on twice, a misting
+    -- pump three times).
     target_on_time      TEXT,
     target_off_time     TEXT,
+    target_on_time_2    TEXT,
+    target_off_time_2   TEXT,
+    target_on_time_3    TEXT,
+    target_off_time_3   TEXT,
     -- Always On (see CONTEXT.md: Always On) — e.g. a pump that runs continuously. Only meaningful
     -- when controller_kind = 'none'; enforced in web/admin_queries.py, not a CHECK here, same as
     -- this table's other cross-column Plug rules.
@@ -513,3 +582,259 @@ CREATE TABLE IF NOT EXISTS shed_log (
     occurred_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_shed_log_animal_time ON shed_log (animal_id, occurred_at);
+
+-- Species Profile Knowledge Base (see CONTEXT.md: Knowledge Base, Species Profile; ADR 0054) — 7
+-- editable reference tables, one per schemas/species_profile_kb.py ProfileCategory, replacing the
+-- old hardcoded, never-persisted SPECIES_PROFILES literal in web/static/app.js. Each is a separate
+-- table (not one polymorphic table with a category column) for the same reason sensor_alert_state's
+-- comment gives: this schema always prefers an explicit typed table per entity kind, and the 7
+-- categories genuinely need different columns (water chemistry vs. basking/humidity).
+--
+-- profile_key is what's carried onto `animal.species_profile` and the Setup/Add-Pet Wizards' own
+-- query-string chain (see Animal, Species Profile) — kept identical to the pre-Knowledge-Base
+-- SPECIES_PROFILES dict keys for snake_profile/lizard_profile specifically, so an already-stored
+-- Animal row's species_profile value keeps resolving to the same row after migration (see
+-- tools/migrate_2026_11_02_species_profile_kb.py). notes is free-text sources/citations, matching
+-- the Source column docs/reference/Reptile Care Parameters Knowledge Base.md already has — that
+-- markdown file is left untouched as a historical snapshot; this is the live, editable version.
+-- sort_order is append-at-the-end on create, same pattern as room.sort_order.
+CREATE TABLE IF NOT EXISTS snake_profile (
+    id                          INTEGER PRIMARY KEY,
+    profile_key                 TEXT NOT NULL UNIQUE,
+    common_name                 TEXT NOT NULL,
+    scientific_name             TEXT,
+    basking_min_f               REAL,
+    basking_max_f               REAL,
+    cool_min_f                  REAL,
+    cool_max_f                  REAL,
+    night_min_f                 REAL,
+    night_max_f                 REAL,
+    humidity_min_pct            REAL,
+    humidity_max_pct            REAL,
+    feeding_baby_interval_days  INTEGER,
+    feeding_adult_interval_days INTEGER,
+    notes                       TEXT,
+    sort_order                  INTEGER NOT NULL DEFAULT 0,
+    created_at                  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS lizard_profile (
+    id                          INTEGER PRIMARY KEY,
+    profile_key                 TEXT NOT NULL UNIQUE,
+    common_name                 TEXT NOT NULL,
+    scientific_name             TEXT,
+    basking_min_f               REAL,
+    basking_max_f               REAL,
+    cool_min_f                  REAL,
+    cool_max_f                  REAL,
+    night_min_f                 REAL,
+    night_max_f                 REAL,
+    humidity_min_pct            REAL,
+    humidity_max_pct            REAL,
+    feeding_baby_interval_days  INTEGER,
+    feeding_adult_interval_days INTEGER,
+    notes                       TEXT,
+    sort_order                  INTEGER NOT NULL DEFAULT 0,
+    created_at                  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Pet insects (mantids, beetles, roaches kept as pets, stick insects, etc.) — distinct from feeder
+-- insects, which this app has no tracking concept for at all (see CONTEXT.md: Knowledge Base).
+CREATE TABLE IF NOT EXISTS insect_profile (
+    id                INTEGER PRIMARY KEY,
+    profile_key       TEXT NOT NULL UNIQUE,
+    common_name       TEXT NOT NULL,
+    scientific_name   TEXT,
+    temp_min_f        REAL,
+    temp_max_f        REAL,
+    humidity_min_pct  REAL,
+    humidity_max_pct  REAL,
+    lifespan          TEXT,
+    diet              TEXT,
+    notes             TEXT,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS saltwater_fish_profile (
+    id                INTEGER PRIMARY KEY,
+    profile_key       TEXT NOT NULL UNIQUE,
+    common_name       TEXT NOT NULL,
+    scientific_name   TEXT,
+    temp_min_f        REAL,
+    temp_max_f        REAL,
+    salinity_sg_min   REAL,
+    salinity_sg_max   REAL,
+    ph_min            REAL,
+    ph_max            REAL,
+    ammonia_ppm_max   REAL,
+    nitrite_ppm_max   REAL,
+    nitrate_ppm_max   REAL,
+    diet              TEXT,
+    notes             TEXT,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS freshwater_fish_profile (
+    id                INTEGER PRIMARY KEY,
+    profile_key       TEXT NOT NULL UNIQUE,
+    common_name       TEXT NOT NULL,
+    scientific_name   TEXT,
+    temp_min_f        REAL,
+    temp_max_f        REAL,
+    ph_min            REAL,
+    ph_max            REAL,
+    gh_min            REAL,
+    gh_max            REAL,
+    kh_min            REAL,
+    kh_max            REAL,
+    ammonia_ppm_max   REAL,
+    nitrite_ppm_max   REAL,
+    nitrate_ppm_max   REAL,
+    diet              TEXT,
+    notes             TEXT,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS saltwater_invert_profile (
+    id                  INTEGER PRIMARY KEY,
+    profile_key         TEXT NOT NULL UNIQUE,
+    common_name         TEXT NOT NULL,
+    scientific_name     TEXT,
+    temp_min_f          REAL,
+    temp_max_f          REAL,
+    salinity_sg_min     REAL,
+    salinity_sg_max     REAL,
+    ph_min              REAL,
+    ph_max              REAL,
+    alkalinity_dkh_min  REAL,
+    alkalinity_dkh_max  REAL,
+    calcium_ppm_min     REAL,
+    calcium_ppm_max     REAL,
+    diet                TEXT,
+    notes               TEXT,
+    sort_order          INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS freshwater_invert_profile (
+    id                  INTEGER PRIMARY KEY,
+    profile_key         TEXT NOT NULL UNIQUE,
+    common_name         TEXT NOT NULL,
+    scientific_name     TEXT,
+    temp_min_f          REAL,
+    temp_max_f          REAL,
+    ph_min              REAL,
+    ph_max              REAL,
+    gh_min              REAL,
+    gh_max              REAL,
+    kh_min              REAL,
+    kh_max              REAL,
+    diet                TEXT,
+    sensitivity_notes   TEXT,
+    notes               TEXT,
+    sort_order          INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Seed data: Snakes/Lizards migrated unchanged from the retired SPECIES_PROFILES literal (ADR
+-- 0054) — same keys, same numbers, same order. Feeding intervals were already collapsed to a
+-- rounded midpoint there (e.g. "every 5-7 days" -> 6); kept that way here rather than re-expanding
+-- to a range, since `animal`/`enclosure`.feeding_interval_days is itself a single integer.
+INSERT OR IGNORE INTO snake_profile
+    (profile_key, common_name, scientific_name, basking_min_f, basking_max_f, cool_min_f, cool_max_f, night_min_f, night_max_f, humidity_min_pct, humidity_max_pct, feeding_baby_interval_days, feeding_adult_interval_days, notes, sort_order)
+VALUES
+    ('ball_python', 'Ball Python', 'Python regius', 88, 95, 75, 80, 72, 78, 50, 70, 6, 21, 'ReptiFiles, PetMD', 0),
+    ('corn_snake', 'Corn Snake', 'Pantherophis guttatus', 85, 90, 72, 78, 65, 70, 40, 60, 6, 16, 'ReptiFiles, Phoenix Herp', 1),
+    ('california_kingsnake', 'California Kingsnake', 'Lampropeltis californiae', 85, 90, 70, 80, 65, 70, 40, 60, 6, 11, 'Phoenix Herp, Josh''s Frogs', 2),
+    ('western_hognose', 'Western Hognose Snake', 'Heterodon nasicus', 90, 95, 70, 75, 60, 75, 30, 50, 6, 12, 'ReptiFiles, Bio Dude', 3),
+    ('boa_constrictor', 'Boa Constrictor', 'Boa constrictor, Boa imperator', 88, 95, 75, 80, 72, 78, 60, 70, 9, 21, 'ReptiFiles, Dubia', 4),
+    ('honduran_milk_snake', 'Honduran Milk Snake', 'Lampropeltis hondurensis', 85, 88, 72, 78, 65, 75, 40, 60, 6, 11, 'Bio Dude, FurryCritter', 5),
+    ('rosy_boa', 'Rosy Boa', 'Lichanura trivirgata', 90, 95, 75, 85, 65, 70, 30, 50, 9, 16, 'ReptiFiles, That Pet Place', 6),
+    ('kenyan_sand_boa', 'Kenyan Sand Boa', 'Eryx colubrinus', 90, 95, 75, 80, 70, 75, 30, 50, 6, 21, 'ReptiFiles, Bio Dude', 7),
+    ('gopher_snake', 'Gopher Snake / Bullsnake', 'Pituophis catenifer', 85, 90, 75, 80, 65, 70, 30, 50, 6, 11, 'Dubia, Reptiles Magazine', 8),
+    ('carpet_python', 'Carpet Python', 'Morelia spilota', 88, 95, 75, 80, 70, 75, 50, 60, 9, 18, 'Dubia, Shadows Reptiles', 9),
+    ('snake_other', 'Snake (other/unlisted)', NULL, 85, 95, 70, 80, 65, 75, 30, 70, 7, 14, 'Consensus range across the listed snakes above — deliberately wide, pick a named species if possible.', 10);
+
+INSERT OR IGNORE INTO lizard_profile
+    (profile_key, common_name, scientific_name, basking_min_f, basking_max_f, cool_min_f, cool_max_f, night_min_f, night_max_f, humidity_min_pct, humidity_max_pct, feeding_baby_interval_days, feeding_adult_interval_days, notes, sort_order)
+VALUES
+    ('bearded_dragon', 'Bearded Dragon', 'Pogona vitticeps', 105, 115, 70, 85, 60, 72, 30, 40, 1, 1, 'ReptiFiles, PetSmart', 0),
+    ('leopard_gecko', 'Leopard Gecko', 'Eublepharis macularius', 90, 95, 70, 80, 60, 75, 30, 40, 1, 3, 'Bio Dude, PetSmart', 1),
+    ('crested_gecko', 'Crested Gecko', 'Correlophus ciliatus', 78, 82, 70, 75, 65, 72, 60, 80, 1, 2, 'Zen Habitats, Fluker''s', 2),
+    ('blue_tongue_skink', 'Blue-Tongued Skink', 'Tiliqua scincoides intermedia', 105, 115, 70, 80, 65, 75, 40, 60, 1, 2, 'ReptiFiles, Bio Dude', 3),
+    ('african_fat_tailed_gecko', 'African Fat-Tailed Gecko', 'Hemitheconyx caudicinctus', 88, 92, 70, 80, 70, 75, 50, 70, 1, 2, 'Dubia, WebMD', 4),
+    ('veiled_chameleon', 'Veiled Chameleon', 'Chamaeleo calyptratus', 85, 90, 72, 78, 55, 65, 30, 50, 1, 2, 'ReptiFiles, Dubia', 5),
+    ('gargoyle_gecko', 'Gargoyle Gecko', 'Rhacodactylus auriculatus', 82, 85, 70, 75, 65, 72, 50, 70, 1, 2, 'Bio Dude, Josh''s Frogs', 6),
+    ('tegu', 'Argentine Black and White Tegu', 'Salvator merianae', 120, 135, 75, 85, 70, 75, 60, 80, 1, 3, 'ReptiFiles, LafeberVet', 7),
+    ('green_iguana', 'Green Iguana', 'Iguana iguana', 115, 125, 75, 85, 73, 80, 60, 80, 1, 1, 'ReptiFiles, Chewy', 8),
+    ('uromastyx', 'Uromastyx', 'Uromastyx spp.', 120, 130, 80, 85, 70, 80, 10, 35, 1, 1, 'ReptiFiles, That Pet Place', 9),
+    ('lizard_other', 'Lizard (other/unlisted)', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Deliberately left blank — the ten listed lizards alone span a 78-135°F basking range, so a single averaged number would be unsafe. Pick a named species if at all possible.', 10);
+
+-- Seed data: Insects, and the 4 aquatic categories, researched fresh for this Knowledge Base (ADR
+-- 0054) — hobbyist care-sheet consensus ranges, same rigor as the original Snakes/Lizards research
+-- but without a per-row citation trail (no specific source was pinned per figure the way the
+-- original markdown doc did) — treat as a documented starting point to verify/adjust, same caveat
+-- the original doc's own "Ranges are consensus, not law" note already carries.
+INSERT OR IGNORE INTO insect_profile
+    (profile_key, common_name, scientific_name, temp_min_f, temp_max_f, humidity_min_pct, humidity_max_pct, lifespan, diet, notes, sort_order)
+VALUES
+    ('chinese_mantis', 'Chinese Mantis', 'Tenodera sinensis', 70, 85, 50, 70, '~1 year, egg to adult death', 'Live insects (flies, crickets) — daily as a nymph, 2-3x/week as an adult', 'Care-sheet consensus (hobbyist reference ranges).', 0),
+    ('orchid_mantis', 'Orchid Mantis', 'Hymenopus coronatus', 75, 85, 70, 80, '~6-8 months', 'Live flying insects several times a week', 'Care-sheet consensus (hobbyist reference ranges).', 1),
+    ('ghost_mantis', 'Ghost Mantis', 'Phyllocrania paradoxa', 72, 82, 60, 75, '~8-10 months', 'Small live flying insects, 2-3x/week as an adult', 'Care-sheet consensus (hobbyist reference ranges).', 2),
+    ('deaths_head_cockroach', 'Death''s Head Cockroach', 'Blaberus craniifer', 75, 85, 50, 70, '1-2 years as an adult', 'Fruit, vegetables, and protein (fish flakes or dry dog food)', 'Care-sheet consensus (hobbyist reference ranges).', 3),
+    ('madagascar_hissing_cockroach', 'Madagascar Hissing Cockroach', 'Gromphadorhina portentosa', 75, 85, 60, 80, '2-5 years', 'Fruit, vegetables, and protein (fish flakes or dry dog food)', 'Care-sheet consensus (hobbyist reference ranges).', 4),
+    ('hercules_beetle', 'Hercules Beetle', 'Dynastes hercules', 72, 82, 70, 80, '~1 year as an adult (longer as larva)', 'Larva: rotting wood/substrate. Adult: soft fruit.', 'Care-sheet consensus (hobbyist reference ranges).', 5),
+    ('indian_stick_insect', 'Indian Stick Insect', 'Carausius morosus', 68, 80, 50, 70, '~1 year', 'Bramble, ivy, or privet leaves daily', 'Care-sheet consensus (hobbyist reference ranges).', 6),
+    ('macleays_spectre', 'Macleay''s Spectre (Giant Stick Insect)', 'Extatosoma tiaratum', 72, 82, 60, 80, '~18 months', 'Eucalyptus or bramble leaves daily', 'Care-sheet consensus (hobbyist reference ranges).', 7),
+    ('insect', 'Insect (other/unlisted)', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Deliberately left blank — "Insect" spans far too much (mantids, beetles, roaches, stick insects) for one averaged range. Pick a named species if at all possible.', 8);
+
+INSERT OR IGNORE INTO saltwater_fish_profile
+    (profile_key, common_name, scientific_name, temp_min_f, temp_max_f, salinity_sg_min, salinity_sg_max, ph_min, ph_max, ammonia_ppm_max, nitrite_ppm_max, nitrate_ppm_max, diet, notes, sort_order)
+VALUES
+    ('clownfish', 'Ocellaris Clownfish', 'Amphiprion ocellaris', 74, 82, 1.020, 1.025, 8.1, 8.4, 0, 0, 10, 'Omnivore — flake/frozen mysis, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 0),
+    ('banggai_cardinalfish', 'Banggai Cardinalfish', 'Pterapogon kauderni', 75, 82, 1.020, 1.025, 8.1, 8.4, 0, 0, 10, 'Carnivore — mysis/flake, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 1),
+    ('royal_gramma', 'Royal Gramma', 'Gramma loreto', 72, 78, 1.020, 1.025, 8.1, 8.4, 0, 0, 10, 'Carnivore — mysis/flake, 1x/day', 'Care-sheet consensus (hobbyist reference ranges).', 2),
+    ('firefish_goby', 'Firefish Goby', 'Nemateleotris magnifica', 72, 78, 1.020, 1.024, 8.1, 8.4, 0, 0, 10, 'Carnivore — small meaty foods, 2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 3),
+    ('blue_green_chromis', 'Blue-Green Chromis', 'Chromis viridis', 72, 78, 1.020, 1.025, 8.1, 8.4, 0, 0, 15, 'Omnivore — flake/frozen, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 4),
+    ('yellow_tang', 'Yellow Tang', 'Zebrasoma flavescens', 72, 78, 1.023, 1.025, 8.1, 8.4, 0, 0, 10, 'Herbivore — nori/algae sheet, daily', 'Care-sheet consensus (hobbyist reference ranges).', 5),
+    ('six_line_wrasse', 'Six-Line Wrasse', 'Pseudocheilinus hexataenia', 72, 78, 1.021, 1.025, 8.1, 8.4, 0, 0, 10, 'Carnivore — varied small meaty foods, daily', 'Care-sheet consensus (hobbyist reference ranges).', 6),
+    ('mandarinfish', 'Mandarinfish', 'Synchiropus splendidus', 72, 78, 1.021, 1.025, 8.1, 8.4, 0, 0, 10, 'Carnivore — live pods/frozen mysis, several small feedings/day; needs an established tank', 'Care-sheet consensus (hobbyist reference ranges).', 7);
+
+INSERT OR IGNORE INTO freshwater_fish_profile
+    (profile_key, common_name, scientific_name, temp_min_f, temp_max_f, ph_min, ph_max, gh_min, gh_max, kh_min, kh_max, ammonia_ppm_max, nitrite_ppm_max, nitrate_ppm_max, diet, notes, sort_order)
+VALUES
+    ('neon_tetra', 'Neon Tetra', 'Paracheirodon innesi', 72, 78, 6.0, 7.0, 2, 10, 2, 5, 0, 0, 20, 'Omnivore — flake/micro pellets, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 0),
+    ('betta', 'Betta', 'Betta splendens', 76, 82, 6.5, 7.5, 5, 15, 3, 8, 0, 0, 20, 'Carnivore — pellets, 1x/day', 'Care-sheet consensus (hobbyist reference ranges).', 1),
+    ('guppy', 'Guppy', 'Poecilia reticulata', 72, 82, 7.0, 8.0, 8, 20, 4, 10, 0, 0, 20, 'Omnivore — flake, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 2),
+    ('platy', 'Platy', 'Xiphophorus maculatus', 70, 78, 7.0, 8.2, 10, 28, 5, 15, 0, 0, 20, 'Omnivore — flake/veg, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 3),
+    ('zebra_danio', 'Zebra Danio', 'Danio rerio', 64, 75, 6.5, 7.5, 5, 12, 4, 8, 0, 0, 20, 'Omnivore — flake, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 4),
+    ('cherry_barb', 'Cherry Barb', 'Puntius titteya', 73, 79, 6.0, 7.5, 2, 12, 1, 5, 0, 0, 20, 'Omnivore — flake, 1-2x/day', 'Care-sheet consensus (hobbyist reference ranges).', 5),
+    ('corydoras_catfish', 'Corydoras Catfish', 'Corydoras spp.', 72, 78, 6.5, 7.5, 2, 12, 2, 5, 0, 0, 20, 'Omnivore, bottom feeder — sinking pellets, daily', 'Care-sheet consensus (hobbyist reference ranges).', 6),
+    ('angelfish', 'Angelfish', 'Pterophyllum scalare', 76, 84, 6.5, 7.5, 3, 8, 2, 5, 0, 0, 20, 'Omnivore — flake/pellets, 1x/day', 'Care-sheet consensus (hobbyist reference ranges).', 7);
+
+INSERT OR IGNORE INTO saltwater_invert_profile
+    (profile_key, common_name, scientific_name, temp_min_f, temp_max_f, salinity_sg_min, salinity_sg_max, ph_min, ph_max, alkalinity_dkh_min, alkalinity_dkh_max, calcium_ppm_min, calcium_ppm_max, diet, notes, sort_order)
+VALUES
+    ('cleaner_shrimp', 'Skunk Cleaner Shrimp', 'Lysmata amboinensis', 74, 82, 1.020, 1.025, 8.1, 8.4, 8, 12, 380, 450, 'Scavenger/omnivore — meaty foods and tank leftovers', 'Care-sheet consensus (hobbyist reference ranges).', 0),
+    ('peppermint_shrimp', 'Peppermint Shrimp', 'Lysmata wurdemanni', 74, 82, 1.020, 1.025, 8.1, 8.4, 8, 12, 380, 450, 'Omnivore — meaty foods; also eats Aiptasia anemones', 'Care-sheet consensus (hobbyist reference ranges).', 1),
+    ('blue_leg_hermit_crab', 'Blue Leg Hermit Crab', 'Clibanarius tricolor', 74, 82, 1.020, 1.025, 8.1, 8.4, 8, 12, 380, 450, 'Omnivore scavenger — algae and tank leftovers', 'Care-sheet consensus (hobbyist reference ranges).', 2),
+    ('emerald_crab', 'Emerald Crab', 'Mithraculus sculptus', 74, 82, 1.022, 1.025, 8.1, 8.4, 8, 12, 380, 450, 'Herbivore — algae grazer', 'Care-sheet consensus (hobbyist reference ranges).', 3),
+    ('turbo_snail', 'Turbo Snail', 'Turbo spp.', 74, 82, 1.022, 1.026, 8.1, 8.4, 8, 12, 380, 450, 'Herbivore — algae grazer', 'Care-sheet consensus (hobbyist reference ranges).', 4),
+    ('feather_duster_worm', 'Feather Duster Worm', 'Bispira spp.', 74, 82, 1.022, 1.025, 8.1, 8.4, 8, 12, 380, 450, 'Filter feeder — phytoplankton', 'Care-sheet consensus (hobbyist reference ranges).', 5),
+    ('green_star_polyp', 'Green Star Polyp', 'Pachyclavularia violacea', 75, 82, 1.023, 1.025, 8.1, 8.4, 8, 11, 400, 450, 'Photosynthetic (coral) — occasional target feeding helps but isn''t required', 'Care-sheet consensus (hobbyist reference ranges).', 6),
+    ('condylactis_anemone', 'Condylactis Anemone', 'Condylactis gigantea', 75, 82, 1.023, 1.025, 8.1, 8.4, 8, 12, 400, 450, 'Carnivore — meaty foods, 2-3x/week', 'Care-sheet consensus (hobbyist reference ranges).', 7);
+
+INSERT OR IGNORE INTO freshwater_invert_profile
+    (profile_key, common_name, scientific_name, temp_min_f, temp_max_f, ph_min, ph_max, gh_min, gh_max, kh_min, kh_max, diet, sensitivity_notes, notes, sort_order)
+VALUES
+    ('cherry_shrimp', 'Cherry Shrimp', 'Neocaridina davidi', 65, 78, 6.5, 8.0, 6, 10, 2, 6, 'Omnivore — algae and biofilm grazer', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 0),
+    ('crystal_red_shrimp', 'Crystal Red Shrimp', 'Caridina cf. cantonensis', 65, 73, 6.0, 6.8, 4, 6, 0, 2, 'Omnivore — biofilm and specialized shrimp food', 'Copper-sensitive; needs very stable water parameters.', 'Care-sheet consensus (hobbyist reference ranges).', 1),
+    ('amano_shrimp', 'Amano Shrimp', 'Caridina multidentata', 64, 78, 6.5, 7.5, 6, 8, 2, 6, 'Algae grazer', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 2),
+    ('nerite_snail', 'Nerite Snail', 'Neritina natalensis', 72, 78, 7.0, 8.0, 8, 15, 4, 10, 'Algae grazer', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 3),
+    ('mystery_snail', 'Mystery Snail', 'Pomacea bridgesii', 68, 82, 7.0, 8.0, 8, 18, 4, 10, 'Omnivore — algae and vegetables', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 4),
+    ('malaysian_trumpet_snail', 'Malaysian Trumpet Snail', 'Melanoides tuberculata', 70, 80, 7.0, 8.0, 6, 15, 3, 8, 'Detritivore — substrate scavenger', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 5),
+    ('dwarf_crayfish', 'Dwarf Crayfish (CPO)', 'Cambarellus patzcuarensis', 68, 78, 6.5, 8.0, 6, 15, 3, 8, 'Omnivore scavenger', 'Copper-sensitive; semi-aggressive toward small tankmates.', 'Care-sheet consensus (hobbyist reference ranges).', 6),
+    ('assassin_snail', 'Assassin Snail', 'Clea helena', 70, 78, 7.0, 8.0, 8, 15, 3, 8, 'Carnivore — eats pest snails', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 7);

@@ -10,15 +10,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from active_plugins import is_plugin_active
 from db.db import get_connection
 from plugins.govee_ble import identity as govee_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
+from web import image_storage as img
 from web.outbox import write_command
+from web.status import nearest_target_time
 from web.queries import (
     ANIMAL_CONDITIONS, CARE_EVENT_KINDS, FEEDING_RESULTS, PREY_STATES, SHED_COMPLETENESS,
     SHED_STUCK_LOCATION_LABELS, _latest_reading, _normalize_datetime_local, _sparklines, days_since,
-    log_care_event,
+    get_latest_feeding_detail_any, log_care_event,
 )
 
 
@@ -134,13 +137,7 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             (enclosure_id,),
         )]
         for plug in enclosure["plugs"]:
-            # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
-            # Timer-Controlled Plug — see CONTEXT.md: Timer-Controlled; RHA-95.
-            detected = _detect_schedule(conn, plug["id"]) if (
-                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
-            ) else {"on_time": None, "off_time": None}
-            plug["detected_on_time"] = detected["on_time"]
-            plug["detected_off_time"] = detected["off_time"]
+            _attach_schedule(conn, plug)
             plug["last_command"] = _command_status(conn, plug)
             plug["current_status"] = _current_plug_status(conn, plug)
             # "everything on one switch" — see CONTEXT.md: Plug, ADR 0006. Names the *other*
@@ -163,12 +160,13 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         # Log Feeding Dialog defaults (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — one entry
         # per Who ("" = whole enclosure, else str(animal_id)), computed once here rather than
         # fetched live each time the dialog's Who field changes, since Enclosures here hold few
-        # Animals. "last_detail" (whole-enclosure only) is kept separately for the Feeding row's
-        # own "Last fed:" preview, shown before the dialog is even opened.
+        # Animals. "last_detail" is the single most recent Feeding regardless of Who (whole-
+        # enclosure or Spot-feed alike) — the Feeding row's own "Last fed" preview cares about
+        # whichever Feeding actually happened most recently, not just the whole-enclosure one.
         feeding_defaults_by_who = {"": get_last_feeding_detail(enclosure_id)}
         for animal in enclosure["animals"]:
             feeding_defaults_by_who[str(animal["id"])] = get_last_feeding_detail(enclosure_id, animal["id"])
-        enclosure["care"]["feeding"]["last_detail"] = feeding_defaults_by_who[""]
+        enclosure["care"]["feeding"]["last_detail"] = get_latest_feeding_detail_any(enclosure_id)
         enclosure["care"]["feeding"]["defaults_by_who"] = feeding_defaults_by_who
 
         # Plant / Plant Health (see CONTEXT.md: Plant, Plant Health) — only ever populated for a
@@ -351,7 +349,9 @@ def update_enclosure(enclosure_id: int, name: str, enclosure_type: str, bioactiv
                       watering: int, spot: int, deep: int,
                       room_id: int | None, fallback_sensor_id: int | None,
                       show_feeding: bool = True, show_watering: bool = True,
-                      show_spot_clean: bool = True, show_deep_clean: bool = True) -> None:
+                      show_spot_clean: bool = True, show_deep_clean: bool = True,
+                      dashboard_thumbnail_source: str = "enclosure",
+                      dashboard_thumbnail_animal_id: int | None = None) -> None:
     """room_id and fallback_sensor_id see CONTEXT.md: Room, Fallback Sensor. The Admin UI only ever
     offers a Fallback Sensor dropdown scoped to the chosen Room's own Sensors and only when this
     Enclosure has none of its own, so no extra cross-check is done here — display logic (see
@@ -366,18 +366,29 @@ def update_enclosure(enclosure_id: int, name: str, enclosure_type: str, bioactiv
     show_feeding/watering/spot_clean/deep_clean are each Care kind's Dashboard visibility (see
     CONTEXT.md: Care Interval) — unlike Animal/Sensor/Plug's show_on_dashboard there's no per-row
     edit page for these, so they're saved together with the rest of this same Enclosure Settings
-    form instead of through a standalone toggle endpoint."""
+    form instead of through a standalone toggle endpoint.
+
+    dashboard_thumbnail_source/dashboard_thumbnail_animal_id (see CONTEXT.md: Dashboard Thumbnail)
+    pick which photo, if any, this Enclosure's own Dashboard panel shows. dashboard_thumbnail_animal_id
+    is only meaningful alongside source='animal' — like Fallback Sensor, the Admin UI's dropdown
+    only ever offers this Enclosure's own Animals, so no extra cross-check is done here."""
     _validate_enclosure_type(enclosure_type)
+    if dashboard_thumbnail_source not in ("enclosure", "animal"):
+        raise ValueError(f"Unknown Dashboard Thumbnail source: {dashboard_thumbnail_source!r}")
+    if dashboard_thumbnail_source != "animal":
+        dashboard_thumbnail_animal_id = None
     with get_connection() as conn:
         conn.execute(
             """UPDATE enclosure SET name = ?, enclosure_type = ?, bioactive = ?, feeding_interval_days = ?,
                                      watering_interval_days = ?, spot_clean_interval_days = ?,
                                      deep_clean_interval_days = ?, room_id = ?, fallback_sensor_id = ?,
                                      show_feeding_on_dashboard = ?, show_watering_on_dashboard = ?,
-                                     show_spot_clean_on_dashboard = ?, show_deep_clean_on_dashboard = ?
+                                     show_spot_clean_on_dashboard = ?, show_deep_clean_on_dashboard = ?,
+                                     dashboard_thumbnail_source = ?, dashboard_thumbnail_animal_id = ?
                                      WHERE id = ?""",
             (name, enclosure_type, int(bioactive), feeding, watering, spot, deep, room_id, fallback_sensor_id,
-             int(show_feeding), int(show_watering), int(show_spot_clean), int(show_deep_clean), enclosure_id),
+             int(show_feeding), int(show_watering), int(show_spot_clean), int(show_deep_clean),
+             dashboard_thumbnail_source, dashboard_thumbnail_animal_id, enclosure_id),
         )
 
 
@@ -407,6 +418,21 @@ def _get_or_create_unassigned_enclosure(conn, exclude_id: int | None = None) -> 
         return row["id"]
     cur = conn.execute("INSERT INTO enclosure (name) VALUES ('Unassigned')")
     return cur.lastrowid
+
+
+def set_enclosure_image(enclosure_id: int, content_type: str | None, data: bytes) -> None:
+    """Enclosure Photo (see CONTEXT.md: Enclosure Photo) — uploaded from the Enclosure Settings
+    form. Raises ValueError (unsupported type/too large — see web/image_storage.py) before touching
+    the row, so a rejected upload leaves the previous photo in place."""
+    filename = img.save_image("enclosures", enclosure_id, content_type, data)
+    with get_connection() as conn:
+        conn.execute("UPDATE enclosure SET image_filename = ? WHERE id = ?", (filename, enclosure_id))
+
+
+def remove_enclosure_image(enclosure_id: int) -> None:
+    img.remove_image("enclosures", enclosure_id)
+    with get_connection() as conn:
+        conn.execute("UPDATE enclosure SET image_filename = NULL WHERE id = ?", (enclosure_id,))
 
 
 def delete_enclosure(enclosure_id: int) -> None:
@@ -463,6 +489,18 @@ def get_animal(animal_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def list_animals() -> list[dict]:
+    """Every Animal across every Enclosure, with its Enclosure's name alongside it — for the
+    Backfill Wizard's "pick an Animal" step (see CONTEXT.md: Backfill Wizard), which has no other
+    reason to list Animals across the whole install the way list_enclosures()/list_rooms() already
+    do for their own entities."""
+    with get_connection() as conn:
+        return [dict(row) for row in conn.execute(
+            """SELECT a.*, e.name AS enclosure_name FROM animal a
+               JOIN enclosure e ON e.id = a.enclosure_id ORDER BY a.name"""
+        )]
+
+
 def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | None,
                    scientific: str | None, dob: str | None) -> None:
     with get_connection() as conn:
@@ -470,6 +508,21 @@ def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | No
             "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ? WHERE id = ?",
             (enclosure_id, name, common or None, scientific or None, dob or None, animal_id),
         )
+
+
+def set_animal_image(animal_id: int, content_type: str | None, data: bytes) -> None:
+    """Animal Photo (see CONTEXT.md: Animal Photo) — uploaded from the Animal's own Edit page.
+    Raises ValueError (unsupported type/too large — see web/image_storage.py) before touching the
+    row, so a rejected upload leaves the previous photo in place."""
+    filename = img.save_image("animals", animal_id, content_type, data)
+    with get_connection() as conn:
+        conn.execute("UPDATE animal SET image_filename = ? WHERE id = ?", (filename, animal_id))
+
+
+def remove_animal_image(animal_id: int) -> None:
+    img.remove_image("animals", animal_id)
+    with get_connection() as conn:
+        conn.execute("UPDATE animal SET image_filename = NULL WHERE id = ?", (animal_id,))
 
 
 def set_animal_dashboard_visibility(animal_id: int, show_on_dashboard: bool) -> None:
@@ -785,7 +838,9 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
                     target_on_time: str | None, target_off_time: str | None,
                     room_id: int | None, enclosure_ids: list[int],
                     controller_kind: str, target_temp_c: float | None,
-                    target_humidity_pct: float | None, always_on: bool = False) -> None:
+                    target_humidity_pct: float | None, always_on: bool = False,
+                    target_on_time_2: str | None = None, target_off_time_2: str | None = None,
+                    target_on_time_3: str | None = None, target_off_time_3: str | None = None) -> None:
     """See CONTEXT.md: Tracking Mode, Target Schedule, Plug, Controller Kind, Always On. Raised as
     ValueError so the Admin route can show a friendly message instead of a raw SQLite CHECK failure
     (the Room-XOR-Enclosure-set rule can't be a CHECK at all — it depends on plug_enclosure row
@@ -803,9 +858,20 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
     # Target Schedule's both-or-neither rule applies only to a Timer-Controlled Plug, Smart or
     # Manual alike (see ADR 0012, RHA-95) — 'none' carries no schedule at all any more, and Always
     # On (see CONTEXT.md) is 'none''s own, separate, optional attribute, not a third option sharing
-    # this same case.
-    if controller_kind == "timer" and bool(target_on_time) != bool(target_off_time):
-        raise ValueError("Enter both a target on-time and off-time, or leave both blank.")
+    # this same case. A Timer-Controlled Plug can carry up to 3 such cycles (ADR 0057) — each is its
+    # own both-or-neither pair, and cycles 2/3 are contiguous (2 needs 1, 3 needs 2) so there's never
+    # a gap in which cycle is actually configured.
+    if controller_kind == "timer":
+        if bool(target_on_time) != bool(target_off_time):
+            raise ValueError("Enter both a target on-time and off-time, or leave both blank.")
+        if bool(target_on_time_2) != bool(target_off_time_2):
+            raise ValueError("Enter both a Cycle 2 on-time and off-time, or leave both blank.")
+        if bool(target_on_time_3) != bool(target_off_time_3):
+            raise ValueError("Enter both a Cycle 3 on-time and off-time, or leave both blank.")
+        if target_on_time_2 and not target_on_time:
+            raise ValueError("Cycle 2 needs Cycle 1 set first.")
+        if target_on_time_3 and not target_on_time_2:
+            raise ValueError("Cycle 3 needs Cycle 2 set first.")
     if bool(room_id) == bool(enclosure_ids):
         raise ValueError("A Plug needs exactly one parent — pick a Room, or one or more Enclosures, not both or neither.")
     if controller_kind == "thermostat" and target_temp_c is None:
@@ -820,7 +886,9 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
                  target_humidity_pct: float | None = None, always_on: bool = False,
-                 plug_group_id: int | None = None) -> int:
+                 plug_group_id: int | None = None,
+                 target_on_time_2: str | None = None, target_off_time_2: str | None = None,
+                 target_on_time_3: str | None = None, target_off_time_3: str | None = None) -> int:
     enclosure_ids = enclosure_ids or []
     # Always On only means anything alongside controller_kind = 'none' — see CONTEXT.md: Always On.
     # Normalized (not an error) the same way a stray Target Schedule alongside a Controller Kind is
@@ -828,13 +896,16 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
     if controller_kind != "none":
         always_on = False
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
-                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on)
+                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on,
+                   target_on_time_2, target_off_time_2, target_on_time_3, target_off_time_3)
     if controller_kind != "timer":
         # Target Schedule only means anything for a Timer-Controlled Plug (see CONTEXT.md:
         # Controller Kind, Timer-Controlled; RHA-95) — not meaningful for 'none' (nothing to
         # compare a hand-switched Plug's actual behavior against) or Thermostat-/Hydrostat-
-        # Controlled (see ADR 0008).
+        # Controlled (see ADR 0008). Clears all 3 cycles (ADR 0057), not just Cycle 1.
         target_on_time = target_off_time = None
+        target_on_time_2 = target_off_time_2 = None
+        target_on_time_3 = target_off_time_3 = None
     if controller_kind != "thermostat":
         target_temp_c = None
     if controller_kind != "hydrostat":
@@ -848,11 +919,13 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         cur = conn.execute(
             """INSERT INTO plug (room_id, plug_group_id, label, purpose, tracking_mode, plugin, external_id,
                                   plugin_config, show_on_dashboard, target_on_time, target_off_time, always_on,
-                                  controller_kind, target_temp_c, target_humidity_pct)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  controller_kind, target_temp_c, target_humidity_pct,
+                                  target_on_time_2, target_off_time_2, target_on_time_3, target_off_time_3)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (room_id, plug_group_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
              show_on_dashboard, target_on_time or None, target_off_time or None, int(always_on),
-             controller_kind, target_temp_c, target_humidity_pct),
+             controller_kind, target_temp_c, target_humidity_pct,
+             target_on_time_2 or None, target_off_time_2 or None, target_on_time_3 or None, target_off_time_3 or None),
         )
         plug_id = cur.lastrowid
         for eid in enclosure_ids:
@@ -911,13 +984,7 @@ def get_plug(plug_id: int) -> dict | None:
         plug["enclosure_ids"] = [r["enclosure_id"] for r in conn.execute(
             "SELECT enclosure_id FROM plug_enclosure WHERE plug_id = ?", (plug_id,)
         )]
-        # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
-        # Timer-Controlled Plug — see CONTEXT.md: Timer-Controlled; RHA-95.
-        detected = _detect_schedule(conn, plug_id) if (
-            plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
-        ) else {"on_time": None, "off_time": None}
-        plug["detected_on_time"] = detected["on_time"]
-        plug["detected_off_time"] = detected["off_time"]
+        _attach_schedule(conn, plug)
         plug["last_command"] = _command_status(conn, plug)
         # Data Capture (see CONTEXT.md, ADR 0009) only ever exists for a Smart Plug.
         plug["latest_reading"] = _latest_plug_reading(conn, plug_id) if plug["tracking_mode"] == "smart" else None
@@ -965,6 +1032,25 @@ def _detect_schedule(conn, plug_id: int) -> dict:
         "on_time": utc_clock_to_local(on_row["recorded_at"]) if on_row else None,
         "off_time": utc_clock_to_local(off_row["recorded_at"]) if off_row else None,
     }
+
+
+def _attach_schedule(conn, plug: dict) -> None:
+    """Attaches Detected Schedule plus, for a Timer-Controlled Plug's up-to-3 cycles (see
+    CONTEXT.md: Target Schedule; ADR 0057), which configured cycle each detected time is nearest
+    to — the Timer Warning comparison runs against that matched cycle, not always cycle 1. Shared
+    by every place a plug dict gets built for display (get_enclosure/get_plug/list_plugs/get_room),
+    which all used to duplicate this block before cycles existed."""
+    if plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer":
+        detected = _detect_schedule(conn, plug["id"])
+    else:
+        detected = {"on_time": None, "off_time": None}
+    plug["detected_on_time"] = detected["on_time"]
+    plug["detected_off_time"] = detected["off_time"]
+    on_cycles = [plug["target_on_time"], plug["target_on_time_2"], plug["target_on_time_3"]]
+    off_cycles = [plug["target_off_time"], plug["target_off_time_2"], plug["target_off_time_3"]]
+    plug["matched_target_on_time"] = nearest_target_time(detected["on_time"], on_cycles)
+    plug["matched_target_off_time"] = nearest_target_time(detected["off_time"], off_cycles)
+    plug["has_target_schedule"] = any(on and off for on, off in zip(on_cycles, off_cycles))
 
 
 _TUYA_POLL_INTERVAL_SECONDS = 5  # matches plugins/tuya_lan/plugin.py's own POLL_INTERVAL_SECONDS —
@@ -1069,13 +1155,7 @@ def list_plugs() -> list[dict]:
                     (plug["id"],),
                 )]
                 plug["parent_label"] = ", ".join(names) if names else "—"
-            # Detected Schedule only means anything for a Smart, Timer-Controlled Plug — see
-            # CONTEXT.md: Detected Schedule, Timer-Controlled; RHA-95.
-            detected = _detect_schedule(conn, plug["id"]) if (
-                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
-            ) else {"on_time": None, "off_time": None}
-            plug["detected_on_time"] = detected["on_time"]
-            plug["detected_off_time"] = detected["off_time"]
+            _attach_schedule(conn, plug)
             plug["last_command"] = _command_status(conn, plug)
         return plugs
 
@@ -1106,16 +1186,22 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
                  room_id: int | None = None, enclosure_ids: list[int] | None = None,
                  controller_kind: str = "none", target_temp_c: float | None = None,
                  target_humidity_pct: float | None = None, auto_update_enabled: bool = True,
-                 always_on: bool = False) -> None:
+                 always_on: bool = False,
+                 target_on_time_2: str | None = None, target_off_time_2: str | None = None,
+                 target_on_time_3: str | None = None, target_off_time_3: str | None = None) -> None:
     """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Plug
     (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     enclosure_ids = enclosure_ids or []
     if controller_kind != "none":
         always_on = False  # see create_plug's identical normalization, and CONTEXT.md: Always On
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
-                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on)
+                   room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on,
+                   target_on_time_2, target_off_time_2, target_on_time_3, target_off_time_3)
     if controller_kind != "timer":
-        target_on_time = target_off_time = None  # see create_plug's identical normalization
+        # see create_plug's identical normalization; clears all 3 cycles (ADR 0057).
+        target_on_time = target_off_time = None
+        target_on_time_2 = target_off_time_2 = None
+        target_on_time_3 = target_off_time_3 = None
     if controller_kind != "thermostat":
         target_temp_c = None
     if controller_kind != "hydrostat":
@@ -1126,24 +1212,39 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
     with get_connection() as conn:
         _check_external_id_available(conn, plugin, external_id, exclude_plug_id=plug_id)
         current = conn.execute(
-            "SELECT target_on_time, target_off_time, timer_ack_on_time, timer_ack_off_time FROM plug WHERE id = ?",
+            """SELECT target_on_time, target_off_time, target_on_time_2, target_off_time_2,
+                      target_on_time_3, target_off_time_3, timer_ack_on_time, timer_ack_off_time
+               FROM plug WHERE id = ?""",
             (plug_id,),
         ).fetchone()
-        new_targets = (target_on_time or None, target_off_time or None)
+        new_targets = (
+            target_on_time or None, target_off_time or None,
+            target_on_time_2 or None, target_off_time_2 or None,
+            target_on_time_3 or None, target_off_time_3 or None,
+        )
         # A cleared Timer Warning only holds against the Target Schedule it was cleared under — see
-        # CONTEXT.md: Timer Warning — so changing the target re-arms it.
-        if current is not None and (current["target_on_time"], current["target_off_time"]) != new_targets:
+        # CONTEXT.md: Timer Warning — so changing any of its up-to-3 cycles (ADR 0057) re-arms it.
+        current_targets = (
+            current["target_on_time"], current["target_off_time"],
+            current["target_on_time_2"], current["target_off_time_2"],
+            current["target_on_time_3"], current["target_off_time_3"],
+        ) if current is not None else None
+        if current_targets is not None and current_targets != new_targets:
             ack_on, ack_off = None, None
         else:
             ack_on, ack_off = (current["timer_ack_on_time"], current["timer_ack_off_time"]) if current else (None, None)
         conn.execute(
             """UPDATE plug SET room_id = ?, label = ?, purpose = ?, tracking_mode = ?,
                                 plugin = ?, external_id = ?, plugin_config = ?,
-                                target_on_time = ?, target_off_time = ?, always_on = ?, auto_update_enabled = ?,
+                                target_on_time = ?, target_off_time = ?,
+                                target_on_time_2 = ?, target_off_time_2 = ?,
+                                target_on_time_3 = ?, target_off_time_3 = ?,
+                                always_on = ?, auto_update_enabled = ?,
                                 controller_kind = ?, target_temp_c = ?, target_humidity_pct = ?,
                                 timer_ack_on_time = ?, timer_ack_off_time = ? WHERE id = ?""",
             (room_id, label, purpose, tracking_mode, plugin, external_id, plugin_config,
-             new_targets[0], new_targets[1], int(always_on),
+             new_targets[0], new_targets[1], new_targets[2], new_targets[3], new_targets[4], new_targets[5],
+             int(always_on),
              int(auto_update_enabled), controller_kind, target_temp_c, target_humidity_pct,
              ack_on, ack_off, plug_id),
         )
@@ -1392,12 +1493,18 @@ def send_plug_command(plug_id: int, is_on: bool, note: str | None = None) -> dic
 
     Sending a Command to a Smart Plug whose Auto-Update is currently paused resumes Auto-Update as
     a side effect (see CONTEXT.md: Auto-Update) — otherwise the confirming plug_state event would
-    be silently dropped by Ingest's own auto_update_enabled = 1 gate."""
+    be silently dropped by Ingest's own auto_update_enabled = 1 gate.
+
+    A Smart Plug whose Plugin is deactivated (see CONTEXT.md: Active Plugin) refuses outright rather
+    than logging a Command nothing will ever execute — a Manual Plug has no Plugin to check, so it's
+    never blocked here."""
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM plug WHERE id = ?", (plug_id,)).fetchone()
         if row is None:
             raise ValueError(f"No such Plug: {plug_id}")
         plug = dict(row)
+        if plug["tracking_mode"] == "smart" and not is_plugin_active(plug["plugin"]):
+            raise ValueError(f"{plug['plugin']} is deactivated — reactivate it in Admin before sending commands.")
         is_interruption = plug["controller_kind"] != "none"
         cur = conn.execute(
             "INSERT INTO plug_command_log (plug_id, is_on, is_interruption, note) VALUES (?, ?, ?, ?)",
@@ -1444,13 +1551,7 @@ def get_room(room_id: int) -> dict | None:
             sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
         room["plugs"] = [_decode_plug(dict(r)) for r in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room_id,))]
         for plug in room["plugs"]:
-            # Detected Schedule (see CONTEXT.md, ADR 0012) only means anything for a Smart,
-            # Timer-Controlled Plug — see CONTEXT.md: Timer-Controlled; RHA-95.
-            detected = _detect_schedule(conn, plug["id"]) if (
-                plug["tracking_mode"] == "smart" and plug["controller_kind"] == "timer"
-            ) else {"on_time": None, "off_time": None}
-            plug["detected_on_time"] = detected["on_time"]
-            plug["detected_off_time"] = detected["off_time"]
+            _attach_schedule(conn, plug)
             plug["last_command"] = _command_status(conn, plug)
             plug["current_status"] = _current_plug_status(conn, plug)
         room["enclosures"] = [dict(r) for r in conn.execute("SELECT * FROM enclosure WHERE room_id = ? ORDER BY name", (room_id,))]

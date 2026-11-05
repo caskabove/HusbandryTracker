@@ -36,7 +36,7 @@
                 <label>Common species <input type="text" name="common" placeholder="e.g. Ball Python"></label>
                 <label>Scientific name <input type="text" name="scientific"></label>
                 <label>Date of birth <input type="date" name="dob"></label>
-                <button type="submit">Add Animal</button>
+                <button type="submit">{% if enclosure.animals %}Add Another Animal to this enclosure{% else %}Add Animal{% endif %}</button>
             </form>
 
             {% if enclosure.bioactive %}
@@ -63,7 +63,8 @@
                   onclick="return onWizardContinueClick(event, 'setup-animal-form', 'Animal', 'Add Animal'){% if enclosure.bioactive %} && onWizardContinueClick(event, 'setup-plant-form', 'Plant', 'Add Plant'){% endif %}">Continue</a></p>
         </section>
     </main>
+    {% include "_species_profile_data.html" %}
     <script src="/static/app.js?v={{ asset_version }}"></script>
-    {% if species_profile %}<script>prefillAnimalSpecies('{{ species_profile }}');</script>{% endif %}
+    {% if species_profile and not enclosure.animals %}<script>prefillAnimalSpecies('{{ species_profile }}');</script>{% endif %}
 </body>
 </html>

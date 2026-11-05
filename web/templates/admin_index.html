@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
+    {% import "_plug_cycles_macro.html" as plug_cycles %}
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>Husbandry Tracker Plugs and Sensors</h1>
@@ -76,7 +77,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="8" class="empty">No sensors yet — add one on <a href="/admin/app">Admin</a>.</td></tr>
+                    <tr><td colspan="8" class="empty">No sensors yet — add one below.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -104,10 +105,14 @@
                     {% endfor %}
                     </tbody>
                 </table>
+                {% set group_blocked = not is_plugin_active("tuya_lan") %}
                 <form method="post" action="/admin/plug-groups/{{ g.id }}/command" class="admin-form plug-command-form">
-                    <button type="submit" name="is_on" value="true">All On</button>
-                    <button type="submit" name="is_on" value="false">All Off</button>
+                    <button type="submit" name="is_on" value="true" {% if group_blocked %}disabled{% endif %}>All On</button>
+                    <button type="submit" name="is_on" value="false" {% if group_blocked %}disabled{% endif %}>All Off</button>
                 </form>
+                {% if group_blocked %}
+                <p class="empty">tuya_lan is deactivated — reactivate it in Admin to send commands.</p>
+                {% endif %}
                 <form method="post" action="/admin/plug-groups/{{ g.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete Plug Group {{ g.name }}? Its {{ g.members|length }} Plug(s) stay, ungrouped.');">
                     <button type="submit" class="danger">Delete Group (keeps Plugs)</button>
                 </form>
@@ -136,17 +141,17 @@
                             {% elif p.always_on %}
                             <span class="pill status-green">Always On</span>
                             {% elif p.tracking_mode == "manual" %}
-                                {% if p.target_on_time and p.target_off_time %}
-                                <span class="pill status-unknown">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                                {% if p.has_target_schedule %}
+                                <span class="pill status-unknown">{{ plug_cycles.cycles_text(p) }}</span>
                                 {% else %}
                                 <span class="pill status-unknown">no target schedule set</span>
                                 {% endif %}
                             {% else %}
-                                {% set on_drift = acknowledged_drift_status(p.target_on_time, p.detected_on_time, p.timer_ack_on_time, settings.schedule_drift_threshold_minutes) %}
-                                {% set off_drift = acknowledged_drift_status(p.target_off_time, p.detected_off_time, p.timer_ack_off_time, settings.schedule_drift_threshold_minutes) %}
+                                {% set on_drift = acknowledged_drift_status(p.matched_target_on_time, p.detected_on_time, p.timer_ack_on_time, settings.schedule_drift_threshold_minutes) %}
+                                {% set off_drift = acknowledged_drift_status(p.matched_target_off_time, p.detected_off_time, p.timer_ack_off_time, settings.schedule_drift_threshold_minutes) %}
                                 {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("yellow" if (on_drift.value == "yellow" or off_drift.value == "yellow") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown")) %}
-                                {% if p.target_on_time and p.target_off_time %}
-                                <span class="pill status-{{ pill_status }}">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                                {% if p.has_target_schedule %}
+                                <span class="pill status-{{ pill_status }}">{{ plug_cycles.cycles_text(p) }}</span>
                                 {% else %}
                                 <span class="pill status-unknown">no target schedule set</span>
                                 {% endif %}
@@ -155,12 +160,257 @@
                         <td><a href="/admin/plugs/{{ p.id }}/edit">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="empty">No plugs yet — add one on <a href="/admin/app">Admin</a>.</td></tr>
+                    <tr><td colspan="6" class="empty">No plugs yet — add one below.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
         </section>
+
+        <section class="admin-card">
+            <details>
+                <summary>+ Add Sensor</summary>
+                <form method="post" action="/admin/sensors" class="admin-form"
+                      onsubmit="return validateSensorTargetRangeOnSubmit(event, 'add-sensor-global-tracking-mode', 'add-sensor-global-range-error')">
+                    <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
+                    <label>Tracking Mode
+                        <select id="add-sensor-global-tracking-mode" name="tracking_mode" onchange="onTrackingModeChange(this, 'add-sensor-global-smart', 'add-sensor-global-manual')">
+                            <option value="smart">Smart (Govee BLE sensor)</option>
+                            <option value="manual">Manual (hand-logged readings)</option>
+                        </select>
+                    </label>
+                    <div id="add-sensor-global-smart" class="mode-fields">
+                        <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+                        <div class="discover-device">
+                            <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
+                            <div class="discover-results" style="display:none"></div>
+                        </div>
+                    </div>
+                    <div id="add-sensor-global-manual" class="mode-fields" style="display:none">
+                        <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric.</p>
+                    </div>
+                    <p id="add-sensor-global-range-error" class="field-error-message" style="display:none">
+                        Enter both a min and max for at least one Target Range below.</p>
+                    <label>Belongs to
+                        <select name="parent_type"
+                                onchange="onToggleChange(this, 'enclosure', 'add-sensor-global-enclosure', 'add-sensor-global-room'); if (this.value === 'enclosure') { onGlobalSensorEnclosureChange(document.getElementById('add-sensor-global-enclosure-select'), 'add-sensor-global-species-profile', 'add-sensor-global-zone-wrap', 'add-sensor-global-zone'); }">
+                            <option value="enclosure" selected>Enclosure</option>
+                            <option value="room">Room</option>
+                        </select>
+                    </label>
+                    <div id="add-sensor-global-enclosure" class="mode-fields">
+                        <label>Enclosure
+                            <select id="add-sensor-global-enclosure-select" name="enclosure_id"
+                                    onchange="onGlobalSensorEnclosureChange(this, 'add-sensor-global-species-profile', 'add-sensor-global-zone-wrap', 'add-sensor-global-zone')">
+                                {% for e in enclosures %}
+                                <option value="{{ e.id }}" data-enclosure-type="{{ e.enclosure_type }}">{{ e.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>Species Profile <small>(optional — suggests starting Target Range values below)</small>
+                            <select id="add-sensor-global-species-profile"
+                                    onchange="onGlobalSensorSpeciesProfileChange(this, 'add-sensor-global-zone-wrap', 'add-sensor-global-zone', 'add-sensor-global-enclosure-select')"></select>
+                        </label>
+                        <label id="add-sensor-global-zone-wrap" style="display:none">This sensor monitors
+                            <select id="add-sensor-global-zone"
+                                    onchange="onGlobalSensorZoneChange(this, 'add-sensor-global-species-profile', 'add-sensor-global-enclosure-select')">
+                                <option value="warm">Warm side</option>
+                                <option value="cool">Cool side</option>
+                                <option value="ambient" selected>Single ambient sensor (whole enclosure)</option>
+                            </select>
+                        </label>
+                        {# One Target Range/Volatility block per Enclosure Type (see CONTEXT.md:
+                           Enclosure Type, schemas/enclosure_types.py, ADR 0011/0050) — the Enclosure
+                           picker above has no fixed type of its own, unlike the per-Enclosure Add
+                           Sensor form this replaces, so every type's own fields are rendered up
+                           front and app.js's onGlobalSensorEnclosureChange shows/enables just the
+                           one matching whichever Enclosure is picked (reading its own
+                           data-enclosure-type), leaving the rest hidden and disabled. #}
+                        {% for t in ENCLOSURE_TYPES %}
+                        <div id="add-sensor-global-metrics-{{ t }}" class="mode-fields" style="display:none">
+                            {% for metric in target_range_metrics_for(t) %}
+                            {% if metric.key == "temperature" %}
+                            <label>Target Temperature min (F) <input type="number" step="0.1" name="temp_min_f"></label>
+                            <label>Target Temperature max (F) <input type="number" step="0.1" name="temp_max_f"></label>
+                            {% else %}
+                            <label>Target {{ metric.label }} min {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_min"></label>
+                            <label>Target {{ metric.label }} max {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_max"></label>
+                            {% endif %}
+                            <label>{{ metric.label or metric.key.replace("_", " ").title() }} Volatility
+                                <select name="volatility_{{ metric.key }}">
+                                    <option value="" selected>Default ({{ metric.default_volatility|capitalize }})</option>
+                                    <option value="fast">Fast</option>
+                                    <option value="slow">Slow</option>
+                                </select>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div id="add-sensor-global-room" class="mode-fields" style="display:none">
+                        <label>Room
+                            <select name="room_id" disabled>
+                                {% for r in rooms %}
+                                <option value="{{ r.id }}">{{ r.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
+                        <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
+                        <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
+                        <label>Target humidity max (%) <input type="number" step="1" name="humidity_max"></label>
+                        <label>Temperature Volatility
+                            <select name="volatility_temperature">
+                                <option value="" selected>Default (Fast)</option>
+                                <option value="fast">Fast</option>
+                                <option value="slow">Slow</option>
+                            </select>
+                        </label>
+                        <label>Humidity Volatility
+                            <select name="volatility_humidity">
+                                <option value="" selected>Default (Fast)</option>
+                                <option value="fast">Fast</option>
+                                <option value="slow">Slow</option>
+                            </select>
+                        </label>
+                    </div>
+                    <p class="empty">One device = one Sensor here, even though its Temp and Humidity show as two
+                        separate rows on the Dashboard — that's just a display split. Adding this same MAC address
+                        twice (once "for Temp", once "for Humidity") will be rejected.</p>
+                    <button type="submit">Add Sensor</button>
+                </form>
+            </details>
+        </section>
+
+        <section class="admin-card">
+            <details>
+                <summary>+ Add Plug</summary>
+                <form method="post" action="/admin/plugs" class="admin-form"
+                      onsubmit="return validatePlugParentOnSubmit(event, 'add-plug-parent-type', 'add-plug-enclosures', 'add-plug-parent-error', 'add-plug-group-select') && validateBothOrNeitherOnSubmit(event, 'target_on_time', 'target_off_time', 'add-plug-schedule-error') && validateBothOrNeitherOnSubmit(event, 'target_on_time_2', 'target_off_time_2', 'add-plug-schedule-error') && validateBothOrNeitherOnSubmit(event, 'target_on_time_3', 'target_off_time_3', 'add-plug-schedule-error')">
+                    <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
+                    <label>Purpose
+                        <input type="text" name="purpose" list="purpose-options" placeholder="light, heat, cooling, UVB, pump..." required>
+                        <datalist id="purpose-options">
+                            <option value="light">
+                            <option value="heat">
+                            <option value="cooling">
+                            <option value="UVB">
+                            <option value="pump">
+                        </datalist>
+                    </label>
+                    <label>Plug Group
+                        <select id="add-plug-group-select" name="plug_group_id" onchange="onAddPlugGroupChange(this, 'add-plug-belongs-to', 'add-plug-tuya-creds'); clearPlugParentError('add-plug-enclosures', 'add-plug-parent-error')">
+                            <option value="">— none (standalone Plug) —</option>
+                            {% for g in plug_groups %}
+                            <option value="{{ g.id }}">{{ g.name }} ({{ g.parent_label }})</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <div id="add-plug-belongs-to">
+                        <label>Belongs to
+                            <select id="add-plug-parent-type" name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-room', 'add-plug-enclosures'); clearPlugParentError('add-plug-enclosures', 'add-plug-parent-error')">
+                                <option value="enclosures" selected>Enclosure(s)</option>
+                                <option value="room">Room</option>
+                            </select>
+                        </label>
+                        <div id="add-plug-enclosures" class="mode-fields" onclick="clearPlugParentError('add-plug-enclosures', 'add-plug-parent-error')">
+                            {% for e in enclosures %}
+                            <label class="checkbox"><input type="checkbox" name="enclosure_ids" value="{{ e.id }}"> {{ e.name }}</label>
+                            {% endfor %}
+                        </div>
+                        <div id="add-plug-room" class="mode-fields" style="display:none">
+                            <label>Room
+                                <select name="room_id" disabled>
+                                    {% for r in rooms %}
+                                    <option value="{{ r.id }}">{{ r.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                    <p id="add-plug-parent-error" class="field-error-message" style="display:none">
+                        Pick a Room, or check one or more Enclosures, below.</p>
+                    <p class="empty">Picking a Plug Group above ignores "Belongs to" and the Tuya fields below —
+                        the new outlet inherits both from the Group, you only set its own DPS key.</p>
+                    <label>Tracking Mode
+                        <select id="add-plug-tracking-mode" name="tracking_mode"
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
+                            <option value="smart">Smart (Tuya-controlled)</option>
+                            <option value="manual" selected>Manual (hand-switched, e.g. a timer)</option>
+                        </select>
+                    </label>
+                    <label>Controller Kind
+                        <select id="add-plug-controller-kind" name="controller_kind"
+                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
+                            <option value="none" selected>None (switched by hand or its own Smart schedule)</option>
+                            <option value="timer">Timer (plugged into a separate timer device)</option>
+                            <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
+                            <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
+                        </select>
+                    </label>
+                    <div id="add-plug-smart" class="mode-fields" style="display:none">
+                        <div id="add-plug-tuya-creds">
+                            <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
+                            <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
+                            <div class="discover-device">
+                                <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
+                                <div class="discover-results" style="display:none"></div>
+                            </div>
+                            <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
+                        </div>
+                        <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
+                    </div>
+                    {# Always On and Target Schedule each get their own Controller-Kind-gated block
+                       now (see CONTEXT.md: Always On, Target Schedule, Timer-Controlled; ADR 0012,
+                       RHA-95) — "none" shows Always On, "timer" shows the on/off-time pair, visible
+                       by default since Controller Kind defaults to "none" above. #}
+                    <div id="add-plug-always-on" class="mode-fields">
+                        <label class="checkbox">
+                            <input type="checkbox" name="always_on" value="true">
+                            Always On (e.g. a pump that runs continuously — no schedule to set)
+                        </label>
+                    </div>
+                    <div id="add-plug-schedule" class="mode-fields" style="display:none">
+                        <div class="schedule-cycle">
+                            <label>Target on-time <input type="time" name="target_on_time"></label>
+                            <label>Target off-time <input type="time" name="target_off_time"></label>
+                        </div>
+                        <div class="schedule-cycle">
+                            <label>Cycle 2 on-time <input type="time" name="target_on_time_2"></label>
+                            <label>Cycle 2 off-time <input type="time" name="target_off_time_2"></label>
+                        </div>
+                        <div class="schedule-cycle">
+                            <label>Cycle 3 on-time <input type="time" name="target_on_time_3"></label>
+                            <label>Cycle 3 off-time <input type="time" name="target_off_time_3"></label>
+                        </div>
+                    </div>
+                    <p id="add-plug-schedule-error" class="field-error-message" style="display:none">
+                        Enter both an on-time and off-time for each cycle, or leave it blank — and fill cycles in order (Cycle 2 needs Cycle 1, Cycle 3 needs Cycle 2).</p>
+                    <div id="add-plug-thermostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f" required></label>
+                    </div>
+                    <div id="add-plug-hydrostat-fields" class="mode-fields" style="display:none">
+                        <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct" required></label>
+                    </div>
+                    <button type="submit">Add Plug</button>
+                </form>
+                <p class="empty">Most plugs use outlet "1". Power strips with multiple outlets need one row per
+                    outlet here, all sharing the same device_id/local_key — use "2", "3", etc. (or "7" for a USB
+                    port) for the others. Check any number of Enclosures if one physical switch covers several
+                    tubs at once ("everything on one switch"), or pick Room instead for a genuinely room-wide
+                    fixture not tied to specific tubs.</p>
+            </details>
+        </section>
     </main>
+    {% include "_species_profile_data.html" %}
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>
+        // Add Sensor's Belongs-to defaults to Enclosure (see above) — sync the metrics blocks to
+        // match, same reason admin_enclosures.html's own init script exists for Add Enclosure.
+        setToggleBlock(document.getElementById('add-sensor-global-room'), false);
+        const addSensorEnclosureSelect = document.getElementById('add-sensor-global-enclosure-select');
+        if (addSensorEnclosureSelect) {
+            onGlobalSensorEnclosureChange(addSensorEnclosureSelect, 'add-sensor-global-species-profile', 'add-sensor-global-zone-wrap', 'add-sensor-global-zone');
+        }
+    </script>
 </body>
 </html>

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
+    {% import "_plug_cycles_macro.html" as plug_cycles %}
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>{{ enclosure.name }}</h1>
@@ -15,6 +16,14 @@
 
     <main class="admin-main">
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+
+        {# Enclosure Photo (see CONTEXT.md: Enclosure Photo) — the first thing shown on this page
+           when one's been uploaded (Enclosure Settings below); clicking it pops the full-size
+           image via the shared lightbox. #}
+        {% if enclosure.image_filename %}
+        <img src="/images/enclosures/{{ enclosure.image_filename }}" alt="{{ enclosure.name }}" class="enclosure-photo-banner photo-thumbnail"
+             onclick="openImageLightbox('/images/enclosures/{{ enclosure.image_filename }}')">
+        {% endif %}
 
         {# Care Setup Prompt (see CONTEXT.md: Care Setup Prompt, Care Interval; ADR 0040) — shown
            whenever at least one Care kind has no Care Event logged at all, naming the affected
@@ -51,6 +60,25 @@
 
         <section class="admin-card">
             <h2>Enclosure Settings</h2>
+
+            {# Enclosure Photo (see CONTEXT.md: Enclosure Photo) — the same photo rendered as the
+               banner at the top of this page; uploaded/replaced/removed here. #}
+            <div class="photo-upload-row">
+                {% if enclosure.image_filename %}
+                <img src="/images/enclosures/{{ enclosure.image_filename }}" alt="{{ enclosure.name }}" class="photo-upload-preview photo-thumbnail"
+                     onclick="openImageLightbox('/images/enclosures/{{ enclosure.image_filename }}')">
+                {% endif %}
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/image" enctype="multipart/form-data" class="inline-form">
+                    <input type="file" name="image" accept="image/jpeg,image/png,image/webp" required>
+                    <button type="submit">{{ "Replace Photo" if enclosure.image_filename else "Upload Photo" }}</button>
+                </form>
+                {% if enclosure.image_filename %}
+                <form method="post" action="/admin/enclosures/{{ enclosure.id }}/image/remove" class="inline-form">
+                    <button type="submit" class="danger-small">remove photo</button>
+                </form>
+                {% endif %}
+            </div>
+
             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/update" class="admin-form">
                 <label>Name <input type="text" name="name" value="{{ enclosure.name }}" required></label>
                 <label>Enclosure Type
@@ -93,6 +121,27 @@
                 {% elif enclosure.room_id and enclosure.sensors %}
                 <p class="empty">This Enclosure has its own Sensor(s), so it won't use a Room Fallback Sensor.</p>
                 {% endif %}
+                {# Dashboard Thumbnail (see CONTEXT.md: Dashboard Thumbnail) — which photo, if any,
+                   this Enclosure's own Dashboard panel shows: its own Enclosure Photo, or one
+                   picked Animal's Photo, never both. The Animal dropdown lists every Animal here
+                   regardless of its own show_on_dashboard flag (see grill-me decision) — the two
+                   settings are independent. #}
+                <label>Dashboard Thumbnail
+                    <select name="dashboard_thumbnail_source" onchange="onToggleChange(this, 'animal', 'dashboard-thumbnail-animal-block', '')">
+                        <option value="enclosure" {% if enclosure.dashboard_thumbnail_source == "enclosure" %}selected{% endif %}>Enclosure photo</option>
+                        <option value="animal" {% if enclosure.dashboard_thumbnail_source == "animal" %}selected{% endif %}>Animal photo</option>
+                    </select>
+                </label>
+                <span id="dashboard-thumbnail-animal-block" style="{{ '' if enclosure.dashboard_thumbnail_source == 'animal' else 'display:none' }}">
+                    <label>Animal
+                        <select name="dashboard_thumbnail_animal_id">
+                            <option value="">&mdash; choose &mdash;</option>
+                            {% for a in enclosure.animals %}
+                            <option value="{{ a.id }}" {% if enclosure.dashboard_thumbnail_animal_id == a.id %}selected{% endif %}>{{ a.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </span>
                 <button type="submit">Save</button>
             </form>
             <form method="post" action="/admin/enclosures/{{ enclosure.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete {{ enclosure.name }} and everything in it? This cannot be undone.');">
@@ -119,12 +168,18 @@
                         {% if entry.days_since is none %}no data{% else %}{{ entry.days_since }}d ago{% endif %}
                     </span>
                     {% if kind == "feeding" and last_feeding %}
-                    {# What the Log Feeding Dialog's Whole-enclosure Who defaults to (see CONTEXT.md:
-                       Log Feeding Dialog; ADR 0043) — shown so the user can see it before opening
-                       the dialog. A Spot-feed's own last detail is previewed inside the dialog
-                       itself, once that Animal is picked as Who. #}
-                    <span class="reading-meta" title="What the Log Feeding Dialog defaults to for Whole enclosure">
-                        Last fed: {{ last_feeding.food or "(no food recorded)" }}{% if last_feeding.count %} &times;{{ last_feeding.count }}{% endif %}{% if last_feeding.result == "refused" %} &mdash; refused{% endif %}
+                    {# The most recent Feeding, whichever Who it was for (see
+                       get_latest_feeding_detail_any() in web/admin_queries.py) — two columns so
+                       "what" and "who" read at a glance: "Last fed" is labeled, the Who column
+                       next to it isn't (its value, the Animal's name or "Enclosure", is
+                       self-explanatory without a header). #}
+                    <span class="feeding-last-col">
+                        <span class="feeding-last-label">Last fed</span>
+                        <span class="feeding-last-value">{{ last_feeding.food or "(no food recorded)" }}{% if last_feeding.count %} &times;{{ last_feeding.count }}{% endif %}{% if last_feeding.result == "refused" %} &mdash; refused{% endif %}</span>
+                    </span>
+                    <span class="feeding-last-col">
+                        <span class="feeding-last-label">&nbsp;</span>
+                        <span class="feeding-last-value">{{ last_feeding.animal_name or "Enclosure" }}</span>
                     </span>
                     {% endif %}
                     <div class="care-actions">
@@ -226,26 +281,35 @@
 
         <section class="admin-card">
             <h2>Animals</h2>
-            <table class="admin-table">
-                <thead><tr><th>Name</th><th>Species</th><th>DOB</th><th>On Dashboard</th><th></th></tr></thead>
-                <tbody>
-                {% for a in enclosure.animals %}
-                    <tr id="animal-row-{{ a.id }}">
-                        <td class="admin-table-primary">{{ a.name }}</td>
-                        <td>{{ a.species_common }} <em>({{ a.species_scientific }})</em></td>
-                        <td>{{ a.dob or "unknown" }}</td>
-                        <td>
+            {# Redesigned from a plain table into a card grid so there's room for a large Animal
+               Photo thumbnail per Animal (see CONTEXT.md: Animal Photo; grill-me decision) — every
+               other control (On Dashboard, quick log, edit, remove) carries over unchanged. #}
+            <div class="animal-card-grid">
+            {% for a in enclosure.animals %}
+                <div class="animal-card" id="animal-row-{{ a.id }}">
+                    {% if a.image_filename %}
+                    <img src="/images/animals/{{ a.image_filename }}" alt="{{ a.name }}" class="animal-card-photo photo-thumbnail"
+                         onclick="openImageLightbox('/images/animals/{{ a.image_filename }}')">
+                    {% else %}
+                    <div class="animal-card-photo-empty">no photo</div>
+                    {% endif %}
+                    <div class="animal-card-body">
+                        <span class="animal-card-name">{{ a.name }}</span>
+                        <span class="animal-card-species">{{ a.species_common }}{% if a.species_scientific %} <em>({{ a.species_scientific }})</em>{% endif %}</span>
+                        <span class="animal-card-dob">DOB: {{ a.dob or "unknown" }}</span>
+                        <label class="animal-card-dashboard">
                             {# Show on Dashboard (see CONTEXT.md: Animal) — auto-submits on change,
                                same pattern as this page's other single-field quick toggles. #}
                             <form method="post" action="/admin/animals/{{ a.id }}/dashboard-visibility" class="inline-form">
                                 <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                 <input type="checkbox" name="show_on_dashboard" value="true" onchange="this.form.submit()" {% if a.show_on_dashboard %}checked{% endif %} title="Show this Animal on the Dashboard's Enclosure panel">
                             </form>
-                        </td>
-                        <td>
+                            On Dashboard
+                        </label>
+                        <div class="animal-card-actions">
                             {# Quick Log popup (see CONTEXT.md: Quick Log) — opens this Animal's own
                                Growth & Condition / Shed Log cards (rendered below, outside the
-                               table) without leaving this page; see app.js's
+                               grid) without leaving this page; see app.js's
                                openQuickLogDialog()/dismissQuickLogDialog(). #}
                             <a href="#" onclick="openQuickLogDialog('quick-log-modal-{{ a.id }}'); return false;">quick log</a> ·
                             <a href="/admin/animals/{{ a.id }}/edit">edit</a> ·
@@ -253,13 +317,13 @@
                                 <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                 <button type="submit" class="danger-small">remove</button>
                             </form>
-                        </td>
-                    </tr>
-                {% else %}
-                    <tr><td colspan="5" class="empty">No animals registered — add one on <a href="/admin/app">Admin</a>.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <p class="empty">No animals registered — add one on <a href="/admin/app">Admin</a>.</p>
+            {% endfor %}
+            </div>
 
             {# Quick Log popup (see CONTEXT.md: Quick Log) — one <dialog> per Animal, each holding
                that Animal's own Growth & Condition Log and Shed Log cards verbatim from the
@@ -444,40 +508,32 @@
                         <td>{{ s.tracking_mode|capitalize }}</td>
                         <td>{{ s.mac_address or "—" }}</td>
                         <td>
-                            {# One pill per Target Range metric this Reading actually has a value
-                               for (see CONTEXT.md: Reading, Target Range) — not just temp/
-                               humidity, so e.g. a Freshwater Enclosure's pH shows up here too. Each
-                               on its own line — same per-metric-own-line shape as the Target Range
-                               column, so a Govee Sensor's Temp/Humidity read as two separate lines. #}
+                            {# "as of" is shared (one Reading, however many metrics) — shown once at
+                               the top (see CONTEXT.md: Reading, Target Range). Each metric below
+                               gets its own pill with its own Sparkline directly under it (see
+                               CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0032) — not all pills
+                               then all charts — not just temp/humidity, so e.g. a Freshwater
+                               Enclosure's pH shows up here too. Clicking a chart opens the full
+                               Graphs chart for that exact Sensor+metric, anchored to the row key
+                               graphs_queries.py already builds for it. Each chart has its own
+                               Week/Month toggle (both windows are already embedded below; see
+                               web/static/graphs.js's setSparklineRange). When this Sensor reports
+                               both Temperature and Humidity, they share one combined chart instead
+                               of two (RHA-93) — dual y-axis, one Target Range band per metric (two
+                               shades of green), fixed per-metric line colors, no separate legend
+                               (see web/static/graphs.js's renderCombinedSparklineChart) — it
+                               renders once, under the Temperature pill; the Humidity pill that
+                               follows has no chart of its own underneath. #}
                             {% set ns = namespace(shown=false) %}
                             {% for metric in TARGET_RANGE_METRICS %}
-                                {% set value = reading[metric.reading_column] if reading else none %}
-                                {% if value is not none %}
-                                    {% set ns.shown = true %}
-                                    {% set status = target_range_status(value, s[metric.min_column], s[metric.max_column]) %}
-                                    {% set shown = value|c_to_f if metric.converts_f_c else value %}
-                                    <div>
-                                        <span class="pill status-{{ status.value }}">
-                                            {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
-                                            {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
-                                            {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
-                                        </span>
-                                    </div>
-                                {% endif %}
+                                {% if (reading[metric.reading_column] if reading else none) is not none %}{% set ns.shown = true %}{% endif %}
                             {% endfor %}
                             {% if ns.shown %}
                             <span class="reading-meta">as of {{ reading.recorded_at }}</span>
-                            {# A Sparkline per metric, stacked under the shared as-of line (see
-                               CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0032) — clicking one
-                               opens the full Graphs chart for that exact Sensor+metric, anchored to
-                               the row key graphs_queries.py already builds for it. Each chart has
-                               its own Week/Month toggle (both windows are already embedded below;
-                               see web/static/graphs.js's setSparklineRange). When this Sensor
-                               reports both Temperature and Humidity, they share one combined chart
-                               instead of two (RHA-93) — dual y-axis, one Target Range band per
-                               metric (two shades of green), fixed per-metric line colors, no
-                               separate legend (see web/static/graphs.js's
-                               renderCombinedSparklineChart). #}
+                            {% else %}
+                            <span class="pill status-unknown">no data yet</span>
+                            {% endif %}
+                            {% if ns.shown %}
                             {% set spark_temp = s.sparklines.get("temperature_c") if s.sparklines else none %}
                             {% set spark_humidity = s.sparklines.get("humidity_pct") if s.sparklines else none %}
                             {% set humidity_metric = TARGET_RANGE_METRICS|selectattr("key", "equalto", "humidity")|first %}
@@ -486,55 +542,65 @@
                                 and (spark_humidity.ranges.week or spark_humidity.ranges.month) %}
                             <div class="sparkline-group">
                             {% for metric in TARGET_RANGE_METRICS %}
-                                {% if not (combine_temp_humidity and metric.key == "humidity") %}
-                                {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
-                                {% if spark and (spark.ranges.week or spark.ranges.month) %}
-                                <div class="sparkline-chart">
-                                    <div class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
-                                        <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
-                                        <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                {% set value = reading[metric.reading_column] if reading else none %}
+                                {% if value is not none %}
+                                {% set status = target_range_status(value, s[metric.min_column], s[metric.max_column]) %}
+                                {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                                <div class="sparkline-metric-group">
+                                    <span class="pill status-{{ status.value }}">
+                                        {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
+                                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                                        {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
+                                    </span>
+                                    {% if not (combine_temp_humidity and metric.key == "humidity") %}
+                                    {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
+                                    {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                                    <div class="sparkline-chart">
+                                        <div class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                                            <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                            <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                        </div>
+                                        {% if combine_temp_humidity and metric.key == "temperature" %}
+                                        <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature &amp; Humidity chart">
+                                            <canvas class="sparkline" width="260" height="84"
+                                                    data-combined="1"
+                                                    data-points-week="{{ spark_temp.ranges.week|tojson }}"
+                                                    data-points-month="{{ spark_temp.ranges.month|tojson }}"
+                                                    data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
+                                                    data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
+                                                    data-decimals="{{ metric.decimals }}"
+                                                    data-decimals-b="{{ humidity_metric.decimals }}"
+                                                    data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
+                                                    data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
+                                                    data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
+                                                    data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
+                                                    data-label-a="{{ metric.label }}"
+                                                    data-label-b="{{ humidity_metric.label }}"
+                                                    data-title-week="Temperature &amp; Humidity - last 7 days"
+                                                    data-title-month="Temperature &amp; Humidity - last 30 days"
+                                                    data-range="week"></canvas>
+                                        </a>
+                                        {% else %}
+                                        <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                            <canvas class="sparkline" width="260" height="84"
+                                                    data-points-week="{{ spark.ranges.week|tojson }}"
+                                                    data-points-month="{{ spark.ranges.month|tojson }}"
+                                                    data-decimals="{{ metric.decimals }}"
+                                                    data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                                    data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                                    data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
+                                                    data-title-week="{{ metric.label }} - last 7 days"
+                                                    data-title-month="{{ metric.label }} - last 30 days"
+                                                    data-range="week"></canvas>
+                                        </a>
+                                        {% endif %}
                                     </div>
-                                    {% if combine_temp_humidity and metric.key == "temperature" %}
-                                    <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature &amp; Humidity chart">
-                                        <canvas class="sparkline" width="260" height="84"
-                                                data-combined="1"
-                                                data-points-week="{{ spark_temp.ranges.week|tojson }}"
-                                                data-points-month="{{ spark_temp.ranges.month|tojson }}"
-                                                data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
-                                                data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
-                                                data-decimals="{{ metric.decimals }}"
-                                                data-decimals-b="{{ humidity_metric.decimals }}"
-                                                data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
-                                                data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
-                                                data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
-                                                data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
-                                                data-label-a="{{ metric.label }}"
-                                                data-label-b="{{ humidity_metric.label }}"
-                                                data-title-week="Temperature &amp; Humidity - last 7 days"
-                                                data-title-month="Temperature &amp; Humidity - last 30 days"
-                                                data-range="week"></canvas>
-                                    </a>
-                                    {% else %}
-                                    <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
-                                        <canvas class="sparkline" width="260" height="84"
-                                                data-points-week="{{ spark.ranges.week|tojson }}"
-                                                data-points-month="{{ spark.ranges.month|tojson }}"
-                                                data-decimals="{{ metric.decimals }}"
-                                                data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
-                                                data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                                                data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
-                                                data-title-week="{{ metric.label }} - last 7 days"
-                                                data-title-month="{{ metric.label }} - last 30 days"
-                                                data-range="week"></canvas>
-                                    </a>
+                                    {% endif %}
                                     {% endif %}
                                 </div>
                                 {% endif %}
-                                {% endif %}
                             {% endfor %}
                             </div>
-                            {% else %}
-                            <span class="pill status-unknown">no data yet</span>
                             {% endif %}
                             {% if s.tracking_mode == "manual" %}
                             {# Hand-logged Reading (see CONTEXT.md: Reading) — same form as the dashboard's
@@ -543,7 +609,8 @@
                                server-side (web/admin.py's admin_create_reading). #}
                             <details class="reading-form reading-log" ontoggle="onReadingLogToggle(this)">
                                 <summary>Log {{ s.label }}</summary>
-                                <form method="post" action="/admin/sensors/{{ s.id }}/readings" class="log-form">
+                                <form method="post" action="/admin/sensors/{{ s.id }}/readings" class="log-form"
+                                      onsubmit="return validateAtLeastOneOnSubmit(event, 'input[type=number]')">
                                     <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                     {% for metric in TARGET_RANGE_METRICS %}
                                         {% if s[metric.min_column] is not none or s[metric.max_column] is not none %}
@@ -646,17 +713,17 @@
                     {% elif p.always_on %}
                         <span class="pill status-green">Always On</span>
                     {% elif p.tracking_mode == "manual" %}
-                        {% if p.target_on_time and p.target_off_time %}
-                        <span class="pill status-unknown">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                        {% if p.has_target_schedule %}
+                        <span class="pill status-unknown">{{ plug_cycles.cycles_text(p) }}</span>
                         {% else %}
                         <span class="pill status-unknown">no target schedule set</span>
                         {% endif %}
                     {% else %}
-                        {% set on_drift = acknowledged_drift_status(p.target_on_time, p.detected_on_time, p.timer_ack_on_time, schedule_drift_threshold_minutes) %}
-                        {% set off_drift = acknowledged_drift_status(p.target_off_time, p.detected_off_time, p.timer_ack_off_time, schedule_drift_threshold_minutes) %}
+                        {% set on_drift = acknowledged_drift_status(p.matched_target_on_time, p.detected_on_time, p.timer_ack_on_time, schedule_drift_threshold_minutes) %}
+                        {% set off_drift = acknowledged_drift_status(p.matched_target_off_time, p.detected_off_time, p.timer_ack_off_time, schedule_drift_threshold_minutes) %}
                         {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("yellow" if (on_drift.value == "yellow" or off_drift.value == "yellow") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown")) %}
-                        {% if p.target_on_time and p.target_off_time %}
-                        <span class="pill status-{{ pill_status }}">{{ p.target_on_time|clock_12h }}&ndash;{{ p.target_off_time|clock_12h }}</span>
+                        {% if p.has_target_schedule %}
+                        <span class="pill status-{{ pill_status }}">{{ plug_cycles.cycles_text(p) }}</span>
                         {% else %}
                         <span class="pill status-unknown">no target schedule set</span>
                         {% endif %}
@@ -683,6 +750,13 @@
             <a href="/admin/enclosures/{{ enclosure.id }}/data" class="button-link">View Data</a>
             <a href="/admin/enclosures/{{ enclosure.id }}/graphs" class="button-link">Graphs</a>
         </p>
+
+        {# Image Lightbox (see CONTEXT.md: Animal Photo, Enclosure Photo) — shared by every
+           clickable photo on this page (the Enclosure Photo banner and every Animal card). #}
+        <dialog id="image-lightbox" class="image-lightbox">
+            <button type="button" class="image-lightbox-close" onclick="dismissImageLightbox()" title="Close" aria-label="Close">&times;</button>
+            <img src="" alt="">
+        </dialog>
     </main>
     <script src="/static/chart.min.js?v={{ asset_version }}"></script>
     <script src="/static/graphs.js?v={{ asset_version }}"></script>

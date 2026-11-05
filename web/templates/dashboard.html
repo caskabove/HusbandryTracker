@@ -45,19 +45,7 @@
             <span class="reading-status">
                 {% set ns = namespace(shown=false) %}
                 {% for metric in TARGET_RANGE_METRICS if only_metric is none or metric.key == only_metric %}
-                    {% set value = reading[metric.reading_column] if reading else none %}
-                    {% if value is not none %}
-                        {% set ns.shown = true %}
-                        {% set min_v = sensor[metric.min_column] if sensor else none %}
-                        {% set max_v = sensor[metric.max_column] if sensor else none %}
-                        {% set status = target_range_status(value, min_v, max_v) if colored else none %}
-                        {% set shown = value|c_to_f if metric.converts_f_c else value %}
-                        <span class="pill status-{{ status.value if colored else 'unknown' }}">
-                            {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }} {% endif -%}
-                            {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
-                            {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
-                        </span>
-                    {% endif %}
+                    {% if (reading[metric.reading_column] if reading else none) is not none %}{% set ns.shown = true %}{% endif %}
                 {% endfor %}
                 {% if ns.shown %}
                 <span class="reading-meta">as of {{ reading.recorded_at }}</span>
@@ -66,16 +54,16 @@
                 {% endif %}
             </span>
             {% if ns.shown %}
-            {# A Sparkline per metric, on its own line under the pill/as-of row above (see
-               CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0032) — clicking one opens the full
-               Graphs chart for that exact Sensor+metric. Each chart has its own Week/Month toggle
-               (both windows are already embedded below; see web/static/graphs.js's
+            {# Each metric gets its own pill with its own Sparkline directly under it (see
+               CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0032) — clicking a chart opens the
+               full Graphs chart for that exact Sensor+metric. Each chart has its own Week/Month
+               toggle (both windows are already embedded below; see web/static/graphs.js's
                setSparklineRange). When this Sensor reports both Temperature and Humidity, they
                share one combined chart instead of two (RHA-93) — dual y-axis, one Target Range
                band per metric (two shades of green), fixed per-metric line colors, no separate
-               legend (see web/static/graphs.js's renderCombinedSparklineChart). A Govee Sensor's
-               "Humidity" row (see the Temp/Humidity split above) ends up with no chart of its own
-               in that case — its data is already in the combined chart under the "Temp" row. #}
+               legend (see web/static/graphs.js's renderCombinedSparklineChart) — it renders once,
+               under the Temperature pill; the Humidity pill that follows has no chart of its own
+               underneath, its data already being in that combined chart. #}
             {% set spark_temp = sparklines.get("temperature_c") if sparklines else none %}
             {% set spark_humidity = sparklines.get("humidity_pct") if sparklines else none %}
             {% set humidity_metric = TARGET_RANGE_METRICS|selectattr("key", "equalto", "humidity")|first %}
@@ -84,50 +72,64 @@
                 and (spark_humidity.ranges.week or spark_humidity.ranges.month) %}
             <span class="sparkline-group sparkline-group-row">
             {% for metric in TARGET_RANGE_METRICS if only_metric is none or metric.key == only_metric %}
-                {% if not (combine_temp_humidity and metric.key == "humidity") %}
-                {% set spark = sparklines[metric.reading_column] if sparklines and sparklines.get(metric.reading_column) else none %}
-                {% if spark and (spark.ranges.week or spark.ranges.month) %}
-                <span class="sparkline-chart">
-                    <span class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
-                        <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
-                        <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                {% set value = reading[metric.reading_column] if reading else none %}
+                {% if value is not none %}
+                {% set min_v = sensor[metric.min_column] if sensor else none %}
+                {% set max_v = sensor[metric.max_column] if sensor else none %}
+                {% set status = target_range_status(value, min_v, max_v) if colored else none %}
+                {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                <span class="sparkline-metric-group">
+                    <span class="pill status-{{ status.value if colored else 'unknown' }}">
+                        {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }} {% endif -%}
+                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                        {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
                     </span>
-                    {% if combine_temp_humidity and metric.key == "temperature" %}
-                    <a class="sparkline-link" href="{{ graph_link }}#reading-{{ sensor_id }}-temperature" title="View full Temperature &amp; Humidity chart">
-                        <canvas class="sparkline" width="260" height="84"
-                                data-combined="1"
-                                data-points-week="{{ spark_temp.ranges.week|tojson }}"
-                                data-points-month="{{ spark_temp.ranges.month|tojson }}"
-                                data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
-                                data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
-                                data-decimals="{{ metric.decimals }}"
-                                data-decimals-b="{{ humidity_metric.decimals }}"
-                                data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
-                                data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
-                                data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
-                                data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
-                                data-label-a="{{ metric.label }}"
-                                data-label-b="{{ humidity_metric.label }}"
-                                data-title-week="Temperature &amp; Humidity - last 7 days"
-                                data-title-month="Temperature &amp; Humidity - last 30 days"
-                                data-range="week"></canvas>
-                    </a>
-                    {% else %}
-                    <a class="sparkline-link" href="{{ graph_link }}#reading-{{ sensor_id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
-                        <canvas class="sparkline" width="260" height="84"
-                                data-points-week="{{ spark.ranges.week|tojson }}"
-                                data-points-month="{{ spark.ranges.month|tojson }}"
-                                data-decimals="{{ metric.decimals }}"
-                                data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
-                                data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                                data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
-                                data-title-week="{{ metric.label }} - last 7 days"
-                                data-title-month="{{ metric.label }} - last 30 days"
-                                data-range="week"></canvas>
-                    </a>
+                    {% if not (combine_temp_humidity and metric.key == "humidity") %}
+                    {% set spark = sparklines[metric.reading_column] if sparklines and sparklines.get(metric.reading_column) else none %}
+                    {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                    <span class="sparkline-chart">
+                        <span class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                            <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                            <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                        </span>
+                        {% if combine_temp_humidity and metric.key == "temperature" %}
+                        <a class="sparkline-link" href="{{ graph_link }}#reading-{{ sensor_id }}-temperature" title="View full Temperature &amp; Humidity chart">
+                            <canvas class="sparkline" width="260" height="84"
+                                    data-combined="1"
+                                    data-points-week="{{ spark_temp.ranges.week|tojson }}"
+                                    data-points-month="{{ spark_temp.ranges.month|tojson }}"
+                                    data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
+                                    data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
+                                    data-decimals="{{ metric.decimals }}"
+                                    data-decimals-b="{{ humidity_metric.decimals }}"
+                                    data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
+                                    data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
+                                    data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
+                                    data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
+                                    data-label-a="{{ metric.label }}"
+                                    data-label-b="{{ humidity_metric.label }}"
+                                    data-title-week="Temperature &amp; Humidity - last 7 days"
+                                    data-title-month="Temperature &amp; Humidity - last 30 days"
+                                    data-range="week"></canvas>
+                        </a>
+                        {% else %}
+                        <a class="sparkline-link" href="{{ graph_link }}#reading-{{ sensor_id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                            <canvas class="sparkline" width="260" height="84"
+                                    data-points-week="{{ spark.ranges.week|tojson }}"
+                                    data-points-month="{{ spark.ranges.month|tojson }}"
+                                    data-decimals="{{ metric.decimals }}"
+                                    data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                    data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                    data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
+                                    data-title-week="{{ metric.label }} - last 7 days"
+                                    data-title-month="{{ metric.label }} - last 30 days"
+                                    data-range="week"></canvas>
+                        </a>
+                        {% endif %}
+                    </span>
+                    {% endif %}
                     {% endif %}
                 </span>
-                {% endif %}
                 {% endif %}
             {% endfor %}
             </span>
@@ -147,7 +149,8 @@
         {% if sensor.tracking_mode == "manual" %}
         <details class="reading-form reading-log" ontoggle="onReadingLogToggle(this)">
             <summary>Log {{ sensor.label }}</summary>
-            <form method="post" action="/sensors/{{ sensor.id }}/readings" class="log-form">
+            <form method="post" action="/sensors/{{ sensor.id }}/readings" class="log-form"
+                  onsubmit="return validateAtLeastOneOnSubmit(event, 'input[type=number]')">
                 {% for metric in TARGET_RANGE_METRICS %}
                     {% if sensor[metric.min_column] is not none or sensor[metric.max_column] is not none %}
                         {% if metric.key == "temperature" %}
@@ -197,9 +200,22 @@
                     {% endif %}
                     {% endfor %}
                 </a>
+                {# Dashboard Thumbnail (see CONTEXT.md: Dashboard Thumbnail) — this Enclosure's own
+                   Enclosure Photo, or one picked Animal's Photo, never both; none shows at all if
+                   nothing's been uploaded for whichever source is picked. Not nested inside the
+                   panel-header-link <a> above (its own click opens the lightbox, not the Edit
+                   page) — a sibling element instead, same as the Refresh form beside it. #}
+                {% if enclosure.dashboard_thumbnail_url %}
+                <img src="{{ enclosure.dashboard_thumbnail_url }}" alt="" class="panel-thumbnail photo-thumbnail"
+                     onclick="openImageLightbox('{{ enclosure.dashboard_thumbnail_url }}')">
+                {% endif %}
                 {% if enclosure.sensors | selectattr("tracking_mode", "equalto", "smart") | list %}
                 <form method="post" action="/enclosures/{{ enclosure.id }}/refresh" class="entity-refresh-form">
+                    {% if enclosure.can_refresh %}
                     <button type="submit" title="Force a live BLE read from this Enclosure's own Sensor(s) now">&#8635; Refresh</button>
+                    {% else %}
+                    <button type="submit" disabled title="Every Smart Sensor here is on a deactivated Plugin — reactivate it in Admin to use Refresh">&#8635; Refresh</button>
+                    {% endif %}
                 </form>
                 {% endif %}
             </header>
@@ -273,6 +289,7 @@
                         {% set entry = enclosure.care[kind] %}
                         {% set interval = enclosure[kind ~ "_interval_days"] %}
                         {% set status = care_interval_status(entry.days_since, interval, enclosure[kind ~ "_nag_count"]) %}
+                        {% set last_feeding = enclosure.care.feeding.last_detail if kind == "feeding" else none %}
                         <div class="reading-row reading-row-grid care-row">
                             <span class="reading-label">{{ kind|replace("_", " ")|capitalize }}</span>
                             <span class="reading-type"></span>
@@ -281,6 +298,20 @@
                                    title="Log {{ kind|replace('_', ' ') }} on the Enclosure page">
                                     {% if entry.days_since is none %}no data{% else %}{{ entry.days_since }}d ago{% endif %}
                                 </a>
+                                {# Same "Last fed" / Who columns as the Admin Enclosure page's
+                                   identical Feeding row (see admin_enclosure.html) — whichever
+                                   Feeding actually happened most recently, whole-enclosure or
+                                   Spot-feed alike. #}
+                                {% if kind == "feeding" and last_feeding %}
+                                <span class="feeding-last-col">
+                                    <span class="feeding-last-label">Last fed</span>
+                                    <span class="feeding-last-value">{{ last_feeding.food or "(no food recorded)" }}{% if last_feeding.count %} &times;{{ last_feeding.count }}{% endif %}{% if last_feeding.result == "refused" %} &mdash; refused{% endif %}</span>
+                                </span>
+                                <span class="feeding-last-col">
+                                    <span class="feeding-last-label">&nbsp;</span>
+                                    <span class="feeding-last-value">{{ last_feeding.animal_name or "Enclosure" }}</span>
+                                </span>
+                                {% endif %}
                             </span>
                         </div>
                     {% else %}
@@ -327,8 +358,20 @@
                                 <span class="reading-meta">target {% if plug.target_humidity_pct is not none %}{{ "%.0f"|format(plug.target_humidity_pct) }}%{% else %}not set{% endif %}</span>
                                 {% elif plug.always_on %}
                                 <span class="reading-meta">Always On</span>
-                                {% elif plug.target_on_time and plug.target_off_time %}
-                                <span class="reading-meta">{{ plug.target_on_time }}&ndash;{{ plug.target_off_time }}</span>
+                                {% elif (plug.target_on_time and plug.target_off_time) or (plug.target_on_time_2 and plug.target_off_time_2) or (plug.target_on_time_3 and plug.target_off_time_3) %}
+                                {# Up to 3 on/off cycles (see CONTEXT.md: Target Schedule; ADR 0057) —
+                                   24h "HH:MM" here, matching this page's own clock format elsewhere
+                                   (unlike the Admin pages' 12h clock_12h filter). Checked directly off
+                                   the raw columns, not plug.has_target_schedule — this page's plug
+                                   dicts come from web/queries.py's get_dashboard_data(), not
+                                   admin_queries.py's _attach_schedule(), so that computed field
+                                   doesn't exist here. #}
+                                <span class="reading-meta">
+                                    {%- set cycles = [(plug.target_on_time, plug.target_off_time), (plug.target_on_time_2, plug.target_off_time_2), (plug.target_on_time_3, plug.target_off_time_3)] -%}
+                                    {%- for on, off in cycles if on and off -%}
+                                    {{ on }}&ndash;{{ off }}{% if not loop.last %}, {% endif %}
+                                    {%- endfor -%}
+                                </span>
                                 {% else %}
                                 <span class="reading-meta">no schedule set</span>
                                 {% endif %}
@@ -401,12 +444,14 @@
                                     and (humidity_spark.ranges.week or humidity_spark.ranges.month) %}
                                 {% if sensor.plugin == "govee_ble" %}
                                     <span class="room-ambient-item">
+                                        {% if rs and rs.temperature_c is not none %}
+                                        <span class="reading-meta">as of {{ rs.recorded_at }}</span>
+                                        {% endif %}
                                         <span class="room-ambient-pill-row">
                                             {{ sensor.label }} Temp:
                                             {% if rs and rs.temperature_c is not none %}<span class="pill status-{{ ts.value }}">{{ "%.1f"|format(rs.temperature_c|c_to_f) }}&deg;F</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
                                         </span>
                                         {% if rs and rs.temperature_c is not none %}
-                                        <span class="reading-meta">as of {{ rs.recorded_at }}</span>
                                         {% if combine_temp_humidity %}
                                         <span class="sparkline-chart">
                                             <span class="sparkline-range-toggle" role="group" aria-label="Temperature &amp; Humidity chart range">
@@ -455,12 +500,14 @@
                                         {% endif %}
                                     </span>
                                     <span class="room-ambient-item">
+                                        {% if rs and rs.humidity_pct is not none %}
+                                        <span class="reading-meta">as of {{ rs.recorded_at }}</span>
+                                        {% endif %}
                                         <span class="room-ambient-pill-row">
                                             {{ sensor.label }} Humidity:
                                             {% if rs and rs.humidity_pct is not none %}<span class="pill status-{{ hs.value }}">{{ "%.0f"|format(rs.humidity_pct) }}%</span>{% else %}<span class="pill status-unknown">no data yet</span>{% endif %}
                                         </span>
                                         {% if rs and rs.humidity_pct is not none %}
-                                        <span class="reading-meta">as of {{ rs.recorded_at }}</span>
                                         {% if not combine_temp_humidity and humidity_spark and (humidity_spark.ranges.week or humidity_spark.ranges.month) %}
                                         <span class="sparkline-chart">
                                             <span class="sparkline-range-toggle" role="group" aria-label="Humidity chart range">
@@ -486,80 +533,88 @@
                                     {# Non-Govee Room Sensor — loops every Target Range metric this
                                        Reading actually has a value for (see CONTEXT.md: Reading,
                                        Target Range), not just Temp/Humidity, so e.g. a manually-
-                                       logged pH probe placed in a Room shows up here too. #}
+                                       logged pH probe placed in a Room shows up here too. "as of" is
+                                       shared (one Reading, however many metrics), shown once at the
+                                       top; each metric below gets its own pill with its own
+                                       Sparkline directly under it, not all pills then all charts. #}
                                     <span class="room-ambient-item">
-                                        <span class="room-ambient-pill-row">
-                                            {{ sensor.label }}:
-                                            {% set ns = namespace(any=false) %}
-                                            {% for metric in TARGET_RANGE_METRICS %}
-                                                {% set value = rs[metric.reading_column] if rs else none %}
-                                                {% if value is not none %}
-                                                    {% set ns.any = true %}
-                                                    {% set status = target_range_status(value, sensor[metric.min_column], sensor[metric.max_column]) %}
-                                                    {% set shown = value|c_to_f if metric.converts_f_c else value %}
-                                                    <span class="pill status-{{ status.value }}">
-                                                        {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
-                                                        {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
-                                                        {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
-                                                    </span>
-                                                {% endif %}
-                                            {% endfor %}
-                                            {% if not ns.any %}<span class="pill status-unknown">no data yet</span>{% endif %}
-                                        </span>
+                                        <span class="room-ambient-pill-row">{{ sensor.label }}:</span>
+                                        {% set ns = namespace(any=false) %}
+                                        {% for metric in TARGET_RANGE_METRICS %}
+                                            {% if (rs[metric.reading_column] if rs else none) is not none %}{% set ns.any = true %}{% endif %}
+                                        {% endfor %}
                                         {% if ns.any %}
                                         <span class="reading-meta">as of {{ rs.recorded_at }}</span>
+                                        {% else %}
+                                        <span class="pill status-unknown">no data yet</span>
+                                        {% endif %}
+                                        {% if ns.any %}
                                         {# Combined Temp+Humidity chart when both are present (RHA-93)
-                                           — same rule as reading_row's own sparkline-group above. #}
+                                           — same rule as reading_row's own sparkline-group above. It
+                                           renders once, under the Temperature pill; the Humidity
+                                           pill that follows has no chart of its own underneath. #}
                                         {% set humidity_metric = TARGET_RANGE_METRICS|selectattr("key", "equalto", "humidity")|first %}
                                         {% set combine_temp_humidity = temp_spark and humidity_spark
                                             and (temp_spark.ranges.week or temp_spark.ranges.month)
                                             and (humidity_spark.ranges.week or humidity_spark.ranges.month) %}
                                         <span class="sparkline-group">
                                         {% for metric in TARGET_RANGE_METRICS %}
-                                            {% if not (combine_temp_humidity and metric.key == "humidity") %}
-                                            {% set spark = sensor.sparklines[metric.reading_column] if sensor.sparklines and sensor.sparklines.get(metric.reading_column) else none %}
-                                            {% if spark and (spark.ranges.week or spark.ranges.month) %}
-                                            <span class="sparkline-chart">
-                                                <span class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
-                                                    <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
-                                                    <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                            {% set value = rs[metric.reading_column] if rs else none %}
+                                            {% if value is not none %}
+                                            {% set status = target_range_status(value, sensor[metric.min_column], sensor[metric.max_column]) %}
+                                            {% set shown = value|c_to_f if metric.converts_f_c else value %}
+                                            <span class="sparkline-metric-group">
+                                                <span class="pill status-{{ status.value }}">
+                                                    {% if metric.key not in ("temperature", "humidity") %}{{ metric.label }}: {% endif -%}
+                                                    {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
+                                                    {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
                                                 </span>
-                                                {% if combine_temp_humidity and metric.key == "temperature" %}
-                                                <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-temperature" title="View full Temperature &amp; Humidity chart">
-                                                    <canvas class="sparkline" width="260" height="84"
-                                                            data-combined="1"
-                                                            data-points-week="{{ temp_spark.ranges.week|tojson }}"
-                                                            data-points-month="{{ temp_spark.ranges.month|tojson }}"
-                                                            data-points-week-b="{{ humidity_spark.ranges.week|tojson }}"
-                                                            data-points-month-b="{{ humidity_spark.ranges.month|tojson }}"
-                                                            data-decimals="{{ metric.decimals }}"
-                                                            data-decimals-b="{{ humidity_metric.decimals }}"
-                                                            data-target-min="{{ '' if temp_spark.target_min is none else temp_spark.target_min }}"
-                                                            data-target-max="{{ '' if temp_spark.target_max is none else temp_spark.target_max }}"
-                                                            data-target-min-b="{{ '' if humidity_spark.target_min is none else humidity_spark.target_min }}"
-                                                            data-target-max-b="{{ '' if humidity_spark.target_max is none else humidity_spark.target_max }}"
-                                                            data-label-a="{{ metric.label }}"
-                                                            data-label-b="{{ humidity_metric.label }}"
-                                                            data-title-week="Temperature &amp; Humidity - last 7 days"
-                                                            data-title-month="Temperature &amp; Humidity - last 30 days"
-                                                            data-range="week"></canvas>
-                                                </a>
-                                                {% else %}
-                                                <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
-                                                    <canvas class="sparkline" width="260" height="84"
-                                                            data-points-week="{{ spark.ranges.week|tojson }}"
-                                                            data-points-month="{{ spark.ranges.month|tojson }}"
-                                                            data-decimals="{{ metric.decimals }}"
-                                                            data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
-                                                            data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                                                            data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
-                                                            data-title-week="{{ metric.label }} - last 7 days"
-                                                            data-title-month="{{ metric.label }} - last 30 days"
-                                                            data-range="week"></canvas>
-                                                </a>
+                                                {% if not (combine_temp_humidity and metric.key == "humidity") %}
+                                                {% set spark = sensor.sparklines[metric.reading_column] if sensor.sparklines and sensor.sparklines.get(metric.reading_column) else none %}
+                                                {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                                                <span class="sparkline-chart">
+                                                    <span class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                                                        <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                                        <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                                    </span>
+                                                    {% if combine_temp_humidity and metric.key == "temperature" %}
+                                                    <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-temperature" title="View full Temperature &amp; Humidity chart">
+                                                        <canvas class="sparkline" width="260" height="84"
+                                                                data-combined="1"
+                                                                data-points-week="{{ temp_spark.ranges.week|tojson }}"
+                                                                data-points-month="{{ temp_spark.ranges.month|tojson }}"
+                                                                data-points-week-b="{{ humidity_spark.ranges.week|tojson }}"
+                                                                data-points-month-b="{{ humidity_spark.ranges.month|tojson }}"
+                                                                data-decimals="{{ metric.decimals }}"
+                                                                data-decimals-b="{{ humidity_metric.decimals }}"
+                                                                data-target-min="{{ '' if temp_spark.target_min is none else temp_spark.target_min }}"
+                                                                data-target-max="{{ '' if temp_spark.target_max is none else temp_spark.target_max }}"
+                                                                data-target-min-b="{{ '' if humidity_spark.target_min is none else humidity_spark.target_min }}"
+                                                                data-target-max-b="{{ '' if humidity_spark.target_max is none else humidity_spark.target_max }}"
+                                                                data-label-a="{{ metric.label }}"
+                                                                data-label-b="{{ humidity_metric.label }}"
+                                                                data-title-week="Temperature &amp; Humidity - last 7 days"
+                                                                data-title-month="Temperature &amp; Humidity - last 30 days"
+                                                                data-range="week"></canvas>
+                                                    </a>
+                                                    {% else %}
+                                                    <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ sensor.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                                        <canvas class="sparkline" width="260" height="84"
+                                                                data-points-week="{{ spark.ranges.week|tojson }}"
+                                                                data-points-month="{{ spark.ranges.month|tojson }}"
+                                                                data-decimals="{{ metric.decimals }}"
+                                                                data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
+                                                                data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
+                                                                data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
+                                                                data-title-week="{{ metric.label }} - last 7 days"
+                                                                data-title-month="{{ metric.label }} - last 30 days"
+                                                                data-range="week"></canvas>
+                                                    </a>
+                                                    {% endif %}
+                                                </span>
+                                                {% endif %}
                                                 {% endif %}
                                             </span>
-                                            {% endif %}
                                             {% endif %}
                                         {% endfor %}
                                         </span>
@@ -599,7 +654,11 @@
                 <div class="room-header-actions">
                     {% if room.sensors | selectattr("tracking_mode", "equalto", "smart") | list %}
                     <form method="post" action="/rooms/{{ room.id }}/refresh" class="entity-refresh-form">
+                        {% if room.can_refresh %}
                         <button type="submit" title="Force a live BLE read from this Room's own Sensor(s) now">&#8635; Refresh</button>
+                        {% else %}
+                        <button type="submit" disabled title="Every Smart Sensor here is on a deactivated Plugin — reactivate it in Admin to use Refresh">&#8635; Refresh</button>
+                        {% endif %}
                     </form>
                     {% endif %}
                     {# A Room's own Manual Sensors (see CONTEXT.md: Room, Sensor) get the same Log
@@ -640,6 +699,13 @@
         {% else %}
         <p class="empty">No enclosures registered yet — use tools/register_device.py.</p>
         {% endif %}
+
+        {# Image Lightbox (see CONTEXT.md: Dashboard Thumbnail) — shared by every Enclosure
+           panel's own thumbnail on this page. #}
+        <dialog id="image-lightbox" class="image-lightbox">
+            <button type="button" class="image-lightbox-close" onclick="dismissImageLightbox()" title="Close" aria-label="Close">&times;</button>
+            <img src="" alt="">
+        </dialog>
     </main>
     <script src="/static/chart.min.js?v={{ asset_version }}"></script>
     <script src="/static/graphs.js?v={{ asset_version }}"></script>

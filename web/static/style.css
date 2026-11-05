@@ -76,6 +76,27 @@ body {
 }
 .page-header nav a:hover { opacity: 1; text-decoration: underline; }
 .page-header nav a[aria-current="page"] { opacity: 1; font-weight: 700; }
+/* The logged-in username/role + Log Out button (see _nav.html; RHA-99) — same nav column as the
+   page links above, visually separated with a thin top border since it isn't a navigation link. */
+.nav-user {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.2rem;
+    margin-top: 0.3rem;
+    padding-top: 0.3rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    opacity: 0.85;
+}
+.nav-user button {
+    background: none;
+    border: none;
+    color: var(--text);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0;
+}
 
 .admin-main {
     max-width: 900px;
@@ -117,6 +138,32 @@ body {
     letter-spacing: 0.04em;
 }
 .admin-table a { color: var(--primary-bright); }
+/* Knowledge Base (see CONTEXT.md: Knowledge Base; ADR 0054) — every field is directly editable in
+   place, so .admin-table's own cells carry real <input>/<select> elements here instead of text. */
+.admin-table input, .admin-table select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.85rem;
+}
+.admin-table input[type="number"] { width: 4.5rem; }
+.admin-table input.kb-name { width: 9rem; }
+.admin-table input.kb-text { width: 11rem; }
+.kb-search-bar {
+    margin-bottom: 1.25rem;
+}
+.kb-search-bar input[type="search"] {
+    width: 100%;
+    max-width: 420px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.95rem;
+}
 /* Enclosure page: the Plugs and Schedules tables share these column widths so their columns line
    up when stacked in the same card column. table-layout: fixed makes the widths hold regardless of
    each table's content. */
@@ -178,6 +225,20 @@ body {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
     align-items: flex-end;
+}
+/* Highlights a block a client-side check just rejected (e.g. Add Plug's "pick a Room, or one or
+   more Enclosures" rule) without clearing anything the user already filled in — see
+   validatePlugParentOnSubmit in app.js. */
+.admin-form .mode-fields.field-error {
+    outline: 2px solid var(--status-red);
+    border-radius: 6px;
+    padding: 0.4rem;
+}
+.field-error-message {
+    color: var(--status-red);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0;
 }
 .admin-form button {
     background: var(--primary);
@@ -589,6 +650,10 @@ a.pill:hover { opacity: 0.85; }
 .status-red-text { color: var(--status-red); font-weight: 600; }
 .status-yellow-text { color: var(--status-yellow); font-weight: 600; }
 
+/* One row per Target Schedule cycle (see CONTEXT.md: Target Schedule; ADR 0057) — just spacing
+   between a Timer-Controlled Plug's up-to-3 on/off cycle rows in the Add/Edit Plug forms. */
+.schedule-cycle { margin-bottom: 0.4rem; }
+
 /* Plug on/off control — see CONTEXT.md: Command; ADR 0014. Reuses .admin-form's input/button
    styling (added alongside it on the same <form>) but lays out compactly/inline instead of
    .admin-form's own wrap-and-space-out-fields layout, since this is just two buttons and an
@@ -682,7 +747,134 @@ a.pill:hover { opacity: 0.85; }
 .quick-log-section + .quick-log-section { margin-top: 1.2rem; }
 .quick-log-section h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
 
+/* Image Lightbox (see CONTEXT.md: Animal Photo, Enclosure Photo, Dashboard Thumbnail) — one shared
+   #image-lightbox per page, reusing .care-prompt-modal's own dialog shell/close-button styling but
+   sized to frame a photo instead of text. */
+.image-lightbox {
+    width: min(92vw, 900px);
+    padding: 0;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.image-lightbox::backdrop { background: rgba(0, 0, 0, 0.75); }
+.image-lightbox-close {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.6rem;
+    background: rgba(0, 0, 0, 0.5);
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0.1rem 0.5rem;
+    border-radius: 6px;
+}
+.image-lightbox-close:hover { background: rgba(0, 0, 0, 0.75); }
+.image-lightbox img {
+    display: block;
+    width: 100%;
+    max-height: 85vh;
+    object-fit: contain;
+}
+
+/* Animal Photo thumbnails (see CONTEXT.md: Animal Photo) — every clickable photo everywhere in
+   the app shares this cursor/affordance. */
+.photo-thumbnail { cursor: zoom-in; }
+
+/* Enclosure Photo (see CONTEXT.md: Enclosure Photo) — rendered full-width at the very top of the
+   Enclosure's own Admin page, above Enclosure Settings, only when one's been uploaded. */
+.enclosure-photo-banner {
+    width: 100%;
+    max-height: 320px;
+    object-fit: cover;
+    border-radius: 10px;
+    display: block;
+}
+
+/* Animal cards (see grill-me decision: redesigned from a plain <table> into a card grid so there's
+   room for a large Animal Photo thumbnail) — same grid shape as the Dashboard's own .panel-grid. */
+.animal-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+.animal-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.animal-card-photo {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    display: block;
+}
+.animal-card-photo-empty {
+    width: 100%;
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-style: italic;
+}
+.animal-card-body { padding: 0.75rem 0.9rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.animal-card-name { font-weight: 700; font-size: 1.05rem; }
+.animal-card-species { color: var(--text-muted); font-size: 0.85rem; }
+.animal-card-dob { color: var(--text-muted); font-size: 0.8rem; }
+.animal-card-dashboard { font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem; }
+.animal-card-actions { font-size: 0.8rem; margin-top: 0.1rem; }
+
+/* Photo upload controls (Animal Edit page, Enclosure Settings) — a small current-photo preview
+   next to the file input and a "remove" action, same shape on both forms. */
+.photo-upload-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.photo-upload-preview {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+/* Dashboard Thumbnail (see CONTEXT.md: Dashboard Thumbnail) — a small photo next to the Enclosure
+   panel's own name/Animal info on the Dashboard. */
+.panel-thumbnail {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 8px;
+    flex-shrink: 0;
+    margin: 0.9rem 0 0.9rem 1.1rem;
+}
+
 .care-row { justify-content: space-between; }
+/* Feeding row's "Last fed" / Who columns (see admin_enclosure.html) — stacked label-over-value so
+   "Last fed" reads as a column header even though these aren't an actual <table>; the Who column
+   reuses the same label row height (via a non-breaking space) so its value still lines up with
+   "Last fed"'s value instead of sitting half a line higher. */
+.feeding-last-col {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    line-height: 1.25;
+}
+.feeding-last-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.feeding-last-value {
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
 .care-actions {
     margin-left: auto;
     display: flex;
@@ -793,6 +985,17 @@ a.setup-skip-link:hover { color: var(--text); }
 .error-banner {
     grid-column: 1 / -1;
     background: var(--status-red);
+    color: #fff;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+/* Confirms a real action just succeeded (e.g. a Plugin activate/deactivate — see CONTEXT.md:
+   Active Plugin; ADR 0052) — same shape as .error-banner above, just the "this went fine" color. */
+.notice-banner {
+    grid-column: 1 / -1;
+    background: var(--status-green);
     color: #fff;
     padding: 0.6rem 1rem;
     border-radius: 8px;
@@ -933,6 +1136,11 @@ span.button-link.disabled {
    explicit columns the pill/as-of row already fills. */
 .sparkline-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.3rem; }
 .sparkline-group-row { grid-column: 1 / -1; }
+/* .sparkline-metric-group pairs one metric's pill with its own chart directly under it, instead of
+   every pill stacking above every chart — each item of .sparkline-group is one of these (a lone
+   pill with no chart, for a metric with a value but no history yet, is still one of these too, it
+   just has nothing to put in the second slot). */
+.sparkline-metric-group { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
 /* .sparkline-chart wraps one canvas plus its own Week/Month toggle (ADR 0032) — each metric's
    chart picks its window independently, same as it's always drawn independently. */
 .sparkline-chart { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
+    {% import "_plug_cycles_macro.html" as plug_cycles %}
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>{{ room.name }}</h1>
@@ -17,11 +18,14 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>Room Settings</h2>
-            <form method="post" action="/admin/rooms/{{ room.id }}/update" class="admin-form">
+            <form method="post" action="/admin/rooms/{{ room.id }}/update" class="admin-form"
+                  onsubmit="return validateBothOrNeitherOnSubmit(event, 'light_on_time', 'light_off_time', 'room-light-schedule-error')">
                 <label>Name <input type="text" name="name" value="{{ room.name }}" required></label>
                 <label>Light on-time <input type="time" name="light_on_time" value="{{ room.light_on_time or '' }}"></label>
                 <label>Light off-time <input type="time" name="light_off_time" value="{{ room.light_off_time or '' }}"></label>
                 <label>Notes <input type="text" name="light_notes" value="{{ room.light_notes or '' }}" placeholder="e.g. natural light from east window" style="width:20rem"></label>
+                <p id="room-light-schedule-error" class="field-error-message" style="display:none">
+                    Enter both a Light on-time and off-time, or leave both blank.</p>
                 <button type="submit">Save</button>
             </form>
             <form method="post" action="/admin/rooms/{{ room.id }}/delete" class="admin-form danger-form" onsubmit="return confirm('Delete {{ room.name }}? Its Enclosures will be un-assigned, not deleted. This cannot be undone.');">
@@ -43,21 +47,24 @@
                         <td>{{ s.tracking_mode|capitalize }}</td>
                         <td>{{ s.mac_address or "—" }}</td>
                         <td>
-                            {% if reading and reading.temperature_c is not none %}<div><span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span></div>{% endif %}
-                            {% if reading and reading.humidity_pct is not none %}<div><span class="pill status-{{ humidity_status.value }}">{{ "%.0f"|format(reading.humidity_pct) }}%</span></div>{% endif %}
                             {% if not reading %}
                             <span class="pill status-unknown">no data yet</span>
                             {% else %}
+                            {# "as of" is shared (one Reading, Temp and Humidity alike) — shown once
+                               at the top (see CONTEXT.md: Reading, Target Range). Each metric below
+                               gets its own pill with its own Sparkline directly under it (see
+                               CONTEXT.md: Sparkline; ADR 0023, ADR 0024, ADR 0032) — not both pills
+                               then both charts. Clicking a chart opens the full Graphs chart for
+                               that exact Sensor+metric. Each chart has its own Week/Month toggle
+                               (both windows are already embedded below; see web/static/graphs.js's
+                               setSparklineRange). When this Sensor reports both Temperature and
+                               Humidity, they share one combined chart instead of two (RHA-93) —
+                               dual y-axis, one Target Range band per metric (two shades of green),
+                               fixed per-metric line colors, no separate legend (see
+                               web/static/graphs.js's renderCombinedSparklineChart) — it renders
+                               once, under the Temperature pill; the Humidity pill that follows has
+                               no chart of its own underneath. #}
                             <span class="reading-meta">as of {{ reading.recorded_at }}</span>
-                            {# A Sparkline per metric, stacked under the as-of line (see CONTEXT.md:
-                               Sparkline; ADR 0023, ADR 0024, ADR 0032) — clicking one opens the
-                               full Graphs chart for that exact Sensor+metric. Each chart has its
-                               own Week/Month toggle (both windows are already embedded below; see
-                               web/static/graphs.js's setSparklineRange). When this Sensor reports
-                               both Temperature and Humidity, they share one combined chart instead
-                               of two (RHA-93) — dual y-axis, one Target Range band per metric (two
-                               shades of green), fixed per-metric line colors, no separate legend
-                               (see web/static/graphs.js's renderCombinedSparklineChart). #}
                             {% set spark_temp = s.sparklines.get("temperature_c") if s.sparklines else none %}
                             {% set spark_humidity = s.sparklines.get("humidity_pct") if s.sparklines else none %}
                             {% set humidity_metric = TARGET_RANGE_METRICS|selectattr("key", "equalto", "humidity")|first %}
@@ -65,16 +72,16 @@
                                 and (spark_temp.ranges.week or spark_temp.ranges.month)
                                 and (spark_humidity.ranges.week or spark_humidity.ranges.month) %}
                             <div class="sparkline-group">
-                            {% for metric in TARGET_RANGE_METRICS %}
-                                {% if not (combine_temp_humidity and metric.key == "humidity") %}
-                                {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
-                                {% if spark and (spark.ranges.week or spark.ranges.month) %}
+                            {% if reading.temperature_c is not none %}
+                            <div class="sparkline-metric-group">
+                                <span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span>
+                                {% if spark_temp and (spark_temp.ranges.week or spark_temp.ranges.month) %}
                                 <div class="sparkline-chart">
-                                    <div class="sparkline-range-toggle" role="group" aria-label="{{ metric.label }} chart range">
+                                    <div class="sparkline-range-toggle" role="group" aria-label="Temperature chart range">
                                         <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
                                         <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
                                     </div>
-                                    {% if combine_temp_humidity and metric.key == "temperature" %}
+                                    {% if combine_temp_humidity %}
                                     <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature &amp; Humidity chart">
                                         <canvas class="sparkline" width="260" height="84"
                                                 data-combined="1"
@@ -82,36 +89,59 @@
                                                 data-points-month="{{ spark_temp.ranges.month|tojson }}"
                                                 data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
                                                 data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
-                                                data-decimals="{{ metric.decimals }}"
+                                                data-decimals="1"
                                                 data-decimals-b="{{ humidity_metric.decimals }}"
                                                 data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
                                                 data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
                                                 data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
                                                 data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
-                                                data-label-a="{{ metric.label }}"
+                                                data-label-a="Temperature"
                                                 data-label-b="{{ humidity_metric.label }}"
                                                 data-title-week="Temperature &amp; Humidity - last 7 days"
                                                 data-title-month="Temperature &amp; Humidity - last 30 days"
                                                 data-range="week"></canvas>
                                     </a>
                                     {% else %}
-                                    <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-{{ metric.key }}" title="View full {{ metric.label }} chart">
+                                    <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature chart">
                                         <canvas class="sparkline" width="260" height="84"
-                                                data-points-week="{{ spark.ranges.week|tojson }}"
-                                                data-points-month="{{ spark.ranges.month|tojson }}"
-                                                data-decimals="{{ metric.decimals }}"
-                                                data-target-min="{{ '' if spark.target_min is none else spark.target_min }}"
-                                                data-target-max="{{ '' if spark.target_max is none else spark.target_max }}"
-                                                data-slot-band="{{ '1' if metric.period_slot_band else '' }}"
-                                                data-title-week="{{ metric.label }} - last 7 days"
-                                                data-title-month="{{ metric.label }} - last 30 days"
+                                                data-points-week="{{ spark_temp.ranges.week|tojson }}"
+                                                data-points-month="{{ spark_temp.ranges.month|tojson }}"
+                                                data-decimals="1"
+                                                data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
+                                                data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
+                                                data-title-week="Temperature - last 7 days"
+                                                data-title-month="Temperature - last 30 days"
                                                 data-range="week"></canvas>
                                     </a>
                                     {% endif %}
                                 </div>
                                 {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if reading.humidity_pct is not none %}
+                            <div class="sparkline-metric-group">
+                                <span class="pill status-{{ humidity_status.value }}">{{ "%.0f"|format(reading.humidity_pct) }}%</span>
+                                {% if not combine_temp_humidity and spark_humidity and (spark_humidity.ranges.week or spark_humidity.ranges.month) %}
+                                <div class="sparkline-chart">
+                                    <div class="sparkline-range-toggle" role="group" aria-label="Humidity chart range">
+                                        <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                        <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                    </div>
+                                    <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-humidity" title="View full Humidity chart">
+                                        <canvas class="sparkline" width="260" height="84"
+                                                data-points-week="{{ spark_humidity.ranges.week|tojson }}"
+                                                data-points-month="{{ spark_humidity.ranges.month|tojson }}"
+                                                data-decimals="1"
+                                                data-target-min="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
+                                                data-target-max="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
+                                                data-title-week="Humidity - last 7 days"
+                                                data-title-month="Humidity - last 30 days"
+                                                data-range="week"></canvas>
+                                    </a>
+                                </div>
                                 {% endif %}
-                            {% endfor %}
+                            </div>
+                            {% endif %}
                             </div>
                             {% endif %}
                         </td>
@@ -140,16 +170,17 @@
             </table>
             <details>
                 <summary>+ Add Sensor</summary>
-                <form method="post" action="/admin/rooms/{{ room.id }}/sensors" class="admin-form">
+                <form method="post" action="/admin/rooms/{{ room.id }}/sensors" class="admin-form"
+                      onsubmit="return validateSensorTargetRangeOnSubmit(event, 'add-room-sensor-tracking-mode', 'add-room-sensor-range-error')">
                     <label>Label <input type="text" name="label" placeholder="e.g. by the window" required></label>
                     <label>Tracking Mode
-                        <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-room-sensor-smart', 'add-room-sensor-manual')">
+                        <select id="add-room-sensor-tracking-mode" name="tracking_mode" onchange="onTrackingModeChange(this, 'add-room-sensor-smart', 'add-room-sensor-manual')">
                             <option value="smart">Smart (Govee BLE sensor)</option>
                             <option value="manual">Manual (hand-logged readings)</option>
                         </select>
                     </label>
                     <div id="add-room-sensor-smart" class="mode-fields">
-                        <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF"></label>
+                        <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required></label>
                         <div class="discover-device">
                             <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
                             <div class="discover-results" style="display:none"></div>
@@ -158,6 +189,8 @@
                     <div id="add-room-sensor-manual" class="mode-fields" style="display:none">
                         <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on temperature or humidity.</p>
                     </div>
+                    <p id="add-room-sensor-range-error" class="field-error-message" style="display:none">
+                        Enter both a min and max for at least one Target Range below.</p>
                     <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
                     <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
                     <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
@@ -240,21 +273,24 @@
                     {% elif plug.always_on %}
                         <span class="pill status-green">Always On</span>
                     {% elif plug.tracking_mode == "manual" %}
-                        {% if plug.target_on_time and plug.target_off_time %}
-                        <span class="pill status-unknown">{{ plug.target_on_time|clock_12h }}&ndash;{{ plug.target_off_time|clock_12h }}</span>
+                        {% if plug.has_target_schedule %}
+                        <span class="pill status-unknown">{{ plug_cycles.cycles_text(plug) }}</span>
                         {% else %}
                         <span class="pill status-unknown">no target schedule set</span>
                         {% endif %}
-                    {% elif not plug.target_on_time and not plug.target_off_time and not plug.detected_on_time and not plug.detected_off_time %}
+                    {% elif not plug.has_target_schedule and not plug.detected_on_time and not plug.detected_off_time %}
                         <span class="pill status-unknown">no schedule data yet</span>
                     {% else %}
-                        {% set on_drift = acknowledged_drift_status(plug.target_on_time, plug.detected_on_time, plug.timer_ack_on_time, schedule_drift_threshold_minutes) %}
-                        {% set off_drift = acknowledged_drift_status(plug.target_off_time, plug.detected_off_time, plug.timer_ack_off_time, schedule_drift_threshold_minutes) %}
+                        {% set on_drift = acknowledged_drift_status(plug.matched_target_on_time, plug.detected_on_time, plug.timer_ack_on_time, schedule_drift_threshold_minutes) %}
+                        {% set off_drift = acknowledged_drift_status(plug.matched_target_off_time, plug.detected_off_time, plug.timer_ack_off_time, schedule_drift_threshold_minutes) %}
                         {% set pill_status = "red" if (on_drift.value == "red" or off_drift.value == "red") else ("yellow" if (on_drift.value == "yellow" or off_drift.value == "yellow") else ("green" if (on_drift.value == "green" and off_drift.value == "green") else "unknown")) %}
                         <span class="pill status-{{ pill_status }}" title="target/detected">
-                            On <span class="schedule-target">{{ plug.target_on_time|clock_12h or "—" }}</span>/{{ plug.detected_on_time|clock_12h or "—" }}
-                            · Off <span class="schedule-target">{{ plug.target_off_time|clock_12h or "—" }}</span>/{{ plug.detected_off_time|clock_12h or "—" }}
+                            On <span class="schedule-target">{{ plug.matched_target_on_time|clock_12h or "—" }}</span>/{{ plug.detected_on_time|clock_12h or "—" }}
+                            · Off <span class="schedule-target">{{ plug.matched_target_off_time|clock_12h or "—" }}</span>/{{ plug.detected_off_time|clock_12h or "—" }}
                         </span>
+                        {% if plug.target_on_time_2 or plug.target_on_time_3 %}
+                        <span class="pill status-unknown" title="all configured cycles">{{ plug_cycles.cycles_text(plug) }}</span>
+                        {% endif %}
                     {% endif %}
                     {# On/off Command control — see CONTEXT.md: Command, Interruption; ADR 0014.
                        No confirmation dialog by design (see ADR 0014's Considered Options); the
@@ -272,13 +308,17 @@
                         <span class="pill status-green">{{ "ON" if plug.last_command.is_on else "OFF" }} (commanded {{ plug.last_command.requested_at|utc_clock }}){% if plug.last_command.note %} — {{ plug.last_command.note }}{% endif %}</span>
                         {% endif %}
                     {% endif %}
+                    {% set plug_blocked = plug.tracking_mode == "smart" and not is_plugin_active(plug.plugin) %}
                     <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">
-                        <button type="submit" name="is_on" value="true">Turn On</button>
-                        <button type="submit" name="is_on" value="false">Turn Off</button>
+                        <button type="submit" name="is_on" value="true" {% if plug_blocked %}disabled{% endif %}>Turn On</button>
+                        <button type="submit" name="is_on" value="false" {% if plug_blocked %}disabled{% endif %}>Turn Off</button>
                         {% if plug.controller_kind != "none" %}
                         <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
                         {% endif %}
                     </form>
+                    {% if plug_blocked %}
+                    <span class="empty">{{ plug.plugin }} is deactivated — reactivate it in Admin to send commands.</span>
+                    {% endif %}
                 </div>
             {% else %}
                 <p class="empty">No plugs registered</p>

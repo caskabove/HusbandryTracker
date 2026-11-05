@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -22,6 +22,14 @@ from fastapi.templating import Jinja2Templates
 from app_paths import APP_ROOT
 from schemas import enclosure_types as et
 from web import admin_queries as q
+from web import species_kb_queries as skq
+from web.wizard_shared import (
+    PURPOSE_SUGGESTIONS,
+    f_to_c as _f_to_c,
+    primary_and_other_metrics as _primary_and_other_metrics,
+    target_ranges_from_form as _target_ranges_from_form,
+    wizard_redirect as _wizard_redirect,
+)
 
 _WEB_DIR = APP_ROOT / "web"
 router = APIRouter(prefix="/setup")
@@ -32,55 +40,7 @@ templates.env.globals["asset_version"] = str(int(
     max(f.stat().st_mtime for f in (_WEB_DIR / "static").iterdir() if f.is_file())
 ))
 
-# Purpose (see CONTEXT.md: Purpose) is free text everywhere, not a fixed set — these are just the
-# <datalist> suggestions, same ones already offered on the ordinary Add Plug form.
-PURPOSE_SUGGESTIONS = ("light", "heat", "cooling", "UVB", "pump")
-
-# Which Target Range metric (see schemas/enclosure_types.py) gets shown expanded-by-default on the
-# Sensor step, with the rest of that Enclosure Type's metrics collapsed under "+ more metrics" —
-# the one metric every keeper of that type is virtually guaranteed to test for. See ADR 0031.
-_PRIMARY_METRIC_BY_TYPE = {"basic": "temperature", "amphibian": "temperature", "freshwater": "ph", "saltwater": "ph"}
-
-
-def _f_to_c(fahrenheit: float | None) -> float | None:
-    return None if fahrenheit is None else (fahrenheit - 32) * 5 / 9
-
-
 templates.env.filters["c_to_f"] = lambda c: None if c is None else c * 9 / 5 + 32
-
-
-def _wizard_redirect(path: str, **params: str) -> str:
-    """Builds a Setup Wizard redirect URL carrying only the non-empty query params given — used to
-    thread the Species Profile pick (see CONTEXT.md: Species Profile) through the wizard's own
-    step-to-step redirects without ever persisting it anywhere (same "never stored" rule as the
-    picker itself), alongside this router's existing error-message carry-through."""
-    query = {k: v for k, v in params.items() if v}
-    return path + (("?" + urlencode(query)) if query else "")
-
-
-def _primary_and_other_metrics(enclosure_type: str) -> tuple[et.TargetRangeMetric, list[et.TargetRangeMetric]]:
-    metrics = et.target_range_metrics_for(enclosure_type)
-    primary_key = _PRIMARY_METRIC_BY_TYPE.get(enclosure_type, "temperature")
-    primary = next(m for m in metrics if m.key == primary_key)
-    others = [m for m in metrics if m.key != primary_key]
-    return primary, others
-
-
-async def _target_ranges_from_form(request: Request, metrics: tuple) -> q.TargetRanges:
-    """Generic across however many metrics apply to this Enclosure Type (1 for most, up to 10 for
-    Saltwater) — reading request.form() directly instead of one Form(...) parameter per metric
-    (admin.py's own pattern) keeps this wizard-only route from needing a ~50-parameter signature
-    for a form most of whose fields are left blank."""
-    form = await request.form()
-    ranges: q.TargetRanges = {}
-    for m in metrics:
-        raw_min, raw_max = form.get(f"min_{m.key}"), form.get(f"max_{m.key}")
-        mn = float(raw_min) if raw_min else None
-        mx = float(raw_max) if raw_max else None
-        if m.converts_f_c:
-            mn, mx = _f_to_c(mn), _f_to_c(mx)
-        ranges[m.key] = (mn, mx)
-    return ranges
 
 
 @router.get("/")
@@ -155,14 +115,13 @@ def setup_create_room_plug(
 @router.get("/enclosure")
 def setup_enclosure_form(request: Request, room_id: str = ""):
     room = q.get_room(int(room_id)) if room_id else None
-    return templates.TemplateResponse(
-        request, "setup_enclosure.html",
-        {
-            "room": room, "room_id": room_id,
-            "enclosure_types": et.ENCLOSURE_TYPES, "enclosure_type_labels": et.ENCLOSURE_TYPE_LABELS,
-            "error": request.query_params.get("error"),
-        }
-    )
+    context = {
+        "room": room, "room_id": room_id,
+        "enclosure_types": et.ENCLOSURE_TYPES, "enclosure_type_labels": et.ENCLOSURE_TYPE_LABELS,
+        "error": request.query_params.get("error"),
+    }
+    context.update(skq.species_profile_js_context())
+    return templates.TemplateResponse(request, "setup_enclosure.html", context)
 
 
 @router.post("/enclosures")
@@ -203,14 +162,13 @@ def setup_animals(request: Request, enclosure_id: int):
         return RedirectResponse(url="/setup/", status_code=303)
     species_profile = request.query_params.get("species_profile", "")
     life_stage = request.query_params.get("life_stage", "adult")
-    return templates.TemplateResponse(
-        request, "setup_animals.html",
-        {
-            "enclosure": enclosure, "error": request.query_params.get("error"),
-            "species_profile": species_profile, "life_stage": life_stage,
-            "carry_params": _wizard_redirect("", species_profile=species_profile, life_stage=life_stage),
-        }
-    )
+    context = {
+        "enclosure": enclosure, "error": request.query_params.get("error"),
+        "species_profile": species_profile, "life_stage": life_stage,
+        "carry_params": _wizard_redirect("", species_profile=species_profile, life_stage=life_stage),
+    }
+    context.update(skq.species_profile_js_context())
+    return templates.TemplateResponse(request, "setup_animals.html", context)
 
 
 @router.post("/enclosures/{enclosure_id}/animals")
@@ -266,14 +224,13 @@ def setup_sensor_form(request: Request, enclosure_id: int):
     if enclosure["room_id"] and not enclosure["sensors"]:
         room = q.get_room(enclosure["room_id"])
         room_sensors = room["sensors"] if room else []
-    return templates.TemplateResponse(
-        request, "setup_sensor.html",
-        {
-            "enclosure": enclosure, "primary_metric": primary, "other_metrics": others,
-            "room_sensors": room_sensors, "error": request.query_params.get("error"),
-            "species_profile": request.query_params.get("species_profile", ""),
-        }
-    )
+    context = {
+        "enclosure": enclosure, "primary_metric": primary, "other_metrics": others,
+        "room_sensors": room_sensors, "error": request.query_params.get("error"),
+        "species_profile": request.query_params.get("species_profile", ""),
+    }
+    context.update(skq.species_profile_js_context())
+    return templates.TemplateResponse(request, "setup_sensor.html", context)
 
 
 @router.post("/enclosures/{enclosure_id}/fallback-sensor")
@@ -331,6 +288,10 @@ def setup_create_plug(
     purpose: str = Form(...),
     target_on_time: str = Form(""),
     target_off_time: str = Form(""),
+    target_on_time_2: str = Form(""),
+    target_off_time_2: str = Form(""),
+    target_on_time_3: str = Form(""),
+    target_off_time_3: str = Form(""),
     always_on: bool = Form(False),
     controller_kind: str = Form("none"),
     target_temp_f: float | None = Form(None),
@@ -341,6 +302,8 @@ def setup_create_plug(
             label, purpose, "manual", None, None, None, "1", target_on_time or None, target_off_time or None,
             room_id=None, enclosure_ids=[enclosure_id], controller_kind=controller_kind,
             target_temp_c=_f_to_c(target_temp_f), target_humidity_pct=target_humidity_pct, always_on=always_on,
+            target_on_time_2=target_on_time_2 or None, target_off_time_2=target_off_time_2 or None,
+            target_on_time_3=target_on_time_3 or None, target_off_time_3=target_off_time_3 or None,
         )
     except ValueError as exc:
         return RedirectResponse(url=f"/setup/enclosures/{enclosure_id}/plug?error={quote(str(exc))}", status_code=303)

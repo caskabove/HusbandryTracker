@@ -14,15 +14,19 @@ from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from active_plugins import is_plugin_active
 from app_paths import APP_ROOT
 from schemas import enclosure_types as et
+from schemas import species_profile_kb as skb
 from web import admin_queries as q
+from web import auth_queries as authq
 from web import graphs_queries as gq
 from web import plugin_catalog
+from web import species_kb_queries as skq
 from web import view_data_queries as vd
 from web.govee_refresh import discover_govee, refresh_sensors
 from web.plug_probe import probe_plug
@@ -45,6 +49,7 @@ templates.env.globals["ENCLOSURE_TYPES"] = et.ENCLOSURE_TYPES
 templates.env.globals["ENCLOSURE_TYPE_LABELS"] = et.ENCLOSURE_TYPE_LABELS
 templates.env.globals["target_range_metrics_for"] = et.target_range_metrics_for
 templates.env.globals["TARGET_RANGE_METRICS"] = et.TARGET_RANGE_METRICS
+templates.env.globals["is_plugin_active"] = is_plugin_active
 # Cache-busting for /static/app.js and /static/style.css (see web/main.py's identical setup and
 # comment) — this router has its own separate Jinja2Templates instance, so its own globals need
 # this too; missing it here left every admin_*.html page rendering "?v=" (empty) instead of a real
@@ -163,34 +168,90 @@ def _sensor_volatility(
 
 @router.get("/")
 def admin_index(request: Request):
-    return templates.TemplateResponse(
-        request, "admin_index.html",
-        {
-            "sensors": q.list_sensors(), "plugs": q.list_plugs(),
-            "plug_groups": q.list_plug_groups(),
-            "settings": q.get_settings(),
-            "error": request.query_params.get("error"),
-        }
-    )
+    # enclosures/rooms/plug_groups here are for the Add Sensor/Add Plug forms' own Belongs-to/Plug-
+    # Group pickers (see ADR 0055), not for listing anything — plug_groups also backs the Plug
+    # Groups table above them.
+    context = {
+        "sensors": q.list_sensors(), "plugs": q.list_plugs(),
+        "plug_groups": q.list_plug_groups(),
+        "enclosures": q.list_enclosures(), "rooms": q.list_rooms(),
+        "settings": q.get_settings(),
+        "error": request.query_params.get("error"),
+    }
+    context.update(skq.species_profile_js_context())
+    return templates.TemplateResponse(request, "admin_index.html", context)
 
 
 @router.get("/app")
 def admin_app(request: Request):
     # See CONTEXT.md: App Admin; ADR 0048/0049 — the entity-independent home for cross-cutting app
-    # config and every "create a new X" Add form, distinct from the per-entity Admin-page sense
-    # used elsewhere in CONTEXT.md. Plugins was the first card moved here (ADR 0048); Settings,
-    # Tuya Cloud Credentials, and the global Add Room/Enclosure/Sensor/Plug/Plug Group forms
-    # followed (ADR 0049) — enclosures/rooms/plug_groups here are just for those forms' own
-    # Belongs-to/Plug-Group pickers, not for listing anything.
-    return templates.TemplateResponse(
-        request, "admin_app.html",
-        {
-            "plugins": plugin_catalog.list_plugins(),
-            "enclosures": q.list_enclosures(), "rooms": q.list_rooms(), "plug_groups": q.list_plug_groups(),
-            "settings": q.get_settings(),
-            "error": request.query_params.get("error"),
-        }
+    # config, and for the global "create a new X" Add forms with no more specific listing page of
+    # their own (Add Animal, Add Plug Group), distinct from the per-entity Admin-page sense used
+    # elsewhere in CONTEXT.md. Plugins was the first card moved here (ADR 0048); Settings, Tuya
+    # Cloud Credentials, and every global Add form followed (ADR 0049) — ADR 0055 then moved Add
+    # Room/Enclosure back to Rooms and Enclosures and Add Sensor/Plug back to Plugs and Sensors,
+    # next to the tables they create rows for. enclosures/rooms here are just for Add Animal's and
+    # Add Plug Group's own Enclosure/Belongs-to pickers, not for listing anything.
+    context = {
+        "plugins": plugin_catalog.list_plugins(),
+        "enclosures": q.list_enclosures(), "rooms": q.list_rooms(),
+        "settings": q.get_settings(),
+        "users": authq.list_users(), "current_user": request.state.user,
+        "error": request.query_params.get("error"),
+        "notice": request.query_params.get("notice"),
+    }
+    return templates.TemplateResponse(request, "admin_app.html", context)
+
+
+@router.post("/app/users")
+def admin_create_user(username: str = Form(...), password: str = Form(...), role: str = Form("user")):
+    try:
+        user_id = authq.create_user(username, password, role)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+    authq.log_audit("user_created", detail=f"{username} ({role})")
+    return RedirectResponse(url=f"/admin/app/?notice={quote(f'Created user {username}.')}#users", status_code=303)
+
+
+@router.post("/app/users/{user_id}/active")
+def admin_set_user_active(request: Request, user_id: int, is_active: bool = Form(...)):
+    try:
+        authq.set_user_active(user_id, is_active)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}#users", status_code=303)
+    authq.log_audit(
+        "user_enabled" if is_active else "user_disabled",
+        actor_user_id=request.state.user["id"], detail=f"user {user_id}",
     )
+    return RedirectResponse(url="/admin/app/#users", status_code=303)
+
+
+@router.post("/app/users/{user_id}/role")
+def admin_set_user_role(request: Request, user_id: int, role: str = Form(...)):
+    try:
+        authq.set_user_role(user_id, role)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}#users", status_code=303)
+    authq.log_audit(
+        "user_role_changed", actor_user_id=request.state.user["id"], detail=f"user {user_id} -> {role}",
+    )
+    return RedirectResponse(url="/admin/app/#users", status_code=303)
+
+
+@router.post("/app/users/{user_id}/reset-password")
+def admin_reset_user_password(request: Request, user_id: int, new_password: str = Form(...)):
+    try:
+        authq.reset_user_password(user_id, new_password)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}#users", status_code=303)
+    authq.log_audit(
+        "password_reset", actor_user_id=request.state.user["id"], detail=f"user {user_id}",
+    )
+    return RedirectResponse(url=f"/admin/app/?notice={quote('Password reset.')}#users", status_code=303)
+
+
+def _plugin_kind(name: str) -> str:
+    return next((p.kind for p in plugin_catalog.list_plugins() if p.name == name), "device")
 
 
 @router.post("/plugins/{name}/activate")
@@ -203,7 +264,14 @@ def admin_activate_plugin(name: str):
         plugin_catalog.activate_plugin(name)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/app/", status_code=303)
+    # A real action took place (a Skill's files land on disk; a device Plugin's Sensors/Plugs start
+    # being allowed to update again) — see ADR 0052, this gets a notice the same as activating used
+    # to leave entirely silent.
+    if _plugin_kind(name) == "skill":
+        notice = f"Installed the {name} Skill into .claude/skills/{name}/."
+    else:
+        notice = f"{name} activated — its Sensors/Plugs will resume background updates, and Refresh/Plug commands are allowed again."
+    return RedirectResponse(url=f"/admin/app/?notice={quote(notice)}", status_code=303)
 
 
 @router.post("/plugins/{name}/deactivate")
@@ -212,7 +280,11 @@ def admin_deactivate_plugin(name: str):
         plugin_catalog.deactivate_plugin(name)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(url="/admin/app/", status_code=303)
+    if _plugin_kind(name) == "skill":
+        notice = f"Removed the {name} Skill files from .claude/skills/{name}/."
+    else:
+        notice = f"{name} deactivated — its Sensors/Plugs stop updating, and Refresh/Plug commands are now blocked."
+    return RedirectResponse(url=f"/admin/app/?notice={quote(notice)}", status_code=303)
 
 
 @router.post("/settings")
@@ -250,22 +322,22 @@ def admin_update_tuya_credentials(
 @router.get("/enclosures")
 def admin_enclosures(request: Request):
     """The Rooms and Enclosures page — the Enclosures card that used to sit on the Control Panel
-    (see admin_index) plus the Rooms card that used to sit there too (see ADR 0033). The same
-    /admin/enclosures path also takes the POST that creates an Enclosure."""
+    (see admin_index) plus the Rooms card that used to sit there too (see ADR 0033), plus the Add
+    Room and Add Enclosure forms (see ADR 0055). The same /admin/enclosures path also takes the
+    POST that creates an Enclosure."""
     enclosures = q.list_enclosures()
     rooms = q.list_rooms()
     enclosure_count_by_room: dict[int, int] = {}
     for e in enclosures:
         if e["room_id"]:
             enclosure_count_by_room[e["room_id"]] = enclosure_count_by_room.get(e["room_id"], 0) + 1
-    return templates.TemplateResponse(
-        request, "admin_enclosures.html",
-        {
-            "enclosures": enclosures, "rooms": rooms, "rooms_by_id": {r["id"]: r["name"] for r in rooms},
-            "enclosure_count_by_room": enclosure_count_by_room,
-            "error": request.query_params.get("error"),
-        }
-    )
+    context = {
+        "enclosures": enclosures, "rooms": rooms, "rooms_by_id": {r["id"]: r["name"] for r in rooms},
+        "enclosure_count_by_room": enclosure_count_by_room,
+        "error": request.query_params.get("error"),
+    }
+    context.update(skq.species_profile_js_context())
+    return templates.TemplateResponse(request, "admin_enclosures.html", context)
 
 
 @router.post("/enclosures")
@@ -285,7 +357,7 @@ def admin_create_enclosure(
         enclosure_id = q.create_enclosure(name, enclosure_type, bioactive, feeding_interval,
                                            watering_interval, spot_clean_interval, deep_clean_interval)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/enclosures?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -392,6 +464,8 @@ def admin_update_enclosure(
     show_watering_on_dashboard: bool = Form(False),
     show_spot_clean_on_dashboard: bool = Form(False),
     show_deep_clean_on_dashboard: bool = Form(False),
+    dashboard_thumbnail_source: str = Form("enclosure"),
+    dashboard_thumbnail_animal_id: str = Form(""),
 ):
     try:
         q.update_enclosure(
@@ -400,9 +474,30 @@ def admin_update_enclosure(
             int(room_id) if room_id else None, int(fallback_sensor_id) if fallback_sensor_id else None,
             show_feeding_on_dashboard, show_watering_on_dashboard,
             show_spot_clean_on_dashboard, show_deep_clean_on_dashboard,
+            dashboard_thumbnail_source,
+            int(dashboard_thumbnail_animal_id) if dashboard_thumbnail_animal_id else None,
         )
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/enclosures/{enclosure_id}/image")
+async def admin_upload_enclosure_image(enclosure_id: int, image: UploadFile = File(...)):
+    """Enclosure Photo (see CONTEXT.md: Enclosure Photo) — uploaded from the Enclosure Settings
+    form. A separate route/form from the rest of Settings, same "one-field action, own endpoint"
+    precedent as dashboard-visibility toggles, since a file input can't ride along with
+    update_enclosure()'s plain Form() fields."""
+    try:
+        q.set_enclosure_image(enclosure_id, image.content_type, await image.read())
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/enclosures/{enclosure_id}/image/remove")
+def admin_remove_enclosure_image(enclosure_id: int):
+    q.remove_enclosure_image(enclosure_id)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -501,6 +596,27 @@ def admin_update_animal(
 ):
     q.update_animal(animal_id, enclosure_id, name, common, scientific, dob)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+@router.post("/animals/{animal_id}/image")
+async def admin_upload_animal_image(animal_id: int, image: UploadFile = File(...)):
+    """Animal Photo (see CONTEXT.md: Animal Photo) — uploaded from the Animal's own Edit page, not
+    the Enclosure's Animals card grid (see grill-me decision: upload happens on Edit, the card is
+    display-only)."""
+    animal = q.get_animal(animal_id)
+    if animal is None:
+        return RedirectResponse(url="/admin", status_code=303)
+    try:
+        q.set_animal_image(animal_id, image.content_type, await image.read())
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
+
+
+@router.post("/animals/{animal_id}/image/remove")
+def admin_remove_animal_image(animal_id: int):
+    q.remove_animal_image(animal_id)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit", status_code=303)
 
 
 def _quick_log_redirect(animal_id: int, enclosure_id: str, error: str | None = None, edit_anchor: str = "") -> str:
@@ -645,14 +761,14 @@ def admin_create_sensor_global(
     volatility_magnesium: str = Form(""),
     volatility_phosphate: str = Form(""),
 ):
-    """The global Add Sensor form on Admin (see admin_app.html; ADR 0049/0050) — Smart or Manual,
-    for either an Enclosure or a Room. Picking an Enclosure shows that Enclosure Type's own Target
-    Range/Volatility fields (admin_app.html renders one block per Enclosure Type, client-side
-    JS — see app.js's onGlobalSensorEnclosureChange — shows/enables just the one that matches);
-    picking a Room always shows the same fixed temperature/humidity fields admin_room.html's own
-    Add Sensor form has, since a Room has no Enclosure Type. Only the active block's fields are
-    ever enabled, so only one value per field name is ever actually submitted even though the same
-    name appears in more than one block."""
+    """The global Add Sensor form on Plugs and Sensors (see admin_index.html; ADR 0049/0050/0055) —
+    Smart or Manual, for either an Enclosure or a Room. Picking an Enclosure shows that Enclosure
+    Type's own Target Range/Volatility fields (admin_index.html renders one block per Enclosure
+    Type, client-side JS — see app.js's onGlobalSensorEnclosureChange — shows/enables just the one
+    that matches); picking a Room always shows the same fixed temperature/humidity fields
+    admin_room.html's own Add Sensor form has, since a Room has no Enclosure Type. Only the active
+    block's fields are ever enabled, so only one value per field name is ever actually submitted
+    even though the same name appears in more than one block."""
     try:
         if parent_type == "room":
             if not room_id:
@@ -678,7 +794,7 @@ def admin_create_sensor_global(
             )
             q.create_sensor(int(enclosure_id), label, tracking_mode, mac_address or None, target_ranges, volatility)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
 
 
@@ -753,6 +869,8 @@ async def _refresh_one_sensor(sensor_id: int) -> str | None:
     sensor = q.get_sensor(sensor_id)
     if sensor is None or sensor["tracking_mode"] != "smart" or not sensor["mac_address"]:
         return "Refresh needs a Smart Sensor with a MAC address set."
+    if not is_plugin_active(sensor["plugin"]):
+        return f"{sensor['plugin']} is deactivated — reactivate it in Admin before using Refresh."
     timeout = q.get_settings()["ble_refresh_timeout_seconds"]
     mac = sensor["mac_address"].upper()
     results = await refresh_sensors({mac: sensor_id}, timeout)
@@ -892,6 +1010,10 @@ def admin_create_plug(
     switch_dps_key: str = Form("1"),
     target_on_time: str = Form(""),
     target_off_time: str = Form(""),
+    target_on_time_2: str = Form(""),
+    target_off_time_2: str = Form(""),
+    target_on_time_3: str = Form(""),
+    target_off_time_3: str = Form(""),
     always_on: bool = Form(False),
     room_id: str = Form(""),
     enclosure_ids: list[int] = Form(default=[]),
@@ -909,9 +1031,11 @@ def admin_create_plug(
             q.create_plug(label, purpose, tracking_mode, tuya_device_id or None, tuya_local_key or None,
                            tuya_ip_address, switch_dps_key, target_on_time or None, target_off_time or None,
                            int(room_id) if room_id else None, enclosure_ids,
-                           controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on)
+                           controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on,
+                           target_on_time_2=target_on_time_2 or None, target_off_time_2=target_off_time_2 or None,
+                           target_on_time_3=target_on_time_3 or None, target_off_time_3=target_off_time_3 or None)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
 
 
@@ -1050,6 +1174,10 @@ def admin_update_plug(
     tuya_ip_address: str = Form(""),
     target_on_time: str = Form(""),
     target_off_time: str = Form(""),
+    target_on_time_2: str = Form(""),
+    target_off_time_2: str = Form(""),
+    target_on_time_3: str = Form(""),
+    target_off_time_3: str = Form(""),
     always_on: bool = Form(False),
     room_id: str = Form(""),
     enclosure_ids: list[int] = Form(default=[]),
@@ -1064,7 +1192,9 @@ def admin_update_plug(
                        target_on_time or None, target_off_time or None,
                        int(room_id) if room_id else None, enclosure_ids,
                        controller_kind, _f_to_c(target_temp_f), target_humidity_pct, auto_update_enabled,
-                       always_on)
+                       always_on,
+                       target_on_time_2=target_on_time_2 or None, target_off_time_2=target_off_time_2 or None,
+                       target_on_time_3=target_on_time_3 or None, target_off_time_3=target_off_time_3 or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
@@ -1134,7 +1264,10 @@ def admin_delete_plug_group(plug_group_id: int):
 def admin_send_plug_group_command(plug_group_id: int, is_on: bool = Form(...)):
     """All On/All Off — see CONTEXT.md: All On / All Off; ADR 0017. Fans out to the Group's Smart
     members only; Always-On Outlets have no relay to command."""
-    q.send_plug_group_command(plug_group_id, is_on)
+    try:
+        q.send_plug_group_command(plug_group_id, is_on)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
 
 
@@ -1703,3 +1836,57 @@ def admin_plug_telemetry_detail(request: Request, plug_id: int, field: str):
             "error": request.query_params.get("error"),
         }
     )
+
+
+@router.get("/app/knowledge-base")
+def admin_knowledge_base(request: Request):
+    """The Species Profile Knowledge Base (see CONTEXT.md: Knowledge Base; ADR 0054) — 7 editable
+    reference tables of care parameters on one page, with a search box filtering all of them live
+    client-side (web/static/app.js's filterKnowledgeBase). Replaces the old static, uneditable
+    SPECIES_PROFILES literal as the source every Species Profile picker across the app now reads
+    from (see web/species_kb_queries.py's species_profile_js_context)."""
+    return templates.TemplateResponse(
+        request, "admin_knowledge_base.html",
+        {
+            "categories": skb.PROFILE_CATEGORIES,
+            "profiles_by_category": skq.all_profiles_by_category(),
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+@router.post("/app/knowledge-base/{category_key}/create")
+async def admin_create_knowledge_base_profile(category_key: str, request: Request):
+    form = await request.form()
+    category = skb.category_by_key(category_key)
+    field_values = {f.column: form.get(f.column) for f in category.fields}
+    try:
+        skq.create_profile(
+            category_key, form.get("common_name", ""), form.get("scientific_name") or None,
+            form.get("notes") or None, field_values,
+        )
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/app/knowledge-base?error={quote(str(exc))}#kb-{category_key}", status_code=303)
+    return RedirectResponse(url=f"/admin/app/knowledge-base#kb-{category_key}", status_code=303)
+
+
+@router.post("/app/knowledge-base/{category_key}/{profile_id}/update")
+async def admin_update_knowledge_base_profile(category_key: str, profile_id: int, request: Request):
+    form = await request.form()
+    category = skb.category_by_key(category_key)
+    field_values = {f.column: form.get(f.column) for f in category.fields}
+    try:
+        skq.update_profile(
+            category_key, profile_id, form.get("common_name", ""), form.get("scientific_name") or None,
+            form.get("notes") or None, field_values,
+        )
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/app/knowledge-base?error={quote(str(exc))}#kb-{category_key}", status_code=303)
+    return RedirectResponse(url=f"/admin/app/knowledge-base#kb-{category_key}", status_code=303)
+
+
+@router.post("/app/knowledge-base/{category_key}/{profile_id}/delete")
+def admin_delete_knowledge_base_profile(category_key: str, profile_id: int):
+    skb.category_by_key(category_key)  # raises ValueError (-> 500) on a bad category; never user-reachable
+    skq.delete_profile(category_key, profile_id)
+    return RedirectResponse(url=f"/admin/app/knowledge-base#kb-{category_key}", status_code=303)

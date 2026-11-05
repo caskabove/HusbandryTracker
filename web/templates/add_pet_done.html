@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Add New Pet</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ enclosure.name }} is all set!</h1>
+        <nav><a href="/admin/app">Admin</a></nav>
+    </header>
+
+    <main class="admin-main">
+        <section class="admin-card">
+            <h2>What's next?</h2>
+            <p class="setup-intro">You can add another new pet now, or come back to this one later from the admin pages.</p>
+            <p><a href="/add-pet/" class="button-link">Add another new pet</a></p>
+            <p><a href="/admin/app" class="button-link">Back to Admin</a></p>
+            <p><a href="/" class="button-link">Go to the Dashboard</a></p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

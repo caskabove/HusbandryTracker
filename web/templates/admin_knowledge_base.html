@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker Knowledge Base</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Knowledge Base</h1>
+        {% set nav_current = "app_admin" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <p><a href="/admin/app/">&larr; Back to Admin</a></p>
+
+        <p class="empty">Editable reference care parameters backing the Species Profile picker on
+            the Enclosure and Sensor forms (Setup Wizard, Add New Pet Wizard, and ordinary Admin
+            alike) — see CONTEXT.md: Knowledge Base. Editing a row here changes what those forms
+            suggest the next time it's picked; it never changes an Animal or Sensor already saved.</p>
+
+        <div class="kb-search-bar">
+            <input type="search" placeholder="Search every table by common or scientific name…"
+                   oninput="filterKnowledgeBase(this.value)" aria-label="Search Knowledge Base">
+        </div>
+
+        {% for category in categories %}
+        {% set rows = profiles_by_category[category.key] %}
+        {% set new_form_id = "kb-" + category.key + "-new" %}
+        <section class="admin-card kb-category" id="kb-{{ category.key }}">
+            <h2>{{ category.label }}</h2>
+
+            {% for row in rows %}
+            <form id="kb-{{ category.key }}-{{ row.id }}-update" method="post"
+                  action="/admin/app/knowledge-base/{{ category.key }}/{{ row.id }}/update"></form>
+            {% endfor %}
+            <form id="{{ new_form_id }}" method="post" action="/admin/app/knowledge-base/{{ category.key }}/create"></form>
+
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Common Name</th>
+                        <th>Scientific Name</th>
+                        {% for field in category.fields %}
+                        <th>{{ field.label }}{% if field.unit %} ({{ field.unit }}){% endif %}</th>
+                        {% endfor %}
+                        <th>Notes / Sources</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    {% set form_id = "kb-" + category.key + "-" + row.id|string + "-update" %}
+                    <tr data-search="{{ (row.common_name ~ ' ' ~ (row.scientific_name or ''))|lower }}">
+                        <td><input form="{{ form_id }}" class="kb-name" type="text" name="common_name" value="{{ row.common_name }}" required></td>
+                        <td><input form="{{ form_id }}" class="kb-name" type="text" name="scientific_name" value="{{ row.scientific_name or '' }}"></td>
+                        {% for field in category.fields %}
+                        <td>
+                            {% if field.kind == "text" %}
+                            <input form="{{ form_id }}" class="kb-text" type="text" name="{{ field.column }}" value="{{ row[field.column] or '' }}">
+                            {% else %}
+                            <input form="{{ form_id }}" type="number" step="{{ field.step }}" name="{{ field.column }}" value="{{ row[field.column] if row[field.column] is not none else '' }}">
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                        <td><input form="{{ form_id }}" class="kb-text" type="text" name="notes" value="{{ row.notes or '' }}"></td>
+                        <td>
+                            <button form="{{ form_id }}" type="submit">save</button> ·
+                            <form method="post" action="/admin/app/knowledge-base/{{ category.key }}/{{ row.id }}/delete" class="inline-form">
+                                <button type="submit" class="danger-small">remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    <tr>
+                        <td><input form="{{ new_form_id }}" class="kb-name" type="text" name="common_name" placeholder="new species…" required></td>
+                        <td><input form="{{ new_form_id }}" class="kb-name" type="text" name="scientific_name" placeholder="optional"></td>
+                        {% for field in category.fields %}
+                        <td>
+                            {% if field.kind == "text" %}
+                            <input form="{{ new_form_id }}" class="kb-text" type="text" name="{{ field.column }}">
+                            {% else %}
+                            <input form="{{ new_form_id }}" type="number" step="{{ field.step }}" name="{{ field.column }}">
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                        <td><input form="{{ new_form_id }}" class="kb-text" type="text" name="notes" placeholder="sources"></td>
+                        <td><button form="{{ new_form_id }}" type="submit">+ add</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+        {% endfor %}
+    </main>
+
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

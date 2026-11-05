@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log In — Husbandry Tracker</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <main class="admin-main">
+        <section class="admin-card">
+            <h2>Log In</h2>
+            {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+            <form method="post" action="/login" class="admin-form">
+                <input type="hidden" name="next" value="{{ next }}">
+                <label>Username <input type="text" name="username" required autofocus></label>
+                <label>Password <input type="password" name="password" required></label>
+                <button type="submit">Log In</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

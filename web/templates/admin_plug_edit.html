@@ -17,7 +17,8 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>{{ plug.label }}</h2>
-            <form method="post" action="/admin/plugs/{{ plug.id }}/update" class="admin-form">
+            <form method="post" action="/admin/plugs/{{ plug.id }}/update" class="admin-form"
+                  onsubmit="return validatePlugParentOnSubmit(event, 'edit-plug-parent-type', 'edit-plug-enclosures', 'edit-plug-parent-error') && validateBothOrNeitherOnSubmit(event, 'target_on_time', 'target_off_time', 'edit-plug-schedule-error') && validateBothOrNeitherOnSubmit(event, 'target_on_time_2', 'target_off_time_2', 'edit-plug-schedule-error') && validateBothOrNeitherOnSubmit(event, 'target_on_time_3', 'target_off_time_3', 'edit-plug-schedule-error')">
                 <label>Label <input type="text" name="label" value="{{ plug.label }}" required></label>
                 <label>Purpose
                     <input type="text" name="purpose" value="{{ plug.purpose }}" list="purpose-options" required>
@@ -30,12 +31,12 @@
                     </datalist>
                 </label>
                 <label>Belongs to
-                    <select name="parent_type" onchange="onToggleChange(this, 'room', 'edit-plug-room', 'edit-plug-enclosures')">
+                    <select id="edit-plug-parent-type" name="parent_type" onchange="onToggleChange(this, 'room', 'edit-plug-room', 'edit-plug-enclosures'); clearPlugParentError('edit-plug-enclosures', 'edit-plug-parent-error')">
                         <option value="enclosures" {% if not plug.room_id %}selected{% endif %}>Enclosure(s)</option>
                         <option value="room" {% if plug.room_id %}selected{% endif %}>Room</option>
                     </select>
                 </label>
-                <div id="edit-plug-enclosures" class="mode-fields" {% if plug.room_id %}style="display:none"{% endif %}>
+                <div id="edit-plug-enclosures" class="mode-fields" {% if plug.room_id %}style="display:none"{% endif %} onclick="clearPlugParentError('edit-plug-enclosures', 'edit-plug-parent-error')">
                     {% for e in enclosures %}
                     <label class="checkbox">
                         <input type="checkbox" name="enclosure_ids" value="{{ e.id }}"
@@ -54,6 +55,8 @@
                         </select>
                     </label>
                 </div>
+                <p id="edit-plug-parent-error" class="field-error-message" style="display:none">
+                    Pick a Room, or check one or more Enclosures, above.</p>
                 <label>Tracking Mode
                     <select id="edit-plug-tracking-mode" name="tracking_mode"
                             onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-always-on','edit-plug-schedule','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
@@ -71,8 +74,8 @@
                     </select>
                 </label>
                 <div id="edit-plug-smart" class="mode-fields" {% if plug.tracking_mode != "smart" %}style="display:none"{% endif %}>
-                    <label>Tuya device_id <input type="text" name="tuya_device_id" value="{{ plug.tuya_device_id or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
-                    <label>Tuya local_key <input type="text" name="tuya_local_key" value="{{ plug.tuya_local_key or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <label>Tuya device_id <input type="text" name="tuya_device_id" value="{{ plug.tuya_device_id or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% else %}required{% endif %}></label>
+                    <label>Tuya local_key <input type="text" name="tuya_local_key" value="{{ plug.tuya_local_key or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% else %}required{% endif %}></label>
                     <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="{{ plug.switch_dps_key }}" style="width:3em" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
                     <div class="discover-device">
                         <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
@@ -128,11 +131,26 @@
                 </div>
                 {% set schedule_hidden = plug.controller_kind != "timer" %}
                 <div id="edit-plug-schedule" class="mode-fields" {% if schedule_hidden %}style="display:none"{% endif %}>
-                    <label>Target on-time <input type="time" name="target_on_time" value="{{ plug.target_on_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
-                    <label>Target off-time <input type="time" name="target_off_time" value="{{ plug.target_off_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                    {# Up to 3 on/off cycles (see CONTEXT.md: Target Schedule; ADR 0057) — Cycle 2/3
+                       are optional and contiguous (2 needs 1, 3 needs 2), for a Plug that cycles
+                       more than once a day (a basking light on twice, a misting pump 3x). #}
+                    <div class="schedule-cycle">
+                        <label>Target on-time <input type="time" name="target_on_time" value="{{ plug.target_on_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                        <label>Target off-time <input type="time" name="target_off_time" value="{{ plug.target_off_time or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                    </div>
+                    <div class="schedule-cycle">
+                        <label>Cycle 2 on-time <input type="time" name="target_on_time_2" value="{{ plug.target_on_time_2 or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                        <label>Cycle 2 off-time <input type="time" name="target_off_time_2" value="{{ plug.target_off_time_2 or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                    </div>
+                    <div class="schedule-cycle">
+                        <label>Cycle 3 on-time <input type="time" name="target_on_time_3" value="{{ plug.target_on_time_3 or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                        <label>Cycle 3 off-time <input type="time" name="target_off_time_3" value="{{ plug.target_off_time_3 or '' }}" {% if schedule_hidden %}disabled{% endif %}></label>
+                    </div>
+                    <p id="edit-plug-schedule-error" class="field-error-message" style="display:none">
+                        Enter both an on-time and off-time for each cycle, or leave it blank — and fill cycles in order (Cycle 2 needs Cycle 1, Cycle 3 needs Cycle 2).</p>
                     {% if plug.tracking_mode == "smart" %}
-                    {% set on_drift = acknowledged_drift_status(plug.target_on_time, plug.detected_on_time, plug.timer_ack_on_time, schedule_drift_threshold_minutes) %}
-                    {% set off_drift = acknowledged_drift_status(plug.target_off_time, plug.detected_off_time, plug.timer_ack_off_time, schedule_drift_threshold_minutes) %}
+                    {% set on_drift = acknowledged_drift_status(plug.matched_target_on_time, plug.detected_on_time, plug.timer_ack_on_time, schedule_drift_threshold_minutes) %}
+                    {% set off_drift = acknowledged_drift_status(plug.matched_target_off_time, plug.detected_off_time, plug.timer_ack_off_time, schedule_drift_threshold_minutes) %}
                     <p class="empty">
                         Detected: on
                         <span class="{% if on_drift.value == 'red' %}status-red-text{% elif on_drift.value == 'yellow' %}status-yellow-text{% endif %}">{{ plug.detected_on_time or "no data yet" }}</span>,
@@ -151,11 +169,11 @@
                 </div>
                 {% set thermostat_hidden = plug.controller_kind != "thermostat" %}
                 <div id="edit-plug-thermostat-fields" class="mode-fields" {% if thermostat_hidden %}style="display:none"{% endif %}>
-                    <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f" value="{{ plug.target_temp_f if plug.target_temp_f is not none else '' }}" {% if thermostat_hidden %}disabled{% endif %}></label>
+                    <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f" value="{{ plug.target_temp_f if plug.target_temp_f is not none else '' }}" {% if thermostat_hidden %}disabled{% else %}required{% endif %}></label>
                 </div>
                 {% set hydrostat_hidden = plug.controller_kind != "hydrostat" %}
                 <div id="edit-plug-hydrostat-fields" class="mode-fields" {% if hydrostat_hidden %}style="display:none"{% endif %}>
-                    <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct" value="{{ plug.target_humidity_pct if plug.target_humidity_pct is not none else '' }}" {% if hydrostat_hidden %}disabled{% endif %}></label>
+                    <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct" value="{{ plug.target_humidity_pct if plug.target_humidity_pct is not none else '' }}" {% if hydrostat_hidden %}disabled{% else %}required{% endif %}></label>
                 </div>
                 <button type="submit">Save</button>
             </form>
@@ -165,14 +183,18 @@
                only appears when the Plug has a determined setting (any Controller Kind other than
                'none' — see admin_queries.py's send_plug_command()), since only that case is an
                Interruption. #}
+            {% set plug_blocked = plug.tracking_mode == "smart" and not is_plugin_active(plug.plugin) %}
             <form method="post" action="/admin/plugs/{{ plug.id }}/command" class="admin-form plug-command-form">
                 <input type="hidden" name="return_to" value="plug">
-                <button type="submit" name="is_on" value="true">Turn On</button>
-                <button type="submit" name="is_on" value="false">Turn Off</button>
+                <button type="submit" name="is_on" value="true" {% if plug_blocked %}disabled{% endif %}>Turn On</button>
+                <button type="submit" name="is_on" value="false" {% if plug_blocked %}disabled{% endif %}>Turn Off</button>
                 {% if plug.controller_kind != "none" %}
                 <input type="text" name="note" placeholder="optional note (why?)" maxlength="200">
                 {% endif %}
             </form>
+            {% if plug_blocked %}
+            <p class="empty">{{ plug.plugin }} is deactivated — reactivate it in Admin to send commands.</p>
+            {% endif %}
             {# Plug Group membership — separate from the main form, same as dashboard-visibility
                (see CONTEXT.md: Plug Group; ADR 0017). Attaching copies the Group's own
                Room/Enclosure assignment onto this Plug — the Group is the source of truth for a

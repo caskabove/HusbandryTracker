@@ -67,6 +67,30 @@ you **Open Dashboard**, **Start/Stop/Restart** each part individually, **View Lo
 **"Start with Windows"** so Husbandry Tracker comes up automatically every time you log in, the same
 way apps like Docker Desktop or Steam do.
 
+### Logging In
+
+The very first time the dashboard opens, you'll be asked to create an **admin account** —
+username and password — before anything else is shown. This is the account that manages
+everything: other people's accounts, devices, and app settings. From then on, every visit asks for
+that username and password — including on this same computer, since logging in once doesn't skip
+it for later visits.
+
+An admin can add more accounts later from **Admin → Users**, either as another Admin or as a plain
+**User**, who can use the dashboard and log care the same way but can't reach device setup or app
+settings.
+
+**Lost a password?** There's no email-based reset — recovery always goes through a person, not an
+inbox:
+- **A User forgot their password** — an Admin opens **Admin → Users**, clicks **Reset Password**
+  next to that account, and hands them the new password directly. This also signs that account out
+  everywhere it was logged in.
+- **An Admin forgot their password** (and there's no other Admin around to reset it for them) —
+  right-click the tray icon and choose **Reset Admin Password**. Pick the account from the list of
+  active admins it shows you, and it generates a one-time password on the spot — written down and
+  shown once, since it isn't saved anywhere after that.
+
+See [Help → Accounts and Login](/help/accounts) for a visual walkthrough of both.
+
 The tray icon turns **yellow** if something's restarting and **red** if something's failed
 repeatedly and needs your attention — see [Section 15](#15-if-somethings-not-working) if that
 happens.

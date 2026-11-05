@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from active_plugins import is_plugin_active
 from db.db import get_connection
 from schemas import enclosure_types as et
 
@@ -315,6 +316,26 @@ def get_dashboard_data() -> dict:
                 )
             ]
 
+            # Dashboard Thumbnail (see CONTEXT.md: Dashboard Thumbnail) — this Enclosure's own
+            # Enclosure Photo, or one specific Animal's Photo, never both. The picked Animal is
+            # looked up directly (not via enclosure["animals"] above, which is filtered to
+            # show_on_dashboard=1 — the thumbnail picker deliberately offers every Animal
+            # regardless, see admin_enclosure.html) and may be None if none was ever picked, no
+            # photo's been uploaded yet, or the picked Animal was since deleted
+            # (dashboard_thumbnail_animal_id is ON DELETE SET NULL) — any of those just means no
+            # thumbnail shows, not an error.
+            enclosure["dashboard_thumbnail_url"] = None
+            if enclosure["dashboard_thumbnail_source"] == "animal":
+                if enclosure["dashboard_thumbnail_animal_id"]:
+                    thumb_animal = conn.execute(
+                        "SELECT image_filename FROM animal WHERE id = ?",
+                        (enclosure["dashboard_thumbnail_animal_id"],),
+                    ).fetchone()
+                    if thumb_animal and thumb_animal["image_filename"]:
+                        enclosure["dashboard_thumbnail_url"] = f"/images/animals/{thumb_animal['image_filename']}"
+            elif enclosure["image_filename"]:
+                enclosure["dashboard_thumbnail_url"] = f"/images/enclosures/{enclosure['image_filename']}"
+
             # sensor_count is the *unfiltered* count — used below to decide Fallback Sensor
             # eligibility (must reflect whether this Enclosure truly has no Sensor of its own,
             # regardless of show_on_dashboard) and by the template to tell "no sensors registered"
@@ -325,6 +346,13 @@ def get_dashboard_data() -> dict:
                 sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
             enclosure["sensor_count"] = len(sensors)
             enclosure["sensors"] = [s for s in sensors if s["show_on_dashboard"]]
+            # Whether the Dashboard's own Refresh button has anything to actually refresh — a
+            # Smart Sensor on a deactivated Plugin (see CONTEXT.md: Active Plugin; ADR 0052) is
+            # never worth a live BLE scan, but the button still works if even one Smart Sensor
+            # here is on an Active Plugin.
+            enclosure["can_refresh"] = any(
+                s["tracking_mode"] == "smart" and is_plugin_active(s["plugin"]) for s in enclosure["sensors"]
+            )
 
             # Fallback Sensor (see CONTEXT.md) — only relevant when this Enclosure has none of its
             # own; its Reading is never colored (no Target Range comparison), see ADR 0004.
@@ -361,6 +389,10 @@ def get_dashboard_data() -> dict:
                 ).fetchone()
                 occurred_at = latest["occurred_at"] if latest else None
                 care[kind] = {"occurred_at": occurred_at, "days_since": days_since(occurred_at)}
+            # Last fed / Who (see admin_enclosure.html's identical Feeding row) — same "Last fed"
+            # preview on the Dashboard's own Care card, so the two views read consistently rather
+            # than the Dashboard showing less than the Admin page does for the same Enclosure.
+            care["feeding"]["last_detail"] = _latest_feeding_detail_any(conn, eid)
             enclosure["care"] = care
 
         # sort_order (see CONTEXT.md: Room) is the user's own drag-set display order — app.js's
@@ -374,6 +406,10 @@ def get_dashboard_data() -> dict:
                 sensor["sparklines"] = _sparklines(conn, sensor, sensor["latest_reading"])
             room["sensor_count"] = len(room_sensors)  # unfiltered — see the Enclosure loop above
             room["sensors"] = [s for s in room_sensors if s["show_on_dashboard"]]
+            # See the Enclosure loop's identical can_refresh above.
+            room["can_refresh"] = any(
+                s["tracking_mode"] == "smart" and is_plugin_active(s["plugin"]) for s in room["sensors"]
+            )
 
             room_plugs = [dict(row) for row in conn.execute("SELECT * FROM plug WHERE room_id = ? ORDER BY label", (room["id"],))]
             for plug in room_plugs:
@@ -386,6 +422,32 @@ def get_dashboard_data() -> dict:
         ungrouped = [e for e in enclosures if e["room_id"] is None]
 
     return {"rooms": rooms, "ungrouped": ungrouped}
+
+
+def _latest_feeding_detail_any(conn, enclosure_id: int) -> dict | None:
+    """The single most recent Feeding for this Enclosure, whole-enclosure or Spot-feed alike —
+    unlike web/admin_queries.py's get_last_feeding_detail() (which keeps a Spot-feed's history
+    scoped to its own Animal), this is the one both the Dashboard's and the Admin Enclosure page's
+    "Last fed" preview want: whichever Feeding actually happened most recently. Carries
+    animal_name (None for a whole-enclosure Feeding) so the caller can label who it was for.
+    Takes an already-open conn so get_dashboard_data()'s per-enclosure loop above doesn't open a
+    fresh connection per Enclosure just for this."""
+    row = conn.execute(
+        """SELECT fd.*, ce.animal_id, a.name AS animal_name
+           FROM feeding_detail fd JOIN care_event ce ON ce.id = fd.care_event_id
+           LEFT JOIN animal a ON a.id = ce.animal_id
+           WHERE ce.enclosure_id = ? AND ce.kind = 'feeding'
+           ORDER BY ce.occurred_at DESC LIMIT 1""",
+        (enclosure_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_latest_feeding_detail_any(enclosure_id: int) -> dict | None:
+    """Standalone-connection wrapper around _latest_feeding_detail_any() above, for a caller (e.g.
+    web/admin_queries.py's get_enclosure()) that doesn't already have a conn open at this point."""
+    with get_connection() as conn:
+        return _latest_feeding_detail_any(conn, enclosure_id)
 
 
 def log_care_event(enclosure_id: int, kind: str, note: str | None = None, occurred_at: str | None = None,

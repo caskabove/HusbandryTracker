@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import pytest
 
 from web import admin_queries as q
-from web.status import Status, acknowledged_drift_status, schedule_drift_status
+from web.status import Status, acknowledged_drift_status, nearest_target_time, schedule_drift_status
 
 
 # --- pure drift check -----------------------------------------------------------------------------
@@ -58,13 +58,32 @@ def test_stored_utc_time_is_shown_in_local_time():
     assert q.utc_clock_to_local(_local_to_utc_stamp("2026-10-03 09:05:00")) == "09:05"
 
 
+# --- multiple Target Schedule cycles (ADR 0057) ---------------------------------------------------
+
+def test_nearest_target_time_picks_the_closest_cycle():
+    assert nearest_target_time("21:05", ["08:00", "21:00", None]) == "21:00"
+    assert nearest_target_time("08:10", ["08:00", "21:00", None]) == "08:00"
+
+
+def test_nearest_target_time_is_wraparound_aware():
+    # 23:55 is 10 minutes from 00:05 (wraparound) but 11h05m from 12:00 — nearest is 00:05.
+    assert nearest_target_time("23:55", ["00:05", "12:00"]) == "00:05"
+
+
+def test_nearest_target_time_is_none_without_something_to_compare():
+    assert nearest_target_time(None, ["08:00", "21:00"]) is None
+    assert nearest_target_time("08:00", [None, None]) is None
+
+
 # --- query layer ----------------------------------------------------------------------------------
 
-def _insert_smart_plug(conn: sqlite3.Connection, target_on: str | None, target_off: str | None) -> int:
+def _insert_smart_plug(conn: sqlite3.Connection, target_on: str | None, target_off: str | None,
+                        target_on_2: str | None = None, target_off_2: str | None = None) -> int:
     cur = conn.execute(
-        """INSERT INTO plug (label, purpose, tracking_mode, plugin, external_id, target_on_time, target_off_time)
-           VALUES ('UTH', 'heat', 'smart', 'tuya_lan', 'dev-1', ?, ?)""",
-        (target_on, target_off),
+        """INSERT INTO plug (label, purpose, tracking_mode, plugin, external_id, controller_kind,
+                              target_on_time, target_off_time, target_on_time_2, target_off_time_2)
+           VALUES ('UTH', 'heat', 'smart', 'tuya_lan', 'dev-1', 'timer', ?, ?, ?, ?)""",
+        (target_on, target_off, target_on_2, target_off_2),
     )
     conn.commit()
     return cur.lastrowid
@@ -121,9 +140,41 @@ def test_changing_the_target_schedule_re_arms_a_cleared_warning(temp_db, monkeyp
     assert _ack(temp_db, plug_id) == (None, None)
 
 
-def _update_plug_targets(plug_id: int, target_on: str, target_off: str) -> None:
+def test_changing_only_cycle_2_also_re_arms_a_cleared_warning(temp_db):
+    # Cycle 1 unchanged across both update_plug() calls — only Cycle 2 moves — still re-arms
+    # (ADR 0057: the re-arm check now covers all 3 cycles, not just Cycle 1).
+    plug_id = _insert_smart_plug(temp_db, "08:00", "20:00", "21:00", "23:00")
+    _record_transition(temp_db, plug_id, "2026-10-03 21:05:00", 1)
+    q.clear_timer_warning(plug_id)
+    assert _ack(temp_db, plug_id)[0] == "21:05"
+
+    _update_plug_targets(plug_id, "08:00", "20:00", "21:00", "23:00")  # unchanged: ack kept
+    assert _ack(temp_db, plug_id)[0] == "21:05"
+
+    _update_plug_targets(plug_id, "08:00", "20:00", "21:15", "23:00")  # Cycle 2 on-time moved
+    assert _ack(temp_db, plug_id) == (None, None)
+
+
+def test_drift_is_checked_against_the_nearest_configured_cycle(temp_db):
+    # Cycle 1 is 08:00-20:00, Cycle 2 is 21:00-23:00. A transition near 21:05 should be matched
+    # against Cycle 2's on-time (21:00), not Cycle 1's (08:00) — see ADR 0057.
+    plug_id = _insert_smart_plug(temp_db, "08:00", "20:00", "21:00", "23:00")
+    _record_transition(temp_db, plug_id, "2026-10-03 21:05:00", 1)
+
+    plug = q.get_plug(plug_id)
+
+    assert plug["detected_on_time"] == "21:05"
+    assert plug["matched_target_on_time"] == "21:00"
+    assert acknowledged_drift_status(plug["matched_target_on_time"], plug["detected_on_time"],
+                                      plug["timer_ack_on_time"], 15) is Status.GREEN
+
+
+def _update_plug_targets(plug_id: int, target_on: str, target_off: str,
+                          target_on_2: str | None = None, target_off_2: str | None = None) -> None:
     """update_plug() needs the full Smart Plug identity and a parent Room; this keeps the same
-    identity the row was inserted with so only the target times are what's being exercised."""
+    identity the row was inserted with so only the target times are what's being exercised.
+    controller_kind='timer' (not 'none') — Target Schedule only means anything for a Timer-
+    Controlled Plug (ADR 0041); passing 'none' here would always null the targets out."""
     import db.db as db_module
 
     with db_module.get_connection() as conn:
@@ -132,5 +183,6 @@ def _update_plug_targets(plug_id: int, target_on: str, target_off: str) -> None:
         conn.commit()
     q.update_plug(
         plug_id, "UTH", "heat", "smart", "1", "dev-1", "local-key", "10.0.0.5",
-        target_on, target_off, 1, [], "none", None, None, True, False,
+        target_on, target_off, 1, [], "timer", None, None, True, False,
+        target_on_time_2=target_on_2, target_off_time_2=target_off_2,
     )

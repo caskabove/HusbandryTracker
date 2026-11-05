@@ -27,6 +27,7 @@ log_husbandry's own Registry export and its care_event handling are the one deli
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -41,6 +42,7 @@ from app_paths import APP_ROOT
 from db.db import backup_database, get_connection, init_db
 from ingest import alerts
 from web.admin_queries import get_last_feeding_detail, log_feeding
+from web.image_storage import IMAGES_DIR
 from web.queries import log_care_event
 
 INBOX_DIR = APP_ROOT / "data" / "inbox"
@@ -349,6 +351,14 @@ def _unique_backup_path(reason: str) -> Path:
     return dest
 
 
+def _images_backup_dir(db_backup_path: Path) -> Path:
+    """The Animal/Enclosure Photo folder (see CONTEXT.md: Animal Photo, Enclosure Photo) that goes
+    with one particular database backup — named after it (same stem, "-images" suffix) so Restore
+    can find the matching photos for whichever .db snapshot was picked, and so pruning an old .db
+    backup prunes its photos too."""
+    return db_backup_path.with_name(f"{db_backup_path.stem}-images")
+
+
 def _perform_backup(reason: str) -> None:
     dest = _unique_backup_path(reason)
     try:
@@ -356,6 +366,16 @@ def _perform_backup(reason: str) -> None:
         print(f"[ingest] backup written: {dest.name}")
     except Exception as exc:  # a failed backup shouldn't crash the scan loop
         print(f"[ingest] backup failed: {exc}")
+        return
+    # Photos live as plain files, not inside the SQLite file backup_database() just snapshotted —
+    # see CONTEXT.md: Backup ("the single file that fully recovers a working system") and
+    # web/image_storage.py. Copied best-effort right alongside it so a Restore can bring both back
+    # together; a failure here doesn't roll back the (already-good) database backup above.
+    try:
+        if IMAGES_DIR.is_dir() and any(IMAGES_DIR.iterdir()):
+            shutil.copytree(IMAGES_DIR, _images_backup_dir(dest))
+    except Exception as exc:
+        print(f"[ingest] photo backup failed: {exc}")
 
 
 def _prune_old_backups() -> None:
@@ -363,6 +383,9 @@ def _prune_old_backups() -> None:
     for path in BACKUP_DIR.glob("husbandrytracker-*.db"):
         if path.stat().st_mtime < cutoff:
             path.unlink(missing_ok=True)
+            images_dir = _images_backup_dir(path)
+            if images_dir.is_dir():
+                shutil.rmtree(images_dir, ignore_errors=True)
 
 
 def _run_backup_check() -> None:

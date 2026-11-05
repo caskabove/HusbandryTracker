@@ -8,17 +8,21 @@ exactly the console window this exists to avoid. It launches its four children w
 console of their own (CREATE_NO_WINDOW) and their stdout/stderr redirected to data/logs/<name>.log,
 since a hidden window can't be watched directly the way start.bat's visible ones could.
 
-Not a Plugin, not part of the Inbox/Registry/Outbox contract (see ADR 0013/0014), and never opens
-the database itself (see CONTEXT.md: Backup; ADR 0019) — a manual "Back Up Now" click just touches
-a request file for Ingest to notice, the same filesystem-contract shape Command/Outbox already use.
-Restore is the one exception: swapping the live database file for a backup fundamentally needs
-every process that could have it open to be stopped first, which only the Supervisor can do, so
-Restore lives here as a plain file copy performed while everything it's supervising sits stopped —
-still never a database operation in its own right.
+Not a Plugin, not part of the Inbox/Registry/Outbox contract (see ADR 0013/0014), and almost never
+opens the database itself (see CONTEXT.md: Backup; ADR 0019) — a manual "Back Up Now" click just
+touches a request file for Ingest to notice, the same filesystem-contract shape Command/Outbox
+already use. Two exceptions: Restore swaps the live database file for a backup, which fundamentally
+needs every process that could have it open to be stopped first, which only the Supervisor can do,
+so it lives here as a plain file copy performed while everything it's supervising sits stopped.
+"Reset admin password" (see CONTEXT.md: User Account, Role; ADR 0058; RHA-99) is the second — a
+single bounded UPDATE + DELETE no different in kind from what web/ingest already do to this same
+database constantly, so it imports db.db directly rather than inventing a request-file round-trip
+just to avoid that import; nothing needs to be stopped first.
 """
 from __future__ import annotations
 
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -45,12 +49,15 @@ LOG_DIR = REPO_ROOT / "data" / "logs"
 DASHBOARD_URL = "http://localhost:22255"
 DASHBOARD_OPEN_DELAY_SECONDS = 3  # give uvicorn a moment to come up first, same as start.bat did
 
-# Mirrors ingest.py's own DB_PATH/BACKUP_DIR/BACKUP_REQUEST_PATH constants rather than importing
-# them — see the module docstring above on why this process still never imports db.db.
+# Mirrors ingest.py's own DB_PATH/BACKUP_DIR/BACKUP_REQUEST_PATH/IMAGES_DIR constants rather than
+# importing them — see the module docstring above on why this process still never imports db.db.
 DB_PATH = REPO_ROOT / "data" / "husbandrytracker.db"
 BACKUP_DIR = REPO_ROOT / "data" / "backups"
 BACKUP_REQUEST_PATH = REPO_ROOT / "data" / "backup_requested"
 BACKUP_MENU_LIMIT = 20  # most recent backups shown in the Restore submenu
+# Animal Photo / Enclosure Photo (see CONTEXT.md: Animal Photo, Enclosure Photo) — ingest.py backs
+# this folder up as "<db backup stem>-images" alongside each .db snapshot; see _restore_backup().
+IMAGES_DIR = REPO_ROOT / "data" / "images"
 
 MAX_LOG_BYTES = 5 * 1024 * 1024  # a log past this size is rotated the next time its process (re)starts
 CRASH_BACKOFF_SECONDS = [2, 5, 15, 30, 60]  # capped, growing delay between auto-restarts of a crasher
@@ -396,11 +403,20 @@ def _restore_backup(path: Path) -> None:
         return
     stop_all()
     try:
+        safety_stem = f"husbandrytracker-{datetime.now().strftime('%Y%m%d-%H%M%S')}-prerestore"
         if DB_PATH.exists():
             BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-            safety_copy = BACKUP_DIR / f"{datetime.now().strftime('husbandrytracker-%Y%m%d-%H%M%S')}-prerestore.db"
-            shutil.copy2(DB_PATH, safety_copy)
+            shutil.copy2(DB_PATH, BACKUP_DIR / f"{safety_stem}.db")
         shutil.copy2(path, DB_PATH)
+        # Photos (see CONTEXT.md: Animal Photo, Enclosure Photo) aren't inside husbandrytracker.db —
+        # restore them from this backup's own "<stem>-images" folder, same safety-copy-first
+        # pattern as the database above, so this step can itself be undone the same way.
+        images_backup = path.with_name(f"{path.stem}-images")
+        if images_backup.is_dir():
+            if IMAGES_DIR.is_dir():
+                shutil.copytree(IMAGES_DIR, BACKUP_DIR / f"{safety_stem}-images")
+                shutil.rmtree(IMAGES_DIR)
+            shutil.copytree(images_backup, IMAGES_DIR)
     finally:
         start_all()
 
@@ -415,16 +431,19 @@ def _make_restore(path: Path):
 _SQLITE_HEADER = b"SQLite format 3\x00"
 
 
-def _show_message(message: str, title: str) -> None:
-    """An OK-only error dialog. The message can contain a user's file name, so it's escaped for a
-    PowerShell double-quoted string (backtick, double quote, dollar sign) before being embedded."""
+def _show_message(message: str, title: str, icon: str = "Error") -> None:
+    """An OK-only dialog — "Error" by default (its original/only use before "Reset admin
+    password" below needed an "Information" variant to reveal a freshly-generated password without
+    looking like something went wrong). The message can contain a user's file name, so it's
+    escaped for a PowerShell double-quoted string (backtick, double quote, dollar sign) before
+    being embedded."""
 
     def ps_escape(text: str) -> str:
         return text.replace("`", "``").replace('"', '`"').replace("$", "`$")
 
     script = f'''
 Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.MessageBox]::Show("{ps_escape(message)}", "{title}", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+[System.Windows.Forms.MessageBox]::Show("{ps_escape(message)}", "{title}", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::{icon}) | Out-Null
 '''
     _run_powershell(script)
 
@@ -467,6 +486,71 @@ def _restore_from_file() -> None:
 
 def _restore_from_file_action(icon, item) -> None:
     threading.Thread(target=_restore_from_file, daemon=True).start()
+
+
+def _list_active_admins() -> list[tuple[int, str]]:
+    from db.db import get_connection  # see module docstring — a bounded, narrowly-scoped exception
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, username FROM user WHERE role = 'admin' AND is_active = 1 ORDER BY username COLLATE NOCASE"
+        ).fetchall()
+    return [(row["id"], row["username"]) for row in rows]
+
+
+def _pick_admin_username(admins: list[tuple[int, str]]) -> int | None:
+    """pystray/PowerShell has no built-in list-picker, so this is a plain text-entry dialog listing
+    the active admin usernames to type one of — "anyone at the PC is trusted" (RHA-99), same as
+    every other tray action here."""
+    names = ", ".join(name for _id, name in admins)
+    script = f'''
+Add-Type -AssemblyName Microsoft.VisualBasic
+$result = [Microsoft.VisualBasic.Interaction]::InputBox("Active admin accounts: {names}`n`nType the username to reset:", "Reset Husbandry Tracker Admin Password", "")
+Write-Output $result
+'''
+    typed = _run_powershell(script, capture=True)
+    if not typed:
+        return None
+    for user_id, name in admins:
+        if name.lower() == typed.strip().lower():
+            return user_id
+    _show_message(f'No active admin named "{typed}".', "Reset Husbandry Tracker Admin Password")
+    return None
+
+
+def _reset_admin_password() -> None:
+    from argon2 import PasswordHasher
+    from db.db import get_connection  # see module docstring
+
+    admins = _list_active_admins()
+    if not admins:
+        _show_message(
+            "No active admin account exists yet — use the app's own first-run setup screen instead.",
+            "Reset Husbandry Tracker Admin Password",
+        )
+        return
+    user_id = _pick_admin_username(admins)
+    if user_id is None:
+        return
+    new_password = secrets.token_urlsafe(9)  # ~12 URL-safe characters
+    with get_connection() as conn:
+        conn.execute("UPDATE user SET password_hash = ? WHERE id = ?", (PasswordHasher().hash(new_password), user_id))
+        # "Sign out everywhere" (RHA-99) — same as an admin resetting someone else's password from
+        # the Users card (web/auth_queries.py's reset_user_password()).
+        conn.execute("DELETE FROM session WHERE user_id = ?", (user_id,))
+        conn.execute(
+            "INSERT INTO audit_log (action, detail) VALUES ('password_reset_tray', ?)",
+            (f"user {user_id} via tray",),
+        )
+    _show_message(
+        f"New password: {new_password}\n\n"
+        "This is shown once, so write it down now. Every existing session for this account has "
+        "been signed out.",
+        "Reset Husbandry Tracker Admin Password", icon="Information",
+    )
+
+
+def _reset_admin_password_action(icon, item) -> None:
+    threading.Thread(target=_reset_admin_password, daemon=True).start()
 
 
 def _restore_menu_items():
@@ -535,6 +619,7 @@ def build_menu() -> pystray.Menu:
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Back Up Now", _backup_now),
         pystray.MenuItem("Restore from Backup", pystray.Menu(_restore_menu_items)),
+        pystray.MenuItem("Reset Admin Password", _reset_admin_password_action),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit", _quit),
     )

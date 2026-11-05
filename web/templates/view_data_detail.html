@@ -129,7 +129,7 @@
                             <input type="hidden" name="action" value="update">
                             <input type="hidden" name="entry_id" value="{{ e.id }}">
                             <input type="number" step="{{ metric.step }}" name="value" value="{{ shown }}"
-                                   placeholder="{{ 'F' if metric.converts_f_c else metric.unit }}">
+                                   placeholder="{{ 'F' if metric.converts_f_c else metric.unit }}" required>
                             <button type="submit">Save</button>
                         </form>
                         <form method="post" action="{{ post_action }}" class="inline-form">
@@ -203,7 +203,7 @@
                         <form method="post" action="{{ post_action }}" class="log-form">
                             <input type="hidden" name="action" value="update">
                             <input type="hidden" name="entry_id" value="{{ e.id }}">
-                            <input type="number" step="{{ step }}" name="value" value="{{ e.value }}" placeholder="{{ unit }}">
+                            <input type="number" step="{{ step }}" name="value" value="{{ e.value }}" placeholder="{{ unit }}" required>
                             <button type="submit">Save</button>
                         </form>
                         <form method="post" action="{{ post_action }}" class="inline-form">

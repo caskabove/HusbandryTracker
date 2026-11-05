@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Backfill Data</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Backfill Data</h1>
+        <nav><a href="/admin/app">Cancel</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <p class="setup-intro">
+                A graph with one point isn't much to look at. This fills in the gaps with
+                plausible starting values, based on each Sensor's own Target Range, so a
+                brand-new Enclosure's charts are actually readable right away — every point it
+                adds is a plain, editable Reading you can change or delete from View Data
+                afterward.
+            </p>
+            <h2>Step 1 of 4 — Time Frame</h2>
+            <p class="setup-intro">How far back should it fill?</p>
+            <p>
+                {% for key, label in range_choices %}
+                <a href="/backfill/scope?range={{ key }}" class="button-link">{{ label }}</a>
+                {% endfor %}
+            </p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

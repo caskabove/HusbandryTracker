@@ -11,8 +11,9 @@ purpose, per §9.15's boundary list — all of it needs data beyond a single `pl
   - **Controller Kind needs a matching setpoint** (thermostat → target_temp_c, hydrostat →
     target_humidity_pct) — an app-level rule, not a schema.sql CHECK (there's only the one CHECK
     block below); §9.15 lists this explicitly as a service-layer concern.
-  - **Target Schedule both-or-neither** (target_on_time/target_off_time) when controller_kind is
-    'none' — same story: real rule, not a schema.sql CHECK, stays in _validate_plug.
+  - **Target Schedule both-or-neither**, per cycle (target_on_time/target_off_time, and optionally
+    _2/_3) when controller_kind is 'timer', plus cycle contiguity (2 needs 1, 3 needs 2 — see
+    ADR 0057) — same story: real rule, not a schema.sql CHECK, stays in _validate_plug.
   - **Always On excludes Target Schedule** (see CONTEXT.md: Always On) — technically a single-table
     rule (both live on `plug`), but kept out of schema.sql for the same "all Plug business rules
     stay in _validate_plug" consistency the other two already established here, not because it
@@ -38,8 +39,12 @@ class PlugBase(BaseModel):
     plugin_config: str | None = None  # opaque JSON credentials (Tuya local_key/ip_address) — see CONTEXT.md: Plugin Config
     auto_update_enabled: bool = True  # Smart Plug only — see CONTEXT.md: Auto-Update
     show_on_dashboard: bool = True    # see CONTEXT.md: Plug — set via set_plug_dashboard_visibility(), not create/update
-    target_on_time: str | None = None   # "HH:MM" — see CONTEXT.md: Target Schedule
+    target_on_time: str | None = None   # "HH:MM" — Cycle 1, see CONTEXT.md: Target Schedule
     target_off_time: str | None = None  # "HH:MM"
+    target_on_time_2: str | None = None   # Cycle 2 — optional, contiguous with Cycle 1 (ADR 0057)
+    target_off_time_2: str | None = None
+    target_on_time_3: str | None = None   # Cycle 3 — optional, contiguous with Cycle 2 (ADR 0057)
+    target_off_time_3: str | None = None
     timer_ack_on_time: str | None = None   # "HH:MM" — Timer Warning cleared against this Detected on-time; see CONTEXT.md: Timer Warning
     timer_ack_off_time: str | None = None  # "HH:MM" — same, for off-time
     always_on: bool = False  # mutually exclusive with target_on_time/target_off_time — see CONTEXT.md: Always On

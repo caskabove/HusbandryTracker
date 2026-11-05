@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Add New Pet</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Add a New Pet</h1>
+        <nav><a href="/admin/app">Cancel</a></nav>
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <section class="admin-card">
+            <p class="setup-intro">
+                A new pet needs a Room and an Enclosure (the tank, tub, or rack tray it actually
+                lives in) before it can be added. If you've already got a Room for it, use that —
+                otherwise skip straight to the Enclosure, or create a new Room first.
+            </p>
+            <h2>Step 1 of 5 — Room</h2>
+
+            {% if rooms %}
+            <form method="get" action="/add-pet/enclosure" class="admin-form">
+                <label>Use an existing Room
+                    <select name="room_id">
+                        {% for r in rooms %}
+                        <option value="{{ r.id }}">{{ r.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit">Continue with this Room</button>
+            </form>
+            {% endif %}
+
+            <details {% if not rooms %}open{% endif %}>
+                <summary>+ Create a new Room</summary>
+                <form id="add-pet-room-form" method="post" action="/add-pet/rooms" class="admin-form">
+                    <label>Room name <input type="text" name="name" placeholder="e.g. Reptile Rack, Living Room" required></label>
+                    <button type="submit">Create Room</button>
+                </form>
+            </details>
+
+            <p><a href="/add-pet/enclosure" class="button-link" onclick="return onWizardContinueClick(event, 'add-pet-room-form', 'Room', 'Create Room')">Skip — no Room, just the Enclosure</a></p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

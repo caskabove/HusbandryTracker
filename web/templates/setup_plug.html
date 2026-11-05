@@ -34,7 +34,8 @@
             </table>
             {% endif %}
 
-            <form id="setup-plug-form" method="post" action="/setup/enclosures/{{ enclosure.id }}/plugs" class="admin-form">
+            <form id="setup-plug-form" method="post" action="/setup/enclosures/{{ enclosure.id }}/plugs" class="admin-form"
+                  onsubmit="return validateBothOrNeitherOnSubmit(event, 'target_on_time', 'target_off_time', 'setup-plug-schedule-error') && validateBothOrNeitherOnSubmit(event, 'target_on_time_2', 'target_off_time_2', 'setup-plug-schedule-error') && validateBothOrNeitherOnSubmit(event, 'target_on_time_3', 'target_off_time_3', 'setup-plug-schedule-error')">
                 <label>Label <input type="text" name="label" placeholder="e.g. heat lamp" required></label>
                 <label>Purpose <input type="text" name="purpose" list="purpose-suggestions-enc" placeholder="e.g. heat" required></label>
                 <datalist id="purpose-suggestions-enc">
@@ -53,14 +54,26 @@
                     <label class="checkbox"><input type="checkbox" name="always_on" value="true"> Always on (no schedule — e.g. a filter pump)</label>
                 </div>
                 <div id="setup-plug-schedule" class="mode-fields" style="display:none">
-                    <label>On-time <input type="time" name="target_on_time"></label>
-                    <label>Off-time <input type="time" name="target_off_time"></label>
+                    <div class="schedule-cycle">
+                        <label>On-time <input type="time" name="target_on_time"></label>
+                        <label>Off-time <input type="time" name="target_off_time"></label>
+                    </div>
+                    <div class="schedule-cycle">
+                        <label>Cycle 2 on-time <input type="time" name="target_on_time_2"></label>
+                        <label>Cycle 2 off-time <input type="time" name="target_off_time_2"></label>
+                    </div>
+                    <div class="schedule-cycle">
+                        <label>Cycle 3 on-time <input type="time" name="target_on_time_3"></label>
+                        <label>Cycle 3 off-time <input type="time" name="target_off_time_3"></label>
+                    </div>
                 </div>
+                <p id="setup-plug-schedule-error" class="field-error-message" style="display:none">
+                    Enter both an on-time and off-time for each cycle, or leave it blank — and fill cycles in order.</p>
                 <div id="setup-plug-thermostat-fields" class="mode-fields" style="display:none">
-                    <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>
+                    <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f" required></label>
                 </div>
                 <div id="setup-plug-hydrostat-fields" class="mode-fields" style="display:none">
-                    <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct"></label>
+                    <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct" required></label>
                 </div>
                 <button type="submit">{% if enclosure.plugs %}Add Another Plug{% else %}Add Plug{% endif %}</button>
             </form>

@@ -15,6 +15,82 @@
 
     <main class="admin-main">
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        {% if notice %}<p class="notice-banner">{{ notice }}</p>{% endif %}
+        <section class="admin-card">
+            <h2>Users</h2>
+            {# See CONTEXT.md: User Account, Role; ADR 0058; RHA-99 Phase 1. Admin manages every
+               account from here — create, disable/enable, change role, reset password. The last
+               active admin can't be disabled or demoted (web/auth_queries.py enforces this; a
+               rejected attempt redirects back here with an error). #}
+            <table class="admin-table">
+                <thead><tr><th>Username</th><th>Role</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                {% for u in users %}
+                    <tr>
+                        <td class="admin-table-primary">{{ u.username }}{% if u.id == current_user.id %} (you){% endif %}</td>
+                        <td>
+                            <form method="post" action="/admin/app/users/{{ u.id }}/role" class="inline-form">
+                                <select name="role" onchange="this.form.submit()">
+                                    <option value="admin" {% if u.role == "admin" %}selected{% endif %}>Admin</option>
+                                    <option value="user" {% if u.role == "user" %}selected{% endif %}>User</option>
+                                </select>
+                            </form>
+                        </td>
+                        <td>{{ "Active" if u.is_active else "Disabled" }}</td>
+                        <td>
+                            <form method="post" action="/admin/app/users/{{ u.id }}/active" class="inline-form">
+                                <input type="hidden" name="is_active" value="{{ 0 if u.is_active else 1 }}">
+                                <button type="submit">{{ "Disable" if u.is_active else "Enable" }}</button>
+                            </form>
+                            <form method="post" action="/admin/app/users/{{ u.id }}/reset-password" class="inline-form"
+                                  onsubmit="return promptResetPassword(event, this)">
+                                <input type="hidden" name="new_password" value="">
+                                <button type="submit">Reset Password</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <details>
+                <summary>+ Add User</summary>
+                <form method="post" action="/admin/app/users" class="admin-form">
+                    <label>Username <input type="text" name="username" required></label>
+                    <label>Password <input type="password" name="password" required minlength="8"></label>
+                    <label>Role
+                        <select name="role">
+                            <option value="user" selected>User</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </label>
+                    <button type="submit">Add User</button>
+                </form>
+            </details>
+        </section>
+        <section class="admin-card">
+            <h2>Add New Pet</h2>
+            <p class="empty">Getting a new pet? Walk through its Room, Enclosure, Animal, Sensor, and
+                Plug in one guided pass, instead of filling out each Add form separately — Add Room
+                and Add Enclosure are on "Rooms and Enclosures", Add Sensor and Add Plug are on "Plugs
+                and Sensors", and Add Animal is below.</p>
+            <p><a href="/add-pet/" class="button-link">+ Add New Pet</a></p>
+        </section>
+        <section class="admin-card">
+            <h2>Backfill Data</h2>
+            <p class="empty">A brand-new graph with one point isn't much to look at. Seed a
+                Week or a Month of starting Readings for an Enclosure's Manual Sensors, drawn
+                from each Sensor's own Target Range — every point is editable afterward from
+                View Data, same as any hand-logged entry.</p>
+            <p><a href="/backfill/" class="button-link">+ Backfill Data</a></p>
+        </section>
+        <section class="admin-card">
+            <h2>Knowledge Base</h2>
+            <p class="empty">Editable reference care parameters — temperature, humidity, water
+                chemistry, and feeding — for the snakes, lizards, pet insects, and saltwater/
+                freshwater fish and inverts offered by the Species Profile picker on the Enclosure
+                and Sensor Add forms.</p>
+            <p><a href="/admin/app/knowledge-base" class="button-link">Open Knowledge Base</a></p>
+        </section>
         <section class="admin-card">
             <h2>Plugins</h2>
             {# See CONTEXT.md: Plugin, Plugin Contract, Active Plugin, Skill, App Admin;
@@ -22,9 +98,11 @@
                the Plugin Contract (manifest.json + init.py) — every Plugin does now, including
                tuya_lan/govee_ble. #}
             <p class="empty">Independent integrations (device Plugins) and Skills (AI-driven helpers —
-                see Skill) that this install knows about. A device Plugin must be Active for its
-                Sensors/Plugs on the "Plugs and Sensors" page to actually update — deactivating one
-                pauses them the same way deregistering their last device would.</p>
+                see Skill) that this install knows about. A deactivated Plugin is blocked outright,
+                immediately, not just eventually paused: its Sensors/Plugs stop being updated in the
+                background, the Dashboard's and Admin's own Refresh buttons for them are disabled, and
+                sending a Plug Command for one is refused rather than silently logged. Reactivating
+                lifts all of that back at once.</p>
             {% if plugins %}
             <table class="admin-table">
                 <thead><tr><th>Name</th><th>Kind</th><th>Description</th><th>Status</th><th></th></tr></thead>
@@ -36,6 +114,10 @@
                         <td>{{ plugin.description }}
                             {% if plugin.kind == "skill" and not plugin.active %}
                             <br><span class="empty">Activating installs a Claude Code skill into this install's own <code>.claude/skills/{{ plugin.name }}/</code> — nothing is written anywhere until you do this.</span>
+                            {% elif plugin.kind == "device" and plugin.active %}
+                            <br><span class="empty">Deactivating stops background updates for every Sensor/Plug on this Plugin, and blocks Refresh/Plug commands for them.</span>
+                            {% elif plugin.kind == "device" and not plugin.active %}
+                            <br><span class="empty">Activating resumes background updates for every Sensor/Plug on this Plugin, and allows Refresh/Plug commands again.</span>
                             {% endif %}
                         </td>
                         <td>{{ "Active" if plugin.active else "Inactive" }}</td>
@@ -85,9 +167,13 @@
                 Schedule Drift Threshold is how far a Smart Plug's Target and Detected Schedule can disagree before a Timer Warning shows (see CONTEXT.md: Timer Warning).</p>
         </section>
 
+        {% set tuya_candidates = plugins | selectattr("name", "equalto", "tuya_lan") | list %}
+        {% set tuya_plugin = tuya_candidates[0] if tuya_candidates else None %}
         <section class="admin-card" id="tuya-cloud-credentials">
             <h2>Tuya Cloud Credentials</h2>
-            {# Powers every Add Plug/Add Plug Group form's "Discover Devices" button (see ADR 0030).
+            {% if tuya_plugin and tuya_plugin.active %}
+            {# Powers every Add Plug (on Plugs and Sensors)/Add Plug Group form's "Discover Devices"
+               button (see ADR 0030).
                Instructions here are self-contained, not a cross-reference to
                docs/HOWTO_ADD_GOSUND_PLUG.md — that file isn't bundled into the installer (see
                packaging/husbandrytracker.spec, which only bundles USER_GUIDE.md), so an
@@ -115,51 +201,15 @@
                 </label>
                 <button type="submit">Save</button>
             </form>
-            <p class="empty">Needed only for the Discover Devices button on Add Plug/Add Plug Group, below
-                — see <a href="/guide#a-one-time-account-linking-step-for-a-smart-plug">the full walkthrough</a>
+            <p class="empty">Needed only for the Discover Devices button on Add Plug (on "Plugs and
+                Sensors") and Add Plug Group, below — see
+                <a href="/guide#a-one-time-account-linking-step-for-a-smart-plug">the full walkthrough</a>
                 if you get stuck. Access Secret is never shown again once saved.</p>
-        </section>
-
-        <section class="admin-card">
-            <details>
-                <summary>+ Add Room</summary>
-                <form method="post" action="/admin/rooms" class="admin-form">
-                    <label>Name <input type="text" name="name" placeholder="e.g. Living Room" required></label>
-                    <button type="submit">Create</button>
-                </form>
-            </details>
-        </section>
-
-        <section class="admin-card">
-            <details>
-                <summary>+ Add Enclosure</summary>
-                <form method="post" action="/admin/enclosures" class="admin-form">
-                    <label>Name <input type="text" name="name" required></label>
-                    <label>Enclosure Type
-                        <select name="enclosure_type" onchange="onEnclosureTypeChangeForProfile(this, 'add-enc-species-profile', 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')">
-                            {% for t in ENCLOSURE_TYPES %}
-                            <option value="{{ t }}" {% if t == "basic" %}selected{% endif %}>{{ ENCLOSURE_TYPE_LABELS[t] }}</option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <label>Species Profile <small>(optional — suggests starting numbers below; edit anything it fills in)</small>
-                        <select id="add-enc-species-profile" onchange="onEnclosureSpeciesProfileChange(this, 'add-enc-life-stage-wrap', 'add-enc-life-stage', 'feeding_interval')"></select>
-                    </label>
-                    <label id="add-enc-life-stage-wrap" style="display:none">Life Stage
-                        <select id="add-enc-life-stage" onchange="onEnclosureLifeStageChange(this, 'add-enc-species-profile', 'feeding_interval')">
-                            <option value="baby">Baby / Juvenile</option>
-                            <option value="adult" selected>Adult</option>
-                        </select>
-                    </label>
-                    <label class="checkbox"><input type="checkbox" name="bioactive" value="true"> Bioactive</label>
-                    <label>Feeding interval (days) <input type="number" name="feeding_interval" value="7" min="1"></label>
-                    <label>Watering interval (days) <input type="number" name="watering_interval" value="3" min="1"></label>
-                    <label>Spot-clean interval (days) <input type="number" name="spot_clean_interval" value="7" min="1"></label>
-                    <label>Deep-clean interval (days) <input type="number" name="deep_clean_interval" value="30" min="1"></label>
-                    <button type="submit">Create</button>
-                </form>
-                <p class="empty">Room assignment happens on the Enclosure's own page after it's created.</p>
-            </details>
+            {% else %}
+            <p class="empty">Hidden while tuya_lan is deactivated — reactivate it in Plugins above to
+                manage Tuya Cloud Credentials. Anything already saved stays stored, just not shown or
+                editable meanwhile.</p>
+            {% endif %}
         </section>
 
         <section class="admin-card">
@@ -184,233 +234,17 @@
 
         <section class="admin-card">
             <details>
-                <summary>+ Add Sensor</summary>
-                <form method="post" action="/admin/sensors" class="admin-form">
-                    <label>Label <input type="text" name="label" placeholder="e.g. warm side" required></label>
-                    <label>Tracking Mode
-                        <select name="tracking_mode" onchange="onTrackingModeChange(this, 'add-sensor-global-smart', 'add-sensor-global-manual')">
-                            <option value="smart">Smart (Govee BLE sensor)</option>
-                            <option value="manual">Manual (hand-logged readings)</option>
-                        </select>
-                    </label>
-                    <div id="add-sensor-global-smart" class="mode-fields">
-                        <label>MAC address <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF"></label>
-                        <div class="discover-device">
-                            <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
-                            <div class="discover-results" style="display:none"></div>
-                        </div>
-                    </div>
-                    <div id="add-sensor-global-manual" class="mode-fields" style="display:none">
-                        <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric.</p>
-                    </div>
-                    <label>Belongs to
-                        <select name="parent_type"
-                                onchange="onToggleChange(this, 'enclosure', 'add-sensor-global-enclosure', 'add-sensor-global-room'); if (this.value === 'enclosure') { onGlobalSensorEnclosureChange(document.getElementById('add-sensor-global-enclosure-select'), 'add-sensor-global-species-profile', 'add-sensor-global-zone-wrap', 'add-sensor-global-zone'); }">
-                            <option value="enclosure" selected>Enclosure</option>
-                            <option value="room">Room</option>
-                        </select>
-                    </label>
-                    <div id="add-sensor-global-enclosure" class="mode-fields">
-                        <label>Enclosure
-                            <select id="add-sensor-global-enclosure-select" name="enclosure_id"
-                                    onchange="onGlobalSensorEnclosureChange(this, 'add-sensor-global-species-profile', 'add-sensor-global-zone-wrap', 'add-sensor-global-zone')">
-                                {% for e in enclosures %}
-                                <option value="{{ e.id }}" data-enclosure-type="{{ e.enclosure_type }}">{{ e.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </label>
-                        <label>Species Profile <small>(optional — suggests starting Target Range values below)</small>
-                            <select id="add-sensor-global-species-profile"
-                                    onchange="onGlobalSensorSpeciesProfileChange(this, 'add-sensor-global-zone-wrap', 'add-sensor-global-zone', 'add-sensor-global-enclosure-select')"></select>
-                        </label>
-                        <label id="add-sensor-global-zone-wrap" style="display:none">This sensor monitors
-                            <select id="add-sensor-global-zone"
-                                    onchange="onGlobalSensorZoneChange(this, 'add-sensor-global-species-profile', 'add-sensor-global-enclosure-select')">
-                                <option value="warm">Warm side</option>
-                                <option value="cool">Cool side</option>
-                                <option value="ambient" selected>Single ambient sensor (whole enclosure)</option>
-                            </select>
-                        </label>
-                        {# One Target Range/Volatility block per Enclosure Type (see CONTEXT.md:
-                           Enclosure Type, schemas/enclosure_types.py, ADR 0011/0050) — the Enclosure
-                           picker above has no fixed type of its own, unlike the per-Enclosure Add
-                           Sensor form this replaces, so every type's own fields are rendered up
-                           front and app.js's onGlobalSensorEnclosureChange shows/enables just the
-                           one matching whichever Enclosure is picked (reading its own
-                           data-enclosure-type), leaving the rest hidden and disabled. #}
-                        {% for t in ENCLOSURE_TYPES %}
-                        <div id="add-sensor-global-metrics-{{ t }}" class="mode-fields" style="display:none">
-                            {% for metric in target_range_metrics_for(t) %}
-                            {% if metric.key == "temperature" %}
-                            <label>Target Temperature min (F) <input type="number" step="0.1" name="temp_min_f"></label>
-                            <label>Target Temperature max (F) <input type="number" step="0.1" name="temp_max_f"></label>
-                            {% else %}
-                            <label>Target {{ metric.label }} min {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_min"></label>
-                            <label>Target {{ metric.label }} max {% if metric.unit %}({{ metric.unit }}){% endif %} <input type="number" step="{{ metric.step }}" name="{{ metric.key }}_max"></label>
-                            {% endif %}
-                            <label>{{ metric.label or metric.key.replace("_", " ").title() }} Volatility
-                                <select name="volatility_{{ metric.key }}">
-                                    <option value="" selected>Default ({{ metric.default_volatility|capitalize }})</option>
-                                    <option value="fast">Fast</option>
-                                    <option value="slow">Slow</option>
-                                </select>
-                            </label>
-                            {% endfor %}
-                        </div>
-                        {% endfor %}
-                    </div>
-                    <div id="add-sensor-global-room" class="mode-fields" style="display:none">
-                        <label>Room
-                            <select name="room_id" disabled>
-                                {% for r in rooms %}
-                                <option value="{{ r.id }}">{{ r.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </label>
-                        <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f"></label>
-                        <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f"></label>
-                        <label>Target humidity min (%) <input type="number" step="1" name="humidity_min"></label>
-                        <label>Target humidity max (%) <input type="number" step="1" name="humidity_max"></label>
-                        <label>Temperature Volatility
-                            <select name="volatility_temperature">
-                                <option value="" selected>Default (Fast)</option>
-                                <option value="fast">Fast</option>
-                                <option value="slow">Slow</option>
-                            </select>
-                        </label>
-                        <label>Humidity Volatility
-                            <select name="volatility_humidity">
-                                <option value="" selected>Default (Fast)</option>
-                                <option value="fast">Fast</option>
-                                <option value="slow">Slow</option>
-                            </select>
-                        </label>
-                    </div>
-                    <p class="empty">One device = one Sensor here, even though its Temp and Humidity show as two
-                        separate rows on the Dashboard — that's just a display split. Adding this same MAC address
-                        twice (once "for Temp", once "for Humidity") will be rejected.</p>
-                    <button type="submit">Add Sensor</button>
-                </form>
-            </details>
-        </section>
-
-        <section class="admin-card">
-            <details>
-                <summary>+ Add Plug</summary>
-                <form method="post" action="/admin/plugs" class="admin-form">
-                    <label>Label <input type="text" name="label" placeholder="e.g. UTH" required></label>
-                    <label>Purpose
-                        <input type="text" name="purpose" list="purpose-options" placeholder="light, heat, cooling, UVB, pump..." required>
-                        <datalist id="purpose-options">
-                            <option value="light">
-                            <option value="heat">
-                            <option value="cooling">
-                            <option value="UVB">
-                            <option value="pump">
-                        </datalist>
-                    </label>
-                    <label>Plug Group
-                        <select id="add-plug-group-select" name="plug_group_id" onchange="onAddPlugGroupChange(this, 'add-plug-belongs-to', 'add-plug-tuya-creds')">
-                            <option value="">— none (standalone Plug) —</option>
-                            {% for g in plug_groups %}
-                            <option value="{{ g.id }}">{{ g.name }} ({{ g.parent_label }})</option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <div id="add-plug-belongs-to">
-                        <label>Belongs to
-                            <select name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-room', 'add-plug-enclosures')">
-                                <option value="enclosures" selected>Enclosure(s)</option>
-                                <option value="room">Room</option>
-                            </select>
-                        </label>
-                        <div id="add-plug-enclosures" class="mode-fields">
-                            {% for e in enclosures %}
-                            <label class="checkbox"><input type="checkbox" name="enclosure_ids" value="{{ e.id }}"> {{ e.name }}</label>
-                            {% endfor %}
-                        </div>
-                        <div id="add-plug-room" class="mode-fields" style="display:none">
-                            <label>Room
-                                <select name="room_id" disabled>
-                                    {% for r in rooms %}
-                                    <option value="{{ r.id }}">{{ r.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </label>
-                        </div>
-                    </div>
-                    <p class="empty">Picking a Plug Group above ignores "Belongs to" and the Tuya fields below —
-                        the new outlet inherits both from the Group, you only set its own DPS key.</p>
-                    <label>Tracking Mode
-                        <select id="add-plug-tracking-mode" name="tracking_mode"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
-                            <option value="smart">Smart (Tuya-controlled)</option>
-                            <option value="manual">Manual (hand-switched, e.g. a timer)</option>
-                        </select>
-                    </label>
-                    <label>Controller Kind
-                        <select id="add-plug-controller-kind" name="controller_kind"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
-                            <option value="none" selected>None (switched by hand or its own Smart schedule)</option>
-                            <option value="timer">Timer (plugged into a separate timer device)</option>
-                            <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
-                            <option value="hydrostat">Hydrostat-Controlled (powers a separate humidity controller)</option>
-                        </select>
-                    </label>
-                    <div id="add-plug-smart" class="mode-fields">
-                        <div id="add-plug-tuya-creds">
-                            <label>Tuya device_id <input type="text" name="tuya_device_id"></label>
-                            <label>Tuya local_key <input type="text" name="tuya_local_key"></label>
-                            <div class="discover-device">
-                                <button type="button" onclick="onDiscoverTuyaClick(this)">Discover Devices</button>
-                                <div class="discover-results" style="display:none"></div>
-                            </div>
-                            <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
-                        </div>
-                        <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
-                    </div>
-                    {# Always On and Target Schedule each get their own Controller-Kind-gated block
-                       now (see CONTEXT.md: Always On, Target Schedule, Timer-Controlled; ADR 0012,
-                       RHA-95) — "none" shows Always On, "timer" shows the on/off-time pair, visible
-                       by default since Controller Kind defaults to "none" above. #}
-                    <div id="add-plug-always-on" class="mode-fields">
-                        <label class="checkbox">
-                            <input type="checkbox" name="always_on" value="true">
-                            Always On (e.g. a pump that runs continuously — no schedule to set)
-                        </label>
-                    </div>
-                    <div id="add-plug-schedule" class="mode-fields" style="display:none">
-                        <label>Target on-time <input type="time" name="target_on_time"></label>
-                        <label>Target off-time <input type="time" name="target_off_time"></label>
-                    </div>
-                    <div id="add-plug-thermostat-fields" class="mode-fields" style="display:none">
-                        <label>Target Temperature (F) <input type="number" step="0.1" name="target_temp_f"></label>
-                    </div>
-                    <div id="add-plug-hydrostat-fields" class="mode-fields" style="display:none">
-                        <label>Target Humidity (%) <input type="number" step="0.1" name="target_humidity_pct"></label>
-                    </div>
-                    <button type="submit">Add Plug</button>
-                </form>
-                <p class="empty">Most plugs use outlet "1". Power strips with multiple outlets need one row per
-                    outlet here, all sharing the same device_id/local_key — use "2", "3", etc. (or "7" for a USB
-                    port) for the others. Check any number of Enclosures if one physical switch covers several
-                    tubs at once ("everything on one switch"), or pick Room instead for a genuinely room-wide
-                    fixture not tied to specific tubs.</p>
-            </details>
-        </section>
-
-        <section class="admin-card">
-            <details>
                 <summary>+ Add Plug Group</summary>
-                <form method="post" action="/admin/plug-groups" class="admin-form">
+                <form method="post" action="/admin/plug-groups" class="admin-form"
+                      onsubmit="return validatePlugParentOnSubmit(event, 'add-plug-group-parent-type', 'add-plug-group-enclosures', 'add-plug-group-parent-error')">
                     <label>Group name <input type="text" name="name" placeholder="e.g. Reef" required></label>
                     <label>Belongs to
-                        <select name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-group-room', 'add-plug-group-enclosures')">
+                        <select id="add-plug-group-parent-type" name="parent_type" onchange="onToggleChange(this, 'room', 'add-plug-group-room', 'add-plug-group-enclosures'); clearPlugParentError('add-plug-group-enclosures', 'add-plug-group-parent-error')">
                             <option value="enclosures" selected>Enclosure(s)</option>
                             <option value="room">Room</option>
                         </select>
                     </label>
-                    <div id="add-plug-group-enclosures" class="mode-fields">
+                    <div id="add-plug-group-enclosures" class="mode-fields" onclick="clearPlugParentError('add-plug-group-enclosures', 'add-plug-group-parent-error')">
                         {% for e in enclosures %}
                         <label class="checkbox"><input type="checkbox" name="enclosure_ids" value="{{ e.id }}"> {{ e.name }}</label>
                         {% endfor %}
@@ -424,6 +258,8 @@
                             </select>
                         </label>
                     </div>
+                    <p id="add-plug-group-parent-error" class="field-error-message" style="display:none">
+                        Pick a Room, or check one or more Enclosures, above.</p>
                     <p class="empty">Every outlet in this Group shares one Enclosure/Room assignment — see CONTEXT.md: Plug Group.</p>
 
                     <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
@@ -471,15 +307,5 @@
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
-    <script>populateSpeciesProfileSelect(document.getElementById('add-enc-species-profile'), document.querySelector('select[name="enclosure_type"]').value);</script>
-    <script>
-        // Add Sensor's Belongs-to defaults to Enclosure (see above) — sync the metrics blocks to
-        // match, same reason admin_enclosures.html's own init script exists for Add Enclosure.
-        setToggleBlock(document.getElementById('add-sensor-global-room'), false);
-        const addSensorEnclosureSelect = document.getElementById('add-sensor-global-enclosure-select');
-        if (addSensorEnclosureSelect) {
-            onGlobalSensorEnclosureChange(addSensorEnclosureSelect, 'add-sensor-global-species-profile', 'add-sensor-global-zone-wrap', 'add-sensor-global-zone');
-        }
-    </script>
 </body>
 </html>

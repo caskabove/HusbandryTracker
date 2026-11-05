@@ -34,7 +34,8 @@
                     No Reading yet.
                 {% endif %}
             </p>
-            <form method="post" action="/admin/sensors/{{ sensor.id }}/update" class="admin-form">
+            <form method="post" action="/admin/sensors/{{ sensor.id }}/update" class="admin-form"
+                  onsubmit="return validateSensorTargetRangeOnSubmit(event, 'edit-sensor-tracking-mode', 'edit-sensor-range-error')">
                 <label>Enclosure
                     <select name="enclosure_id">
                         {% for e in enclosures %}
@@ -44,13 +45,13 @@
                 </label>
                 <label>Label <input type="text" name="label" value="{{ sensor.label }}" required></label>
                 <label>Tracking Mode
-                    <select name="tracking_mode" onchange="onTrackingModeChange(this, 'edit-sensor-smart', 'edit-sensor-manual')">
+                    <select id="edit-sensor-tracking-mode" name="tracking_mode" onchange="onTrackingModeChange(this, 'edit-sensor-smart', 'edit-sensor-manual')">
                         <option value="smart" {% if sensor.tracking_mode == "smart" %}selected{% endif %}>Smart (Govee BLE sensor)</option>
                         <option value="manual" {% if sensor.tracking_mode == "manual" %}selected{% endif %}>Manual (hand-logged readings)</option>
                     </select>
                 </label>
                 <div id="edit-sensor-smart" class="mode-fields" {% if sensor.tracking_mode != "smart" %}style="display:none"{% endif %}>
-                    <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% else %}required{% endif %}></label>
                     <div class="discover-device">
                         <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
                         <div class="discover-results" style="display:none"></div>
@@ -63,12 +64,19 @@
                        without saving the rest of the form first (formnovalidate, same trick as Probe on
                        admin_plug_edit.html): a short live BLE listen for just this MAC, writing a real
                        Reading on success (see web/admin.py's _refresh_one_sensor()). #}
+                    {% if is_plugin_active(sensor.plugin) %}
                     <button type="submit" formaction="/admin/sensors/{{ sensor.id }}/refresh" formnovalidate
                             title="Listen for this Sensor's next BLE broadcast and log it as a Reading">&#8635; Refresh</button>
+                    {% else %}
+                    <button type="submit" formaction="/admin/sensors/{{ sensor.id }}/refresh" formnovalidate disabled
+                            title="{{ sensor.plugin }} is deactivated — reactivate it in Admin to use Refresh">&#8635; Refresh</button>
+                    {% endif %}
                 </div>
                 <div id="edit-sensor-manual" class="mode-fields" {% if sensor.tracking_mode != "manual" %}style="display:none"{% endif %}>
                     <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on at least one metric — whichever this Sensor tracks.</p>
                 </div>
+                <p id="edit-sensor-range-error" class="field-error-message" style="display:none">
+                    Enter both a min and max for at least one Target Range below.</p>
                 {# Which metrics show here depends on this Sensor's *current* Enclosure's Type — see
                    CONTEXT.md: Enclosure Type, schemas/enclosure_types.py, ADR 0011. Reassigning to a
                    different-type Enclosure below doesn't live-update this list; an inapplicable value

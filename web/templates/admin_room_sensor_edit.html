@@ -26,7 +26,8 @@
                     No Reading yet.
                 {% endif %}
             </p>
-            <form method="post" action="/admin/room-sensors/{{ sensor.id }}/update" class="admin-form">
+            <form method="post" action="/admin/room-sensors/{{ sensor.id }}/update" class="admin-form"
+                  onsubmit="return validateSensorTargetRangeOnSubmit(event, 'edit-room-sensor-tracking-mode', 'edit-room-sensor-range-error')">
                 <label>Room
                     <select name="room_id">
                         {% for r in rooms %}
@@ -36,13 +37,13 @@
                 </label>
                 <label>Label <input type="text" name="label" value="{{ sensor.label }}" required></label>
                 <label>Tracking Mode
-                    <select name="tracking_mode" onchange="onTrackingModeChange(this, 'edit-room-sensor-smart', 'edit-room-sensor-manual')">
+                    <select id="edit-room-sensor-tracking-mode" name="tracking_mode" onchange="onTrackingModeChange(this, 'edit-room-sensor-smart', 'edit-room-sensor-manual')">
                         <option value="smart" {% if sensor.tracking_mode == "smart" %}selected{% endif %}>Smart (Govee BLE sensor)</option>
                         <option value="manual" {% if sensor.tracking_mode == "manual" %}selected{% endif %}>Manual (hand-logged readings)</option>
                     </select>
                 </label>
                 <div id="edit-room-sensor-smart" class="mode-fields" {% if sensor.tracking_mode != "smart" %}style="display:none"{% endif %}>
-                    <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    <label>MAC address <input type="text" name="mac_address" value="{{ sensor.mac_address or '' }}" {% if sensor.tracking_mode != "smart" %}disabled{% else %}required{% endif %}></label>
                     <div class="discover-device">
                         <button type="button" onclick="onDiscoverGoveeClick(this)">Discover Devices</button>
                         <div class="discover-results" style="display:none"></div>
@@ -55,12 +56,19 @@
                        without saving the rest of the form first (formnovalidate, same trick as Probe on
                        admin_plug_edit.html): a short live BLE listen for just this MAC, writing a real
                        Reading on success (see web/admin.py's _refresh_one_sensor()). #}
+                    {% if is_plugin_active(sensor.plugin) %}
                     <button type="submit" formaction="/admin/room-sensors/{{ sensor.id }}/refresh" formnovalidate
                             title="Listen for this Sensor's next BLE broadcast and log it as a Reading">&#8635; Refresh</button>
+                    {% else %}
+                    <button type="submit" formaction="/admin/room-sensors/{{ sensor.id }}/refresh" formnovalidate disabled
+                            title="{{ sensor.plugin }} is deactivated — reactivate it in Admin to use Refresh">&#8635; Refresh</button>
+                    {% endif %}
                 </div>
                 <div id="edit-room-sensor-manual" class="mode-fields" {% if sensor.tracking_mode != "manual" %}style="display:none"{% endif %}>
                     <p class="empty">Needs a complete Target Range (min <em>and</em> max) below, on temperature or humidity.</p>
                 </div>
+                <p id="edit-room-sensor-range-error" class="field-error-message" style="display:none">
+                    Enter both a min and max for at least one Target Range below.</p>
                 <label>Target temp min (F) <input type="number" step="0.1" name="temp_min_f" value="{{ sensor.target_temp_min_f if sensor.target_temp_min_f is not none else '' }}"></label>
                 <label>Target temp max (F) <input type="number" step="0.1" name="temp_max_f" value="{{ sensor.target_temp_max_f if sensor.target_temp_max_f is not none else '' }}"></label>
                 <label>Target humidity min (%) <input type="number" step="1" name="humidity_min" value="{{ sensor.target_humidity_min if sensor.target_humidity_min is not none else '' }}"></label>

@@ -1,0 +1,11 @@
+{# A Timer-Controlled Plug can carry up to 3 on/off cycles (see CONTEXT.md: Target Schedule;
+   ADR 0057). cycles_text() renders every cycle that has both an on-time and off-time set, joined
+   with a comma, e.g. "7:00 AM–7:00 PM, 9:00 PM–11:00 PM" — shared by every read-only display that
+   needs to show a Plug's full configured schedule in one line, rather than just the one cycle
+   driving its Timer Warning drift color. #}
+{% macro cycles_text(plug) -%}
+{%- set cycles = [(plug.target_on_time, plug.target_off_time), (plug.target_on_time_2, plug.target_off_time_2), (plug.target_on_time_3, plug.target_off_time_3)] -%}
+{%- for on, off in cycles if on and off -%}
+{{ on|clock_12h }}&ndash;{{ off|clock_12h }}{% if not loop.last %}, {% endif %}
+{%- endfor -%}
+{%- endmacro %}

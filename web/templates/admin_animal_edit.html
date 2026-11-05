@@ -17,6 +17,26 @@
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
         <section class="admin-card">
             <h2>{{ animal.name }}</h2>
+
+            {# Animal Photo (see CONTEXT.md: Animal Photo) — large thumbnail shown here and on this
+               Animal's card on the Enclosure's own Admin page; uploaded/replaced/removed only from
+               this Edit page. Clicking it pops the full-size image via the shared lightbox. #}
+            <div class="photo-upload-row">
+                {% if animal.image_filename %}
+                <img src="/images/animals/{{ animal.image_filename }}" alt="{{ animal.name }}" class="photo-upload-preview photo-thumbnail"
+                     onclick="openImageLightbox('/images/animals/{{ animal.image_filename }}')">
+                {% endif %}
+                <form method="post" action="/admin/animals/{{ animal.id }}/image" enctype="multipart/form-data" class="inline-form">
+                    <input type="file" name="image" accept="image/jpeg,image/png,image/webp" required>
+                    <button type="submit">{{ "Replace Photo" if animal.image_filename else "Upload Photo" }}</button>
+                </form>
+                {% if animal.image_filename %}
+                <form method="post" action="/admin/animals/{{ animal.id }}/image/remove" class="inline-form">
+                    <button type="submit" class="danger-small">remove photo</button>
+                </form>
+                {% endif %}
+            </div>
+
             <form method="post" action="/admin/animals/{{ animal.id }}/update" class="admin-form">
                 <label>Enclosure
                     <select name="enclosure_id">
@@ -54,12 +74,12 @@
             </table>
 
             <form method="post" action="/admin/animals/{{ animal.id }}/log-weight" class="admin-form animal-log-form">
-                <label>Weight (g) <input type="number" name="weight_g" step="0.1" min="0" required></label>
+                <label>Weight (g) <input type="number" name="weight_g" step="0.1" min="0.1" required></label>
                 <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
                 <button type="submit">Log Weight</button>
             </form>
             <form method="post" action="/admin/animals/{{ animal.id }}/log-length" class="admin-form animal-log-form">
-                <label>Length (cm) <input type="number" name="length_cm" step="0.1" min="0" required></label>
+                <label>Length (cm) <input type="number" name="length_cm" step="0.1" min="0.1" required></label>
                 <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
                 <button type="submit">Log Length</button>
             </form>
@@ -124,6 +144,12 @@
                 <button type="submit">Log Shed</button>
             </form>
         </section>
+
+        {# Image Lightbox (see CONTEXT.md: Animal Photo) — shared by every clickable photo on this page. #}
+        <dialog id="image-lightbox" class="image-lightbox">
+            <button type="button" class="image-lightbox-close" onclick="dismissImageLightbox()" title="Close" aria-label="Close">&times;</button>
+            <img src="" alt="">
+        </dialog>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>

@@ -41,12 +41,15 @@
             {% endif %}
             <details>
                 <summary>+ Add a sensor for this room</summary>
-                <form id="room-sensor-form" method="post" action="/setup/rooms/{{ room.id }}/sensors" class="admin-form">
+                <form id="room-sensor-form" method="post" action="/setup/rooms/{{ room.id }}/sensors" class="admin-form"
+                      onsubmit="return validateSensorTargetRangeOnSubmit(event, null, 'room-sensor-range-error')">
                     <label>Label <input type="text" name="label" placeholder="e.g. by the window" required></label>
                     <label>Target temp min (F) <input type="number" step="0.1" name="min_temperature_f"></label>
                     <label>Target temp max (F) <input type="number" step="0.1" name="max_temperature_f"></label>
                     <label>Target humidity min (%) <input type="number" step="1" name="min_humidity"></label>
                     <label>Target humidity max (%) <input type="number" step="1" name="max_humidity"></label>
+                    <p id="room-sensor-range-error" class="field-error-message" style="display:none">
+                        Enter both a min and max for at least one Target Range above.</p>
                     <button type="submit">{% if room.sensors %}Add Another Sensor{% else %}Add Sensor{% endif %}</button>
                 </form>
                 <p class="empty">Since you'll enter readings by hand, fill in at least one min and max above (temperature or humidity).</p>

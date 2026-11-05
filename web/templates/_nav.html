@@ -4,4 +4,9 @@
     <a href="/admin" {% if nav_current == "control" %}aria-current="page"{% endif %}>Plugs and Sensors</a>
     <a href="/admin/app" {% if nav_current == "app_admin" %}aria-current="page"{% endif %}>Admin</a>
     <a href="/help" {% if nav_current == "help" %}aria-current="page"{% endif %}>Help</a>
+    {% if request.state.user %}
+    <span class="nav-user">{{ request.state.user.username }} ({{ request.state.user.role }})
+        <form method="post" action="/logout" class="inline-form"><button type="submit">Log Out</button></form>
+    </span>
+    {% endif %}
 </nav>

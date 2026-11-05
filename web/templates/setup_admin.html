@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create the First Admin Account — Husbandry Tracker</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <main class="admin-main">
+        <section class="admin-card">
+            <h2>Create the First Admin Account</h2>
+            <p class="empty">Husbandry Tracker now requires logging in. Create the admin account
+                that will manage everything — other users, devices, and app settings — before
+                continuing. (Lost the password later? The tray icon's "Reset admin password" can
+                recover it.)</p>
+            {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+            <form method="post" action="/setup-admin" class="admin-form">
+                <label>Username <input type="text" name="username" required autofocus></label>
+                <label>Password <input type="password" name="password" required minlength="8"></label>
+                <label>Confirm Password <input type="password" name="confirm_password" required minlength="8"></label>
+                <button type="submit">Create Admin Account</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

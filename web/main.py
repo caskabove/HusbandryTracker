@@ -1,7 +1,8 @@
 """Husbandry Tracker dashboard — FastAPI app, served by uvicorn on localhost:22255 (see docker-compose.yml).
 
-Phase 2, v1 scope (see CONTEXT.md decisions): dashboard + logbook, no auth, no alerting. The
-dashboard is mostly a glance-only view — Schedules and Care logging live on the Enclosure's Admin
+Phase 2, v1 scope (see CONTEXT.md decisions): dashboard + logbook, no alerting. Login is now
+required on every request (see web/auth.py's AuthMiddleware; CONTEXT.md: User Account, Role,
+Session; ADR 0058; RHA-99). The dashboard is mostly a glance-only view — Schedules and Care logging live on the Enclosure's Admin
 page instead (see web/admin.py), with the dashboard's Care pill linking straight there. One
 deliberate exception to "glance-only": every Reading pill also carries a small Sparkline (see
 CONTEXT.md: Sparkline; ADR 0022) — the full Graphs page itself lives only on the Admin side (see
@@ -26,12 +27,18 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from active_plugins import is_plugin_active
 from app_paths import APP_ROOT
 from db.db import get_connection, init_db
 from schemas import enclosure_types as et
 from web.govee_refresh import refresh_sensors
+from web.add_pet import router as add_pet_router
 from web.admin import router as admin_router
+from web.auth import AuthMiddleware
+from web.backfill import router as backfill_router
 from web.admin_queries import get_settings, is_fresh_install
+from web.image_storage import IMAGES_DIR
+from web.login import router as login_router
 from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading, reorder_rooms
 from web.setup import router as setup_router
 from web.status import care_interval_status, target_range_status
@@ -40,9 +47,19 @@ BASE_DIR = APP_ROOT / "web"
 USER_GUIDE_PATH = APP_ROOT / "docs" / "USER_GUIDE.md"
 
 app = FastAPI(title="Husbandry Tracker")
+app.add_middleware(AuthMiddleware)
+app.include_router(login_router)
 app.include_router(admin_router)
 app.include_router(setup_router)
+app.include_router(add_pet_router)
+app.include_router(backfill_router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+# Animal Photo / Enclosure Photo (see CONTEXT.md: Animal Photo, Enclosure Photo) — served straight
+# off disk, same as /static. Pre-created so this mount doesn't fail on a fresh install that's never
+# had a photo uploaded yet (StaticFiles requires its directory to exist).
+(IMAGES_DIR / "animals").mkdir(parents=True, exist_ok=True)
+(IMAGES_DIR / "enclosures").mkdir(parents=True, exist_ok=True)
+app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["target_range_status"] = target_range_status
 templates.env.globals["care_interval_status"] = care_interval_status
@@ -117,6 +134,7 @@ HELP_TOPICS: list[dict] = [
     {"slug": "enclosures", "title": "Enclosures", "summary": "The core unit — one per animal or tank, with its own Animals, Sensors, and Plugs."},
     {"slug": "plugs", "title": "Plugs", "summary": "Smart or manual outlets controlling heat, light, humidity, and more."},
     {"slug": "sensors", "title": "Sensors", "summary": "Tracking Temperature, Humidity, pH, and other metrics over time."},
+    {"slug": "accounts", "title": "Accounts and Login", "summary": "Admin vs. User accounts, and how to recover a lost password."},
 ]
 _HELP_TOPICS_BY_SLUG = {topic["slug"]: topic for topic in HELP_TOPICS}
 
@@ -138,26 +156,34 @@ def help_topic(request: Request, slug: str):
 async def _refresh_smart_sensors(column: str, entity_id: int) -> str | None:
     """Runs a live BLE Refresh for every Smart Sensor owned by the given Enclosure or Room — never
     anything it merely borrows (a Fallback Sensor) or a sibling entity's own Sensors (see
-    CONTEXT.md: Refresh). Returns a friendly error message if any Sensor didn't report in time
-    within the configured Refresh Timeout, else None."""
+    CONTEXT.md: Refresh). A Sensor whose Plugin is deactivated (see CONTEXT.md: Active Plugin) is
+    skipped rather than scanned for — the rest still get a live read. Returns a friendly message
+    naming whatever didn't report in time and/or got skipped, else None."""
     with get_connection() as conn:
         rows = conn.execute(
-            f"SELECT id, label, external_id FROM sensor WHERE {column} = ? AND tracking_mode = 'smart' "
+            f"SELECT id, label, external_id, plugin FROM sensor WHERE {column} = ? AND tracking_mode = 'smart' "
             f"AND plugin = 'govee_ble'",
             (entity_id,),
         ).fetchall()
     if not rows:
         return None
 
-    sensors_by_mac = {row["external_id"].upper(): (row["id"], row["label"]) for row in rows}
-    sensor_ids_by_mac = {mac: sensor_id for mac, (sensor_id, _label) in sensors_by_mac.items()}
-    timeout = get_settings()["ble_refresh_timeout_seconds"]
-    results = await refresh_sensors(sensor_ids_by_mac, timeout)
+    active_rows = [row for row in rows if is_plugin_active(row["plugin"])]
+    skipped_labels = [row["label"] for row in rows if not is_plugin_active(row["plugin"])]
 
-    missing = [label for mac, (_id, label) in sensors_by_mac.items() if mac not in results]
-    if missing:
-        return f"No fresh reading within {timeout}s from: {', '.join(missing)}."
-    return None
+    sensors_by_mac = {row["external_id"].upper(): (row["id"], row["label"]) for row in active_rows}
+    sensor_ids_by_mac = {mac: sensor_id for mac, (sensor_id, _label) in sensors_by_mac.items()}
+
+    messages = []
+    if sensor_ids_by_mac:
+        timeout = get_settings()["ble_refresh_timeout_seconds"]
+        results = await refresh_sensors(sensor_ids_by_mac, timeout)
+        missing = [label for mac, (_id, label) in sensors_by_mac.items() if mac not in results]
+        if missing:
+            messages.append(f"No fresh reading within {timeout}s from: {', '.join(missing)}.")
+    if skipped_labels:
+        messages.append(f"Skipped (Plugin deactivated): {', '.join(skipped_labels)}.")
+    return " ".join(messages) if messages else None
 
 
 @app.post("/enclosures/{enclosure_id}/refresh")

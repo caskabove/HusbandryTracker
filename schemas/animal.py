@@ -32,8 +32,15 @@ class AnimalBase(BaseModel):
     name: str
     species_common: str | None = None
     species_scientific: str | None = None
+    # Species Profile (see CONTEXT.md: Species Profile; ADR 0050) — added to `animal` after this
+    # slice was first written; backfilled here so AnimalRead still matches the real table exactly.
+    species_profile: str | None = None
     dob: str | None = None                  # ISO date, nullable — not always known
     show_on_dashboard: bool = True          # see CONTEXT.md: Animal — set via set_animal_dashboard_visibility(), not create/update
+    # Animal Photo (see CONTEXT.md: Animal Photo) — just the filename under data/images/animals/,
+    # set via set_animal_image()/remove_animal_image(), same "listed here but not through create/
+    # update" reasoning as show_on_dashboard above.
+    image_filename: str | None = None
 
 
 class AnimalCreate(AnimalBase):

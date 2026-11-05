@@ -51,6 +51,14 @@ class EnclosureBase(BaseModel):
     show_watering_on_dashboard: bool = True
     show_spot_clean_on_dashboard: bool = True
     show_deep_clean_on_dashboard: bool = True
+    # Enclosure Photo (see CONTEXT.md: Enclosure Photo) — just the filename under
+    # data/images/enclosures/, set via set_enclosure_image()/remove_enclosure_image(), same
+    # "listed here but not through create" reasoning as the nag-tracking columns on EnclosureRead.
+    image_filename: str | None = None
+    # Dashboard Thumbnail (see CONTEXT.md: Dashboard Thumbnail) — which photo this Enclosure's own
+    # Dashboard panel shows; mirrors enclosure's own CHECK (dashboard_thumbnail_source IN (...)).
+    dashboard_thumbnail_source: str = "enclosure"
+    dashboard_thumbnail_animal_id: int | None = None
 
     @model_validator(mode="after")
     def _check_enclosure_type(self) -> EnclosureBase:
@@ -59,6 +67,8 @@ class EnclosureBase(BaseModel):
         set, not re-listed here."""
         if self.enclosure_type not in et.ENCLOSURE_TYPES:
             raise ValueError(f"Unknown Enclosure Type: {self.enclosure_type!r}")
+        if self.dashboard_thumbnail_source not in ("enclosure", "animal"):
+            raise ValueError(f"Unknown Dashboard Thumbnail source: {self.dashboard_thumbnail_source!r}")
         return self
 
 

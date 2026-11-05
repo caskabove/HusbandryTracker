@@ -1,0 +1,12 @@
+{# Species Profile picker data (see CONTEXT.md: Knowledge Base, Species Profile; ADR 0054) —
+   server-rendered from the live Knowledge Base tables by web/species_kb_queries.py's
+   species_profile_js_context(), in the exact shape the old hardcoded SPECIES_PROFILES/
+   SPECIES_PROFILE_GROUPS literal in web/static/app.js used to declare directly. Every consumer
+   function in app.js (populateSpeciesProfileSelect, onEnclosureSpeciesProfileChange, etc.) reads
+   these two globals unchanged — only *where the data comes from* changed. Include this once, before
+   app.js's own <script> tag, on any page whose route merged species_profile_js_context() into its
+   template context. #}
+<script>
+const SPECIES_PROFILES = {{ species_profiles_json | safe }};
+const SPECIES_PROFILE_GROUPS = {{ species_profile_groups_json | safe }};
+</script>

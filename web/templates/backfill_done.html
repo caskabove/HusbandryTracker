@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Backfill Data</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ enclosure.name }} is filled in</h1>
+        <nav><a href="/admin/app">Admin</a></nav>
+    </header>
+
+    <main class="admin-main">
+        <section class="admin-card">
+            {% if points_written %}
+            <p class="notice-banner">
+                Filled {{ sensors_filled }} Sensor{{ "s" if sensors_filled != 1 }} with
+                {{ points_written }} Reading{{ "s" if points_written != 1 }} across the last
+                {{ range_label }}.
+            </p>
+            <p class="setup-intro">
+                <strong>This is a starting point, not a real measurement</strong> — every point
+                it added is a plain Reading, based on each Sensor's Target Range, that you can
+                edit or delete from View Data exactly like any other hand-logged entry.
+            </p>
+            {% else %}
+            <p class="setup-intro">Nothing needed filling — every day in the last {{ range_label }} already had a Reading.</p>
+            {% endif %}
+            <p>
+                <a href="/admin/enclosures/{{ enclosure.id }}/data" class="button-link">View Data</a>
+                <a href="/admin/enclosures/{{ enclosure.id }}/graphs?range={{ range }}" class="button-link">See the Graphs</a>
+            </p>
+            <p><a href="/backfill/" class="button-link">Backfill another Enclosure</a></p>
+            <p><a href="/admin/app" class="button-link">Back to Admin</a></p>
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

@@ -72,6 +72,29 @@ def schedule_drift_status(target_time: str | None, detected_time: str | None, th
     return Status.GREEN
 
 
+def _clock_to_minutes(clock: str) -> int:
+    return int(clock[:2]) * 60 + int(clock[3:5])
+
+
+def nearest_target_time(detected_time: str | None, target_times: list[str | None]) -> str | None:
+    """A Timer-Controlled Plug can carry up to 3 Target Schedule cycles (see CONTEXT.md: Target
+    Schedule; ADR 0057) while Detected Schedule stays a single most-recently-observed time (not
+    cycle-aware — see CONTEXT.md: Detected Schedule). Picks whichever configured cycle's time is
+    closest to a given Detected Schedule time, wraparound-aware same as schedule_drift_status, so
+    Timer Warning can compare the detected time against the cycle it's actually answering to.
+    None if there's nothing to compare (no detected time, or no cycle configured)."""
+    candidates = [t for t in target_times if t]
+    if detected_time is None or not candidates:
+        return None
+    detected_minutes = _clock_to_minutes(detected_time)
+
+    def _drift(target: str) -> int:
+        diff = abs(_clock_to_minutes(target) - detected_minutes)
+        return min(diff, 1440 - diff)
+
+    return min(candidates, key=_drift)
+
+
 def acknowledged_drift_status(target_time: str | None, detected_time: str | None,
                               acknowledged_time: str | None, threshold_minutes: int) -> Status:
     """schedule_drift_status() with the user's cleared warning applied (see CONTEXT.md: Timer

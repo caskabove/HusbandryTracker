@@ -50,6 +50,7 @@
             </form>
         </section>
     </main>
+    {% include "_species_profile_data.html" %}
     <script src="/static/app.js?v={{ asset_version }}"></script>
     <script>populateSpeciesProfileSelect(document.getElementById('setup-species-profile'), document.querySelector('select[name="enclosure_type"]').value);</script>
 </body>
