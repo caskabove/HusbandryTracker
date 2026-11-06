@@ -1,0 +1,113 @@
+{# Quick Log popup (see CONTEXT.md: Quick Log) — one <dialog> per Animal, holding that Animal's own
+   Growth & Condition Log and Shed Log cards verbatim from the Animal's own Edit page
+   (admin_animal_edit.html): same history tables, same forms, same POST routes. Shared by two
+   pages that each open it on a different Animal context (see CONTEXT.md: Recent Activity;
+   grill-me decision) — the Enclosure's Animals card (admin_enclosure.html) and the Animal's own
+   page (admin_animal.html) — so enclosure_id/from_animal_page are passed in rather than assumed,
+   matching whichever hidden field admin.py's _quick_log_redirect() needs to send the redirect back
+   to the page that opened it. #}
+{% macro quick_log_dialog(a, animal_conditions, animal_condition_labels, shed_completeness, shed_completeness_labels, shed_stuck_locations, shed_stuck_location_labels, enclosure_id="", from_animal_page="") %}
+<dialog id="quick-log-modal-{{ a.id }}" class="care-prompt-modal quick-log-modal">
+    <div class="care-prompt-header">
+        <h3>Quick Log &mdash; {{ a.name }}</h3>
+        <button type="button" class="care-prompt-close" onclick="dismissQuickLogDialog('quick-log-modal-{{ a.id }}')" title="Close" aria-label="Close">&times;</button>
+    </div>
+
+    <section class="quick-log-section">
+        <h4>Growth &amp; Condition Log</h4>
+        <table class="admin-table">
+            <thead><tr><th>When</th><th>Weight</th><th>Length</th><th>Count</th><th>Condition</th><th>Note</th></tr></thead>
+            <tbody>
+            {% for entry in a.logs %}
+                <tr>
+                    <td>{{ entry.occurred_at }}</td>
+                    <td>{{ "%.1f"|format(entry.weight_g) ~ " g" if entry.weight_g is not none else "" }}</td>
+                    <td>{{ "%.1f"|format(entry.length_cm) ~ " cm" if entry.length_cm is not none else "" }}</td>
+                    <td>{{ entry.count if entry.count is not none else "" }}</td>
+                    <td>{{ animal_condition_labels[entry.condition] if entry.condition else "" }}</td>
+                    <td>{{ entry.note or "" }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="6" class="empty">No Growth/Condition entries logged yet</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <form method="post" action="/admin/animals/{{ a.id }}/log-weight" class="admin-form animal-log-form">
+            <input type="hidden" name="enclosure_id" value="{{ enclosure_id }}">
+            <input type="hidden" name="from_animal_page" value="{{ from_animal_page }}">
+            <label>Weight (g) <input type="number" name="weight_g" step="0.1" min="0.1" required></label>
+            <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+            <button type="submit">Log Weight</button>
+        </form>
+        <form method="post" action="/admin/animals/{{ a.id }}/log-length" class="admin-form animal-log-form">
+            <input type="hidden" name="enclosure_id" value="{{ enclosure_id }}">
+            <input type="hidden" name="from_animal_page" value="{{ from_animal_page }}">
+            <label>Length (cm) <input type="number" name="length_cm" step="0.1" min="0.1" required></label>
+            <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+            <button type="submit">Log Length</button>
+        </form>
+        <form method="post" action="/admin/animals/{{ a.id }}/log-count" class="admin-form animal-log-form">
+            <input type="hidden" name="enclosure_id" value="{{ enclosure_id }}">
+            <input type="hidden" name="from_animal_page" value="{{ from_animal_page }}">
+            <label>Count <input type="number" name="count" step="1" min="0" required></label>
+            <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+            <button type="submit">Log Count</button>
+        </form>
+        <form method="post" action="/admin/animals/{{ a.id }}/log-condition" class="admin-form animal-log-form">
+            <input type="hidden" name="enclosure_id" value="{{ enclosure_id }}">
+            <input type="hidden" name="from_animal_page" value="{{ from_animal_page }}">
+            <label>Condition
+                <select name="condition">
+                    {% for c in animal_conditions %}
+                    <option value="{{ c }}">{{ animal_condition_labels[c] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Note <input type="text" name="note" placeholder="optional"></label>
+            <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+            <button type="submit">Log Condition</button>
+        </form>
+    </section>
+
+    <section class="quick-log-section">
+        <h4>Shed Log</h4>
+        <table class="admin-table">
+            <thead><tr><th>When</th><th>Completeness</th><th>Stuck locations</th><th>Note</th></tr></thead>
+            <tbody>
+            {% for entry in a.shed_logs %}
+                <tr>
+                    <td>{{ entry.occurred_at }}</td>
+                    <td>{{ shed_completeness_labels[entry.completeness] }}</td>
+                    <td>{{ entry.stuck_location_labels|join(", ") }}</td>
+                    <td>{{ entry.note or "" }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="empty">No Sheds logged yet</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <form method="post" action="/admin/animals/{{ a.id }}/log-shed" class="admin-form animal-log-form">
+            <input type="hidden" name="enclosure_id" value="{{ enclosure_id }}">
+            <input type="hidden" name="from_animal_page" value="{{ from_animal_page }}">
+            <label>Completeness
+                <select name="completeness" onchange="onToggleChange(this, 'partial', 'shed-stuck-block-{{ a.id }}', '')">
+                    {% for c in shed_completeness %}
+                    <option value="{{ c }}">{{ shed_completeness_labels[c] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <span id="shed-stuck-block-{{ a.id }}" style="display:none">
+                {% for loc in shed_stuck_locations %}
+                <label><input type="checkbox" name="stuck_locations" value="{{ loc }}"> {{ shed_stuck_location_labels[loc] }}</label>
+                {% endfor %}
+                <label>Other <input type="text" name="stuck_location_other" placeholder="optional"></label>
+            </span>
+            <label>Note <input type="text" name="note" placeholder="optional"></label>
+            <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+            <button type="submit">Log Shed</button>
+        </form>
+    </section>
+</dialog>
+{% endmacro %}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - {{ animal.name }}</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    {% import "_quick_log_macro.html" as quick_log %}
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ animal.name }}</h1>
+        {% set nav_current = "enclosures" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+
+        <p><a href="/admin/enclosures/{{ animal.enclosure_id }}">&larr; Back to {{ enclosure_name }}</a></p>
+
+        {# Read-first profile (see CONTEXT.md: Recent Activity; grill-me decision) — photo, species,
+           DOB, and links out to the actions that change this Animal: edit (name/species/DOB/photo,
+           on the existing Edit page) and Quick Log (the same popup the Enclosure's Animals card
+           already has). #}
+        <section class="admin-card">
+            <div class="photo-upload-row">
+                {% if animal.image_filename %}
+                <img src="/images/animals/{{ animal.image_filename }}" alt="{{ animal.name }}" class="photo-upload-preview photo-thumbnail"
+                     onclick="openImageLightbox('/images/animals/{{ animal.image_filename }}')">
+                {% endif %}
+                <div class="animal-card-body">
+                    <span class="animal-card-species">{{ animal.species_common }}{% if animal.species_scientific %} <em>({{ animal.species_scientific }})</em>{% endif %}</span>
+                    <span class="animal-card-dob">DOB: {{ animal.dob or "unknown" }}</span>
+                </div>
+            </div>
+            <p>
+                <a href="#" onclick="openQuickLogDialog('quick-log-modal-{{ animal.id }}'); return false;">quick log</a> &middot;
+                <a href="/admin/animals/{{ animal.id }}/edit">edit</a>
+            </p>
+        </section>
+
+        {# Full merged history (Care Events + Growth/Condition + Shed Log), paginated — see
+           CONTEXT.md: Recent Activity; grill-me decision. Hidden entirely (no placeholder) when
+           this Animal has no history yet, same "hide the empty section" precedent as the
+           Enclosure card's own quick-view strip. #}
+        {% if activity %}
+        <section class="admin-card">
+            <h2>Recent Activity</h2>
+            <table class="admin-table">
+                <thead><tr><th>When</th><th>Kind</th><th>Detail</th></tr></thead>
+                <tbody>
+                {% for entry in activity %}
+                    <tr>
+                        <td>{{ entry.occurred_at }}</td>
+                        <td>{{ entry.label }}</td>
+                        <td>{{ entry.detail }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <div class="activity-pagination">
+                <span>{% if page > 1 %}<a href="/admin/animals/{{ animal.id }}?page={{ page - 1 }}">&larr; Newer</a>{% endif %}</span>
+                <span>{% if has_more %}<a href="/admin/animals/{{ animal.id }}?page={{ page + 1 }}">Older &rarr;</a>{% endif %}</span>
+            </div>
+        </section>
+        {% endif %}
+
+        {{ quick_log.quick_log_dialog(animal, animal_conditions, animal_condition_labels, shed_completeness, shed_completeness_labels, shed_stuck_locations, shed_stuck_location_labels, from_animal_page="1") }}
+
+        {# Image Lightbox (see CONTEXT.md: Animal Photo) — shared by this page's photo. #}
+        <dialog id="image-lightbox" class="image-lightbox">
+            <button type="button" class="image-lightbox-close" onclick="dismissImageLightbox()" title="Close" aria-label="Close">&times;</button>
+            <img src="" alt="">
+        </dialog>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

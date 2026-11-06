@@ -19,9 +19,10 @@ from web import image_storage as img
 from web.outbox import write_command
 from web.status import nearest_target_time
 from web.queries import (
-    ANIMAL_CONDITIONS, CARE_EVENT_KINDS, FEEDING_RESULTS, PREY_STATES, SHED_COMPLETENESS,
-    SHED_STUCK_LOCATION_LABELS, _latest_reading, _normalize_datetime_local, _sparklines, days_since,
-    get_latest_feeding_detail_any, log_care_event,
+    ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, FEEDING_RESULT_LABELS, FEEDING_RESULTS,
+    PREY_STATE_LABELS, PREY_STATES, SHED_COMPLETENESS, SHED_COMPLETENESS_LABELS, SHED_STUCK_LOCATION_LABELS,
+    _latest_reading, _normalize_datetime_local, _sparklines, days_since, get_latest_feeding_detail_any,
+    log_care_event,
 )
 
 
@@ -123,6 +124,9 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         for animal in enclosure["animals"]:
             animal["logs"] = list_animal_logs(animal["id"])
             animal["shed_logs"] = list_shed_logs(animal["id"])
+        # Recent Activity (see CONTEXT.md: Recent Activity; grill-me decision) — the Animals card's
+        # quick-view strip, merged across every Animal in this Enclosure.
+        enclosure["activity"] = list_enclosure_activity(enclosure_id)
         enclosure["sensors"] = [_decode_sensor(dict(r)) for r in conn.execute("SELECT * FROM sensor WHERE enclosure_id = ? ORDER BY label", (enclosure_id,))]
         # Current Reading — same "what's actually happening right now" info the Dashboard already
         # shows for this Enclosure's Sensors, and Room Sensors already get on their own Admin page
@@ -487,6 +491,153 @@ def get_animal(animal_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM animal WHERE id = ?", (animal_id,)).fetchone()
         return dict(row) if row else None
+
+
+def get_enclosure_name(enclosure_id: int) -> str | None:
+    """Just the name — for the Animal page's breadcrumb back to its Enclosure, which doesn't need
+    get_enclosure()'s much heavier Sensors/Plugs/Care fetch."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT name FROM enclosure WHERE id = ?", (enclosure_id,)).fetchone()
+        return row["name"] if row else None
+
+
+_ANIMAL_LOG_LABEL_FIELDS = (("weight_g", "Weight"), ("length_cm", "Length"), ("count", "Count"), ("condition", "Condition"))
+
+
+def _animal_log_label(row: dict) -> str:
+    """animal_log stores all four metrics as nullable columns on one shared row — a given entry
+    normally fills in just one, but can carry more than one at once (see CONTEXT.md: Animal Log).
+    The Recent Activity feed names whichever of them are actually present on this row (grill-me
+    decision), rather than a fixed generic label."""
+    fields = [label for column, label in _ANIMAL_LOG_LABEL_FIELDS if row[column] is not None]
+    return f"{', '.join(fields)} logged" if fields else "Growth/condition logged"
+
+
+def list_enclosure_activity(enclosure_id: int, limit: int = 5) -> list[dict]:
+    """Recent Activity (see CONTEXT.md: Recent Activity; grill-me decision) — the Animals card's
+    quick-view strip on the Enclosure's own Admin page: the most recent `limit` entries merged
+    across every log source for this Enclosure — care_event (Feeding/Watering/Spot-clean/Deep-clean;
+    animal_id is NULL for a whole-Enclosure event not scoped to one Animal — labeled "Enclosure",
+    same precedent as get_enclosure()'s own Care section last-feeding display), Animal Log
+    (Growth & Condition), and Shed Log. Each of the three source queries is already capped at
+    `limit` rows — the merged top-`limit` can never need more than that from any single source.
+    Deliberately minimal (kind + Animal + day) — full detail lives on the Animal's own page via
+    list_animal_activity() below."""
+    with get_connection() as conn:
+        care_rows = conn.execute(
+            """SELECT ce.occurred_at, ce.kind, ce.animal_id, a.name AS animal_name
+               FROM care_event ce LEFT JOIN animal a ON a.id = ce.animal_id
+               WHERE ce.enclosure_id = ? ORDER BY ce.occurred_at DESC LIMIT ?""",
+            (enclosure_id, limit),
+        ).fetchall()
+        growth_rows = conn.execute(
+            """SELECT al.*, a.name AS animal_name FROM animal_log al JOIN animal a ON a.id = al.animal_id
+               WHERE a.enclosure_id = ? ORDER BY al.occurred_at DESC LIMIT ?""",
+            (enclosure_id, limit),
+        ).fetchall()
+        shed_rows = conn.execute(
+            """SELECT sl.occurred_at, sl.animal_id, sl.completeness, a.name AS animal_name
+               FROM shed_log sl JOIN animal a ON a.id = sl.animal_id
+               WHERE a.enclosure_id = ? ORDER BY sl.occurred_at DESC LIMIT ?""",
+            (enclosure_id, limit),
+        ).fetchall()
+
+    entries = []
+    for r in care_rows:
+        entries.append({
+            "occurred_at": r["occurred_at"], "animal_id": r["animal_id"],
+            "animal_name": r["animal_name"] or "Enclosure",
+            "label": r["kind"].replace("_", " ").capitalize(),
+        })
+    for r in growth_rows:
+        entries.append({
+            "occurred_at": r["occurred_at"], "animal_id": r["animal_id"], "animal_name": r["animal_name"],
+            "label": _animal_log_label(r),
+        })
+    for r in shed_rows:
+        entries.append({
+            "occurred_at": r["occurred_at"], "animal_id": r["animal_id"], "animal_name": r["animal_name"],
+            "label": f"Shed ({SHED_COMPLETENESS_LABELS[r['completeness']].lower()})",
+        })
+    entries.sort(key=lambda e: e["occurred_at"], reverse=True)
+    entries = entries[:limit]
+    for e in entries:
+        e["days_since"] = days_since(e["occurred_at"])
+    return entries
+
+
+_ANIMAL_ACTIVITY_FETCH_CAP = 500
+
+
+def list_animal_activity(animal_id: int, page: int = 1, page_size: int = 25) -> tuple[list[dict], bool]:
+    """Full merged history (Care Events + Growth/Condition + Shed Log) for the Animal's own page
+    (see CONTEXT.md: Recent Activity; grill-me decision) — same 3 sources as
+    list_enclosure_activity() above, but with every detail field (not a one-line label) and
+    page_size-at-a-time paging instead of a fixed top-N, since an Animal's lifetime history can run
+    far longer than the Enclosure card's 5-entry quick view. Merging 3 differently-shaped sources
+    isn't practical in SQL, so each is fetched up to _ANIMAL_ACTIVITY_FETCH_CAP rows (generous for
+    this app's hobbyist scale, and keeps this "most-recent-N, not truly unbounded" — same idiom as
+    list_animal_logs/list_shed_logs) and merged/sorted/paged here in Python."""
+    with get_connection() as conn:
+        care_rows = conn.execute(
+            """SELECT ce.occurred_at, ce.kind, ce.note, fd.food, fd.count, fd.prey_state, fd.result
+               FROM care_event ce LEFT JOIN feeding_detail fd ON fd.care_event_id = ce.id
+               WHERE ce.animal_id = ? ORDER BY ce.occurred_at DESC LIMIT ?""",
+            (animal_id, _ANIMAL_ACTIVITY_FETCH_CAP),
+        ).fetchall()
+        growth_rows = conn.execute(
+            "SELECT * FROM animal_log WHERE animal_id = ? ORDER BY occurred_at DESC LIMIT ?",
+            (animal_id, _ANIMAL_ACTIVITY_FETCH_CAP),
+        ).fetchall()
+        shed_rows = conn.execute(
+            "SELECT * FROM shed_log WHERE animal_id = ? ORDER BY occurred_at DESC LIMIT ?",
+            (animal_id, _ANIMAL_ACTIVITY_FETCH_CAP),
+        ).fetchall()
+
+    entries = []
+    for r in care_rows:
+        if r["kind"] == "feeding":
+            detail = r["food"] or "(no food recorded)"
+            if r["count"]:
+                detail += f" ×{r['count']}"
+            if r["prey_state"]:
+                detail += f", {PREY_STATE_LABELS.get(r['prey_state'], r['prey_state'])}"
+            if r["result"] and r["result"] != "accepted":
+                detail += f" — {FEEDING_RESULT_LABELS.get(r['result'], r['result'])}"
+        else:
+            detail = r["note"] or ""
+        entries.append({
+            "occurred_at": r["occurred_at"], "label": r["kind"].replace("_", " ").capitalize(), "detail": detail,
+        })
+    for r in growth_rows:
+        parts = []
+        if r["weight_g"] is not None:
+            parts.append(f"Weight: {r['weight_g']:.1f} g")
+        if r["length_cm"] is not None:
+            parts.append(f"Length: {r['length_cm']:.1f} cm")
+        if r["count"] is not None:
+            parts.append(f"Count: {r['count']}")
+        if r["condition"] is not None:
+            parts.append(f"Condition: {ANIMAL_CONDITION_LABELS[r['condition']]}")
+        detail = ", ".join(parts)
+        if r["note"]:
+            detail += f' — "{r["note"]}"'
+        entries.append({"occurred_at": r["occurred_at"], "label": "Growth/condition", "detail": detail})
+    for r in shed_rows:
+        codes = r["stuck_locations"].split(",") if r["stuck_locations"] else []
+        locations = [SHED_STUCK_LOCATION_LABELS.get(code, code) for code in codes]
+        detail = SHED_COMPLETENESS_LABELS[r["completeness"]]
+        if locations:
+            detail += f" — stuck: {', '.join(locations)}"
+        if r["note"]:
+            detail += f' — "{r["note"]}"'
+        entries.append({"occurred_at": r["occurred_at"], "label": "Shed", "detail": detail})
+
+    entries.sort(key=lambda e: e["occurred_at"], reverse=True)
+    start = (page - 1) * page_size
+    page_entries = entries[start:start + page_size]
+    has_more = len(entries) > start + page_size
+    return page_entries, has_more
 
 
 def list_animals() -> list[dict]:
