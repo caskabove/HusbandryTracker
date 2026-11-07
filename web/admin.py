@@ -190,16 +190,22 @@ def admin_app(request: Request):
     # elsewhere in CONTEXT.md. Plugins was the first card moved here (ADR 0048); Settings, Tuya
     # Cloud Credentials, and every global Add form followed (ADR 0049) — ADR 0055 then moved Add
     # Room/Enclosure back to Rooms and Enclosures and Add Sensor/Plug back to Plugs and Sensors,
-    # next to the tables they create rows for. enclosures/rooms here are just for Add Animal's and
-    # Add Plug Group's own Enclosure/Belongs-to pickers, not for listing anything.
+    # next to the tables they create rows for. Admin also carries its own copies of Add Room/
+    # Enclosure/Sensor/Plug now, so every Add form is reachable from here without hunting down its
+    # table's own page — same POST endpoints as the originals, so a submission here behaves
+    # identically (including where its error redirect lands). enclosures/rooms/plug_groups here
+    # back those Belongs-to/Plug-Group pickers (and Add Animal's/Add Plug Group's own), not any
+    # listing on this page.
     context = {
         "plugins": plugin_catalog.list_plugins(),
         "enclosures": q.list_enclosures(), "rooms": q.list_rooms(),
+        "plug_groups": q.list_plug_groups(),
         "settings": q.get_settings(),
         "users": authq.list_users(), "current_user": request.state.user,
         "error": request.query_params.get("error"),
         "notice": request.query_params.get("notice"),
     }
+    context.update(skq.species_profile_js_context())
     return templates.TemplateResponse(request, "admin_app.html", context)
 
 

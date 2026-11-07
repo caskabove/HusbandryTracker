@@ -298,7 +298,7 @@
                         </datalist>
                     </label>
                     <label>Plug Group
-                        <select id="add-plug-group-select" name="plug_group_id" onchange="onAddPlugGroupChange(this, 'add-plug-belongs-to', 'add-plug-tuya-creds'); clearPlugParentError('add-plug-enclosures', 'add-plug-parent-error')">
+                        <select id="add-plug-group-select" name="plug_group_id" onchange="onAddPlugGroupChange(this, 'add-plug-belongs-to', 'add-plug-tuya-creds'); clearPlugParentError('add-plug-enclosures', 'add-plug-parent-error'); updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
                             <option value="">— none (standalone Plug) —</option>
                             {% for g in plug_groups %}
                             <option value="{{ g.id }}">{{ g.name }} ({{ g.parent_label }})</option>
@@ -333,14 +333,14 @@
                         the new outlet inherits both from the Group, you only set its own DPS key.</p>
                     <label>Tracking Mode
                         <select id="add-plug-tracking-mode" name="tracking_mode"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
+                                onchange="onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds'); updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
                             <option value="smart">Smart (Tuya-controlled)</option>
                             <option value="manual" selected>Manual (hand-switched, e.g. a timer)</option>
                         </select>
                     </label>
                     <label>Controller Kind
                         <select id="add-plug-controller-kind" name="controller_kind"
-                                onchange="updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields'); onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds')">
+                                onchange="onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds'); updatePlugFieldVisibility('add-plug-tracking-mode','add-plug-controller-kind','add-plug-smart','add-plug-always-on','add-plug-schedule','add-plug-thermostat-fields','add-plug-hydrostat-fields')">
                             <option value="none" selected>None (switched by hand or its own Smart schedule)</option>
                             <option value="timer">Timer (plugged into a separate timer device)</option>
                             <option value="thermostat">Thermostat-Controlled (powers a separate thermostat unit)</option>
@@ -411,6 +411,13 @@
         if (addSensorEnclosureSelect) {
             onGlobalSensorEnclosureChange(addSensorEnclosureSelect, 'add-sensor-global-species-profile', 'add-sensor-global-zone-wrap', 'add-sensor-global-zone');
         }
+        // Add Plug's Tracking Mode/Controller Kind default to "manual"/"none" (see above), which
+        // hides the Smart/Thermostat/Hydrostat blocks purely via CSS on first render — without this,
+        // their still-enabled `required` fields (tuya_device_id, target_temp_f, ...) are invisible
+        // but still part of the form's validation, so submitting with nothing touched silently fails
+        // (the browser can't focus a hidden invalid field to report it).
+        onAddPlugGroupChange(document.getElementById('add-plug-group-select'), 'add-plug-belongs-to', 'add-plug-tuya-creds');
+        updatePlugFieldVisibility('add-plug-tracking-mode', 'add-plug-controller-kind', 'add-plug-smart', 'add-plug-always-on', 'add-plug-schedule', 'add-plug-thermostat-fields', 'add-plug-hydrostat-fields');
     </script>
 </body>
 </html>

@@ -71,8 +71,15 @@ function updatePlugFieldVisibility(trackingSelectId, controllerSelectId, smartBl
 // still needs entering.
 function onAddPlugGroupChange(select, belongsToBlockId, tuyaCredsBlockId) {
     const standalone = select.value === "";
-    setToggleBlock(document.getElementById(belongsToBlockId), standalone);
+    const belongsToBlock = document.getElementById(belongsToBlockId);
+    setToggleBlock(belongsToBlock, standalone);
     setToggleBlock(document.getElementById(tuyaCredsBlockId), standalone);
+    // setToggleBlock just blanket-enabled every input under "Belongs to" (standalone case),
+    // including the Room <select> that's normally kept `disabled` so it never submits while
+    // Enclosure(s) mode is showing (and vice versa) — re-run that inner Room/Enclosure(s) toggle
+    // now so only whichever side is actually visible stays enabled.
+    const parentTypeSelect = belongsToBlock && belongsToBlock.querySelector('select[name="parent_type"]');
+    if (parentTypeSelect) parentTypeSelect.dispatchEvent(new Event("change"));
 }
 
 // Add Plug / Add Plug Group: the "exactly one parent" rule (see CONTEXT.md: Plug, Plug Group) is

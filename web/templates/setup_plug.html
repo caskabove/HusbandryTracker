@@ -84,5 +84,12 @@
         </section>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    <script>
+        // Controller defaults to "None" (see above), which hides the Thermostat/Hydrostat blocks
+        // purely via CSS on first render — without this, their still-enabled `required` fields
+        // are invisible but still part of the form's validation, so submitting with nothing
+        // touched silently fails (the browser can't focus a hidden invalid field to report it).
+        updatePlugFieldVisibility(null, 'setup-plug-controller-kind', null, 'setup-plug-always-on', 'setup-plug-schedule', 'setup-plug-thermostat-fields', 'setup-plug-hydrostat-fields');
+    </script>
 </body>
 </html>
