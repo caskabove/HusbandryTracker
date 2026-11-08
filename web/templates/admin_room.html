@@ -62,8 +62,7 @@
                                dual y-axis, one Target Range band per metric (two shades of green),
                                fixed per-metric line colors, no separate legend (see
                                web/static/graphs.js's renderCombinedSparklineChart) — it renders
-                               once, under the Temperature pill; the Humidity pill that follows has
-                               no chart of its own underneath. #}
+                               once, under the Humidity pill, so the Temperature and Humidity pills stack with no chart between them. #}
                             <span class="reading-meta">as of {{ reading.recorded_at }}</span>
                             {% set spark_temp = s.sparklines.get("temperature_c") if s.sparklines else none %}
                             {% set spark_humidity = s.sparklines.get("humidity_pct") if s.sparklines else none %}
@@ -75,33 +74,12 @@
                             {% if reading.temperature_c is not none %}
                             <div class="sparkline-metric-group">
                                 <span class="pill status-{{ temp_status.value }}">{{ "%.1f"|format(reading.temperature_c|c_to_f) }}&deg;F</span>
-                                {% if spark_temp and (spark_temp.ranges.week or spark_temp.ranges.month) %}
+                                {% if not combine_temp_humidity and spark_temp and (spark_temp.ranges.week or spark_temp.ranges.month) %}
                                 <div class="sparkline-chart">
                                     <div class="sparkline-range-toggle" role="group" aria-label="Temperature chart range">
                                         <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
                                         <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
                                     </div>
-                                    {% if combine_temp_humidity %}
-                                    <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature &amp; Humidity chart">
-                                        <canvas class="sparkline" width="260" height="84"
-                                                data-combined="1"
-                                                data-points-week="{{ spark_temp.ranges.week|tojson }}"
-                                                data-points-month="{{ spark_temp.ranges.month|tojson }}"
-                                                data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
-                                                data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
-                                                data-decimals="1"
-                                                data-decimals-b="{{ humidity_metric.decimals }}"
-                                                data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
-                                                data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
-                                                data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
-                                                data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
-                                                data-label-a="Temperature"
-                                                data-label-b="{{ humidity_metric.label }}"
-                                                data-title-week="Temperature &amp; Humidity - last 7 days"
-                                                data-title-month="Temperature &amp; Humidity - last 30 days"
-                                                data-range="week"></canvas>
-                                    </a>
-                                    {% else %}
                                     <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature chart">
                                         <canvas class="sparkline" width="260" height="84"
                                                 data-points-week="{{ spark_temp.ranges.week|tojson }}"
@@ -113,7 +91,6 @@
                                                 data-title-month="Temperature - last 30 days"
                                                 data-range="week"></canvas>
                                     </a>
-                                    {% endif %}
                                 </div>
                                 {% endif %}
                             </div>
@@ -140,6 +117,34 @@
                                     </a>
                                 </div>
                                 {% endif %}
+                            </div>
+                            {% endif %}
+                            {# Combined chart goes after both pills so they stack one under the other. #}
+                            {% if combine_temp_humidity %}
+                            <div class="sparkline-chart">
+                                <div class="sparkline-range-toggle" role="group" aria-label="Temperature &amp; Humidity chart range">
+                                    <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
+                                    <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
+                                </div>
+                                <a class="sparkline-link" href="/admin/rooms/{{ room.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature &amp; Humidity chart">
+                                    <canvas class="sparkline" width="260" height="84"
+                                            data-combined="1"
+                                            data-points-week="{{ spark_temp.ranges.week|tojson }}"
+                                            data-points-month="{{ spark_temp.ranges.month|tojson }}"
+                                            data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
+                                            data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
+                                            data-decimals="1"
+                                            data-decimals-b="{{ humidity_metric.decimals }}"
+                                            data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
+                                            data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
+                                            data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
+                                            data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
+                                            data-label-a="Temperature"
+                                            data-label-b="{{ humidity_metric.label }}"
+                                            data-title-week="Temperature &amp; Humidity - last 7 days"
+                                            data-title-month="Temperature &amp; Humidity - last 30 days"
+                                            data-range="week"></canvas>
+                                </a>
                             </div>
                             {% endif %}
                             </div>

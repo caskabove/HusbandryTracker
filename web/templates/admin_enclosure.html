@@ -450,8 +450,7 @@
                                of two (RHA-93) — dual y-axis, one Target Range band per metric (two
                                shades of green), fixed per-metric line colors, no separate legend
                                (see web/static/graphs.js's renderCombinedSparklineChart) — it
-                               renders once, under the Temperature pill; the Humidity pill that
-                               follows has no chart of its own underneath. #}
+                               renders once, under the Humidity pill, so the Temperature and Humidity pills stack with no chart between them. #}
                             {% set ns = namespace(shown=false) %}
                             {% for metric in TARGET_RANGE_METRICS %}
                                 {% if (reading[metric.reading_column] if reading else none) is not none %}{% set ns.shown = true %}{% endif %}
@@ -465,6 +464,7 @@
                             {% set spark_temp = s.sparklines.get("temperature_c") if s.sparklines else none %}
                             {% set spark_humidity = s.sparklines.get("humidity_pct") if s.sparklines else none %}
                             {% set humidity_metric = TARGET_RANGE_METRICS|selectattr("key", "equalto", "humidity")|first %}
+                            {% set temp_metric = TARGET_RANGE_METRICS|selectattr("key", "equalto", "temperature")|first %}
                             {% set combine_temp_humidity = spark_temp and spark_humidity
                                 and (spark_temp.ranges.week or spark_temp.ranges.month)
                                 and (spark_humidity.ranges.week or spark_humidity.ranges.month) %}
@@ -480,7 +480,7 @@
                                         {{ ("%." ~ metric.decimals ~ "f")|format(shown) -}}
                                         {% if metric.converts_f_c %}&deg;F{% else %}{{ metric.unit }}{% endif %}
                                     </span>
-                                    {% if not (combine_temp_humidity and metric.key == "humidity") %}
+                                    {% if not (combine_temp_humidity and metric.key == "temperature") %}
                                     {% set spark = s.sparklines[metric.reading_column] if s.sparklines and s.sparklines.get(metric.reading_column) else none %}
                                     {% if spark and (spark.ranges.week or spark.ranges.month) %}
                                     <div class="sparkline-chart">
@@ -488,7 +488,7 @@
                                             <button type="button" class="sparkline-range-btn active" onclick="setSparklineRange(this, 'week')">Week</button>
                                             <button type="button" class="sparkline-range-btn" onclick="setSparklineRange(this, 'month')">Month</button>
                                         </div>
-                                        {% if combine_temp_humidity and metric.key == "temperature" %}
+                                        {% if combine_temp_humidity and metric.key == "humidity" %}
                                         <a class="sparkline-link" href="/admin/enclosures/{{ enclosure.id }}/graphs#reading-{{ s.id }}-temperature" title="View full Temperature &amp; Humidity chart">
                                             <canvas class="sparkline" width="260" height="84"
                                                     data-combined="1"
@@ -496,13 +496,13 @@
                                                     data-points-month="{{ spark_temp.ranges.month|tojson }}"
                                                     data-points-week-b="{{ spark_humidity.ranges.week|tojson }}"
                                                     data-points-month-b="{{ spark_humidity.ranges.month|tojson }}"
-                                                    data-decimals="{{ metric.decimals }}"
+                                                    data-decimals="{{ temp_metric.decimals }}"
                                                     data-decimals-b="{{ humidity_metric.decimals }}"
                                                     data-target-min="{{ '' if spark_temp.target_min is none else spark_temp.target_min }}"
                                                     data-target-max="{{ '' if spark_temp.target_max is none else spark_temp.target_max }}"
                                                     data-target-min-b="{{ '' if spark_humidity.target_min is none else spark_humidity.target_min }}"
                                                     data-target-max-b="{{ '' if spark_humidity.target_max is none else spark_humidity.target_max }}"
-                                                    data-label-a="{{ metric.label }}"
+                                                    data-label-a="{{ temp_metric.label }}"
                                                     data-label-b="{{ humidity_metric.label }}"
                                                     data-title-week="Temperature &amp; Humidity - last 7 days"
                                                     data-title-month="Temperature &amp; Humidity - last 30 days"
