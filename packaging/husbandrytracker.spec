@@ -32,6 +32,15 @@ DATAS = [
     (str(REPO_ROOT / "db" / "schema.sql"), "db"),
     (str(REPO_ROOT / "schemas" / "plugin_event.schema.json"), "schemas"),
     (str(REPO_ROOT / "schemas" / "plug_command.schema.json"), "schemas"),
+    # web/plugin_catalog.py's list_plugins() scans plugins/<name>/manifest.json straight off disk
+    # (Path.iterdir() + .exists()), not via Python import — PyInstaller's Analysis never collects
+    # non-code files like these, or log_husbandry's bundled skill/, just because something imports
+    # a sibling .py in that same folder, so they need to be listed here explicitly or the installed
+    # build's Admin "Plugins" card finds nothing.
+    (str(REPO_ROOT / "plugins" / "govee_ble" / "manifest.json"), "plugins/govee_ble"),
+    (str(REPO_ROOT / "plugins" / "tuya_lan" / "manifest.json"), "plugins/tuya_lan"),
+    (str(REPO_ROOT / "plugins" / "log_husbandry" / "manifest.json"), "plugins/log_husbandry"),
+    (str(REPO_ROOT / "plugins" / "log_husbandry" / "skill"), "plugins/log_husbandry/skill"),
 ]
 
 # uvicorn and bleak both pick implementations dynamically at runtime (uvicorn's protocol/loop
@@ -44,6 +53,15 @@ HIDDEN_IMPORTS = (
     collect_submodules("uvicorn")
     + collect_submodules("winrt")
     + ["pystray._win32"]
+    # web/plugin_catalog.py's activate_plugin()/deactivate_plugin() load each Plugin's init.py via
+    # importlib.import_module(f"plugins.{name}.init") — a name built from a runtime string, which
+    # PyInstaller's static import analysis can't follow. govee_ble/tuya_lan's init.py would at
+    # least get swept in as a sibling of plugin.py (their actual Analysis entry point) by the
+    # collect_submodules call below, but log_husbandry has no plugin.py/entry point at all, so it
+    # needs to be named explicitly or it's missing from the frozen build entirely.
+    + collect_submodules("plugins.govee_ble")
+    + collect_submodules("plugins.tuya_lan")
+    + collect_submodules("plugins.log_husbandry")
 )
 UVICORN_DATAS, UVICORN_BINARIES, _ = collect_all("uvicorn")
 WINRT_DATAS, WINRT_BINARIES, _ = collect_all("winrt")
