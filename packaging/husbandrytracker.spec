@@ -13,6 +13,7 @@ Output lands in dist/HusbandryTracker/ — that whole folder is what packaging/h
 wraps into the Windows installer. tray/supervisor.py's COMPONENTS dict expects these exact five
 .exe names (HusbandryTrackerSupervisor.exe launches the other four as siblings in the same folder).
 """
+import sys
 from pathlib import Path
 
 from PyInstaller.building.api import COLLECT, EXE, MERGE, PYZ
@@ -20,6 +21,13 @@ from PyInstaller.building.build_main import Analysis
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 REPO_ROOT = Path(SPECPATH).resolve().parent
+
+# collect_submodules("plugins.*") below imports the `plugins` package while this spec runs — before
+# Analysis applies PATHEX — so the repo root has to be importable here too. Without this, it silently
+# returns [] wherever the repo root isn't already on sys.path (the GitHub Actions runner), and the
+# installed build ships without any plugins.<name>.init, so Admin's "Activate" fails with "has no init.py".
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 # Non-Python assets every entry point may need at runtime, resolved via app_paths.APP_ROOT (the
 # folder holding the running .exe — see app_paths.py). Attached only to the "website" Analysis;
@@ -62,7 +70,12 @@ HIDDEN_IMPORTS = (
     + collect_submodules("plugins.govee_ble")
     + collect_submodules("plugins.tuya_lan")
     + collect_submodules("plugins.log_husbandry")
+    # Named explicitly as well, so they're resolved through Analysis's own PATHEX even if
+    # collect_submodules above ever comes back empty again.
+    + ["plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.log_husbandry.init"]
 )
+
+_REQUIRED_PLUGIN_MODULES = {"plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.log_husbandry.init"}
 UVICORN_DATAS, UVICORN_BINARIES, _ = collect_all("uvicorn")
 WINRT_DATAS, WINRT_BINARIES, _ = collect_all("winrt")
 DATAS += UVICORN_DATAS + WINRT_DATAS
@@ -87,6 +100,10 @@ def _analysis(script: str, extra_datas=None) -> Analysis:
 
 a_supervisor = _analysis("tray/supervisor.py")
 a_web = _analysis("packaging/entrypoints/run_web.py", DATAS)
+# Fail the build rather than ship an installer whose Admin "Activate" can't load a Plugin's init.py.
+_missing = _REQUIRED_PLUGIN_MODULES - {entry[0] for entry in a_web.pure}
+if _missing:
+    raise SystemExit(f"Website bundle is missing Plugin modules: {sorted(_missing)}")
 a_ingest = _analysis("ingest/ingest.py")
 a_govee = _analysis("plugins/govee_ble/plugin.py")
 a_tuya = _analysis("plugins/tuya_lan/plugin.py")
