@@ -73,6 +73,12 @@ HIDDEN_IMPORTS = (
     # Named explicitly as well, so they're resolved through Analysis's own PATHEX even if
     # collect_submodules above ever comes back empty again.
     + ["plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.log_husbandry.init"]
+    # Schema migrations (RHA-101; ADR 0059): every exe that opens the database runs them at startup
+    # (the Supervisor first, then init_db() everywhere else). db/migrations/__init__.py imports each
+    # module statically, and these entries are a safety net so a missing one can't silently ship
+    # an installer that can't upgrade.
+    + ["db.migrate"]
+    + collect_submodules("db.migrations")
 )
 
 _REQUIRED_PLUGIN_MODULES = {"plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.log_husbandry.init"}

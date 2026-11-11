@@ -1,4 +1,4 @@
-"""One-off migration: adds plug.show_on_dashboard (see db/schema.sql, CONTEXT.md: Plug) —
+"""Adds plug.show_on_dashboard (see db/schema.sql, CONTEXT.md: Plug) —
 per-Plug opt-in for whether its current status (on/off, or Unreachable) shows on the Dashboard.
 Same idea as animal.show_on_dashboard / sensor.show_on_dashboard (see
 tools/migrate_2026_09_13_animal_dashboard_visibility.py's module docstring for the full
@@ -12,33 +12,17 @@ several Enclosures ("everything on one switch") only needs ONE of those Enclosur
 have 3 shown to get hidden — same "every parent must have room" reasoning
 web/admin_queries.py's create_plug() uses going forward, just applied as a backfill here.
 
-Same idempotent, re-runnable, self-backing-up pattern as every other tools/migrate_* script.
-
-Run: .venv/Scripts/python.exe tools/migrate_2026_09_13_plug_dashboard_visibility.py
+Ported verbatim from tools/migrate_2026_09_13_plug_dashboard_visibility.py (RHA-101; see db/migrate.py, ADR 0059).
 """
 from __future__ import annotations
 
-import shutil
 import sqlite3
-import sys
-from datetime import datetime
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from db.db import DB_PATH, SCHEMA_PATH
+from db.migrations._common import SCHEMA_PATH
 
 
 def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-
-
-def backup_db() -> Path:
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_path = DB_PATH.with_name(f"{DB_PATH.name}.bak-{stamp}")
-    shutil.copy2(DB_PATH, backup_path)
-    print(f"Backed up {DB_PATH} -> {backup_path}")
-    return backup_path
 
 
 def _backfill_room_plugs(conn: sqlite3.Connection) -> int:
@@ -92,21 +76,3 @@ def migrate(conn: sqlite3.Connection) -> None:
             print(f"  [done] defaulted {hidden} Plug(s) past the first 3 under the same parent to hidden on the Dashboard")
 
     conn.executescript(SCHEMA_PATH.read_text())  # CREATE TABLE/INDEX IF NOT EXISTS — no-op here, safe
-
-
-def main() -> None:
-    if not DB_PATH.exists():
-        print(f"No existing database at {DB_PATH} — nothing to migrate.")
-        return
-    backup_db()
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        with conn:
-            migrate(conn)
-    finally:
-        conn.close()
-    print("Migration complete.")
-
-
-if __name__ == "__main__":
-    main()

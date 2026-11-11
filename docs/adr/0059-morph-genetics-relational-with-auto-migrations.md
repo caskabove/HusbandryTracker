@@ -47,6 +47,11 @@ tracked and that an installed copy never ran on upgrade.
 - *End-user Custom Fields*: not requested. The pain was a developer one. If wanted later, a JSON
   column of user-defined values is the right tool for that separate feature.
 
+**Found while implementing (RHA-101)**: `.gitignore` ignored `migrate*.py`, so only 6 of the 26
+scripts were ever committed; the other 20 existed only on one development machine, and no
+CI-built installer could have upgraded a database at all. The pattern is gone, and migrations now
+live in `db/migrations/`, bundled into every exe.
+
 **Consequences**: reaffirms ADR 0011's "real columns" stance and removes its main cost: a schema
 change is still a migration, but one that ships with the release and applies itself. Whoever owns
 the storage abstraction (RHA-22) inherits the runner as the SQLite backend's migration mechanism.

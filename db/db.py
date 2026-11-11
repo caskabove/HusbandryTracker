@@ -48,7 +48,16 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create tables if they don't exist yet. Safe to call on every process startup."""
+    """Bring the database up to date, then create any tables that don't exist yet. Safe to call on
+    every process startup.
+
+    Pending schema migrations run first (db/migrate.py; RHA-101, ADR 0059), because schema.sql
+    can refer to columns an older database doesn't have yet. Under the Supervisor they've already
+    run before this process started, so this is a no-op; it matters for processes started on their
+    own. Raises db.migrate.MigrationError if the database can't be upgraded."""
+    from db.migrate import run_migrations  # imported here: db.migrate imports this module
+
+    run_migrations()
     with get_connection() as conn:
         conn.executescript(SCHEMA_PATH.read_text())
 

@@ -17,7 +17,11 @@ so it lives here as a plain file copy performed while everything it's supervisin
 "Reset admin password" (see CONTEXT.md: User Account, Role; ADR 0058; RHA-99) is the second — a
 single bounded UPDATE + DELETE no different in kind from what web/ingest already do to this same
 database constantly, so it imports db.db directly rather than inventing a request-file round-trip
-just to avoid that import; nothing needs to be stopped first.
+just to avoid that import; nothing needs to be stopped first. Schema migrations (RHA-101; ADR 0059)
+are the third: they run here, before any child starts (and again after a Restore, since an older
+backup may need upgrading), for the same reason Restore lives here: nothing else has the database
+open yet. If they fail, the database has been restored from its pre-migration backup and the
+Supervisor refuses to start anything.
 """
 from __future__ import annotations
 
@@ -363,6 +367,7 @@ _BACKUP_REASON_LABELS = {
     "auto": "automatic",
     "manual": "manual",
     "prerestore": "safety copy before a restore",
+    "premigration": "safety copy before an upgrade",
 }
 
 
@@ -418,7 +423,9 @@ def _restore_backup(path: Path) -> None:
                 shutil.rmtree(IMAGES_DIR)
             shutil.copytree(images_backup, IMAGES_DIR)
     finally:
-        start_all()
+        # A backup from an older version needs upgrading before anything opens it.
+        if _apply_pending_migrations():
+            start_all()
 
 
 def _make_restore(path: Path):
@@ -641,12 +648,33 @@ def _delayed_open_dashboard() -> None:
     _open_dashboard()
 
 
+def _apply_pending_migrations() -> bool:
+    """Brings the database up to date (db/migrate.py; RHA-101, ADR 0059) while nothing else has
+    it open. Returns False, after telling the user why, if it couldn't; the caller must then not
+    start anything."""
+    try:
+        from db.migrate import run_migrations
+
+        run_migrations()
+        return True
+    except Exception as exc:  # MigrationError or anything unexpected: either way, don't start
+        _show_message(
+            "Husbandry Tracker couldn't upgrade its database, so it hasn't been started.\n\n"
+            f"{exc}",
+            "Husbandry Tracker",
+        )
+        return False
+
+
 def main() -> None:
     if not IS_FROZEN and not VENV_PYTHON.exists():
         raise SystemExit(
             "Virtual environment not found (.venv). Run the one-time setup steps in "
             "docs\\USER_GUIDE.md first, then try again."
         )
+
+    if not _apply_pending_migrations():
+        raise SystemExit(1)
 
     start_all()
     threading.Thread(target=_delayed_open_dashboard, daemon=True).start()

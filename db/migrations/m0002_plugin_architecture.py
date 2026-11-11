@@ -1,4 +1,4 @@
-"""One-off migration: pivots Smart Sensor/Plug device identity from vendor-specific columns
+"""Pivots Smart Sensor/Plug device identity from vendor-specific columns
 (sensor.mac_address; plug.tuya_device_id/tuya_local_key/tuya_ip_address/switch_dps_key) to the
 generic plugin/external_id/plugin_config shape, adds plug_last_seen (drives the new absence-based
 Plug Unreachable check), and adds app_setting.ingest_scan_interval_seconds. See CONTEXT.md: Plugin,
@@ -12,22 +12,14 @@ foreign key into sensor/plug (enclosure.fallback_sensor_id, plug_enclosure, sens
 don't end up with a dangling reference — the intermediate table is created under a name nothing
 else points at, so nothing needs its own FK definition rewritten as a side effect of the swap.
 
-Same idempotent, re-runnable, self-backing-up pattern as tools/migrate_2026_08_25_target_schedule.py.
-
-Run: .venv/Scripts/python.exe tools/migrate_2026_08_25_plugin_architecture.py
+Ported verbatim from tools/migrate_2026_08_25_plugin_architecture.py (RHA-101; see db/migrate.py, ADR 0059).
 """
 from __future__ import annotations
 
 import json
-import shutil
 import sqlite3
-import sys
-from datetime import datetime
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from db.db import DB_PATH, SCHEMA_PATH
+from db.migrations._common import SCHEMA_PATH
 from plugins.govee_ble.identity import PLUGIN_NAME as GOVEE_PLUGIN
 from plugins.tuya_lan.identity import PLUGIN_NAME as TUYA_PLUGIN
 from plugins.tuya_lan.identity import encode_external_id as tuya_encode_external_id
@@ -36,14 +28,6 @@ from plugins.tuya_lan.identity import pack_config as tuya_pack_config
 
 def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-
-
-def backup_db() -> Path:
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_path = DB_PATH.with_name(f"{DB_PATH.name}.bak-{stamp}")
-    shutil.copy2(DB_PATH, backup_path)
-    print(f"Backed up {DB_PATH} -> {backup_path}")
-    return backup_path
 
 
 def _migrate_sensor_table(conn: sqlite3.Connection) -> None:
@@ -140,22 +124,3 @@ def migrate(conn: sqlite3.Connection) -> None:
     violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     if violations:
         raise RuntimeError(f"Migration introduced foreign key violations, rolling back: {violations}")
-
-
-def main() -> None:
-    if not DB_PATH.exists():
-        print(f"No existing database at {DB_PATH} — nothing to migrate.")
-        return
-    backup_db()
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        with conn:
-            migrate(conn)
-    finally:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.close()
-    print("Migration complete.")
-
-
-if __name__ == "__main__":
-    main()

@@ -1,4 +1,4 @@
-"""One-off migration: brings an existing data/herpmonitor.db up to the schema added for the
+"""Brings an existing data/herpmonitor.db up to the schema added for the
 Trackable Actions / Enclosure Type work (ADR 0008-0011, see CONTEXT.md).
 
 There's no migration framework in this project (db/db.py's init_db() only does
@@ -11,19 +11,13 @@ no-op the second time.
 Backs up data/herpmonitor.db (timestamped, same naming convention as the existing manual
 .bak-YYYYMMDD-HHMMSS copies in that folder) before making any change.
 
-Run: .venv/Scripts/python.exe tools/migrate_2026_08_24_action_tracking.py
+Ported verbatim from tools/migrate_2026_08_24_action_tracking.py (RHA-101; see db/migrate.py, ADR 0059).
 """
 from __future__ import annotations
 
-import shutil
 import sqlite3
-import sys
-from datetime import datetime
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from db.db import DB_PATH, SCHEMA_PATH
+from db.migrations._common import SCHEMA_PATH
 
 
 def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -36,14 +30,6 @@ def _add_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> 
         return
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
     print(f"  [done] {table}.{column}")
-
-
-def backup_db() -> Path:
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_path = DB_PATH.with_name(f"{DB_PATH.name}.bak-{stamp}")
-    shutil.copy2(DB_PATH, backup_path)
-    print(f"Backed up {DB_PATH} -> {backup_path}")
-    return backup_path
 
 
 def migrate(conn: sqlite3.Connection) -> None:
@@ -109,22 +95,3 @@ def migrate(conn: sqlite3.Connection) -> None:
     print("Creating brand-new tables (plant, plant_health_log, sensor_alert_state, "
           "plug_alert_state, plug_reading) — CREATE TABLE IF NOT EXISTS, safe to re-run")
     conn.executescript(SCHEMA_PATH.read_text())
-
-
-def main() -> None:
-    if not DB_PATH.exists():
-        print(f"No existing database at {DB_PATH} — nothing to migrate (init_db() will create "
-              f"a fresh one from the current schema.sql directly).")
-        return
-    backup_db()
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        with conn:
-            migrate(conn)
-    finally:
-        conn.close()
-    print("Migration complete.")
-
-
-if __name__ == "__main__":
-    main()
