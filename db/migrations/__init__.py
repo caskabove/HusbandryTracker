@@ -89,6 +89,7 @@ LATEST_VERSION = MIGRATIONS[-1][0]
 # LATEST_VERSION without running any migration, so db/migrate.py runs these on it instead; an
 # existing database gets them from the migration itself. Each must be idempotent.
 SEEDS: list[Callable[[sqlite3.Connection], object]] = [
+    m0024_species_profile_kb.seed,  # Knowledge Base species (RHA-113)
     m0028_gene_catalog.seed,
 ]
 
