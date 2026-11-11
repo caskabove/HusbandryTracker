@@ -72,7 +72,7 @@ These four constraints should be treated as acceptance criteria for every future
 - **Donation/tip-jar path** for fully self-hosted users who never subscribe.
 
 ### Feature-level future candidates (not yet phased — see §9.9)
-- Breeding records / breeding tools. (Schema note: `animal` has no lineage fields yet — see §9.6.)
+- Breeding tools (e.g. Pairing predictions). (Schema note: Sex, Genetics and Lineage now exist on `animal` — see §9.6.)
 - Multi-user households (shared access to one instance, multiple accounts/permissions).
 - Public/shared animal profiles.
 - Mobile app (unclear if v1 or later — see §4.3).
@@ -99,7 +99,7 @@ Regardless of final license (AGPL/MIT/Apache), the plan is an open core + a clos
 
 ### 4.3 Data model must anticipate multi-user and breeding records even if not built yet
 §9.6 (data model/schema) is explicitly coupled to §9.9 (phasing) — whether breeding records, multi-user households, or shared profiles are in v1. Retrofitting multi-user permissions or breeding-record relationships onto a schema designed only for a single user/single animal-owner is a common source of painful migrations.
-**Build strategy implication:** even if multi-user and breeding features are Stage 2+/not phased yet, the initial schema should not assume "one user, no ownership model." At minimum: model animals/rooms/sensors with an owner/household concept from the start, and leave room for animal-lineage relationships (parent/offspring) even if breeding tools aren't built yet. **Status:** neither is done yet — `db/schema.sql` has no `user`/household table and `animal` has no `dam_id`/`sire_id`. The schema is still actively growing, so this is still the cheap moment. See §9.6.
+**Build strategy implication:** even if multi-user and breeding features are Stage 2+/not phased yet, the initial schema should not assume "one user, no ownership model." At minimum: model animals/rooms/sensors with an owner/household concept from the start, and leave room for animal-lineage relationships (parent/offspring) even if breeding tools aren't built yet. **Status:** lineage is done (Sire/Dam Lineage Entries, epic RHA-100, 2026-11-11); the owner/household model is not — `db/schema.sql` still has no `user`/household table. See §9.6.
 
 ### 4.4 Packaging choice shapes onboarding, update mechanics, and remote-access bootstrap
 Each packaging target (Docker Compose, Pi OS image, app-store package, desktop wrapper) implies different assumptions about:
@@ -169,7 +169,6 @@ A snapshot of what is actually implemented, so the requirements above can be rea
   - The Admin/web layer still carries vendor-specific field names (`mac_address`, `tuya_device_id`, …) behind shims (`web/admin_queries.py`), not yet fully migrated to the generic `plugin`/`external_id`/`plugin_config` model — see §9.14.
   - Python entity-schema layer — all 7 tracked entities built (`schemas/enums.py` + `sensor`/`plug`/`care_event`/`enclosure`/`room`/`animal`/`plant`), none wired into `web/admin_queries.py` yet, `plant_health_log` has no schema/ticket yet — see §9.15.
   - No user/household/auth model — see §9.6. `web/main.py` has an explicit "no auth" comment.
-  - No animal lineage fields — see §9.6.
   - Camera integration: no code yet.
 
 ---
@@ -214,11 +213,14 @@ A snapshot of what is actually implemented, so the requirements above can be rea
 - **Premise updated:** the original brief said "MQTT broker + ESP32 BLE proxies" — that's superseded by ADR 0013 (see §2.2). The diagram should show the JSON Registry/Inbox contract, with MQTT shown only as an optional future bridge plugin and as Frigate's own dependency.
 - Best done alongside §9.3, once remote-access architecture has a candidate shape.
 
-### 9.6 Data Model / Schema — ✔️ Core built / ⚪ Multi-user + lineage open
+### 9.6 Data Model / Schema — ✔️ Core + lineage built / ⚪ Multi-user open
 - **Built:** rooms, enclosures, animals, plants, sensors, plugs, care events, readings, schedules, and alerting — see §8 and `db/schema.sql`. Relationships and fields are designed and migrated (13 ADRs).
-- **Still open (both flagged "cheap now, expensive later" — §4.3):**
+- **Built (epic RHA-100, 2026-11-11; RHA-38 resolved):** Morph, Genetics and Lineage on `animal`, relational per ADR 0059 (see `CONTEXT.md`: Genetics, Gene, Gene Catalog, Morph, Lineage).
+  - `animal.sex`, `animal.morph`; per-species `gene` catalog (user-editable data, never schema); `animal_gene` with Gene State, percent and Evidence.
+  - Lineage as `lineage_entry` rows rather than `dam_id`/`sire_id` columns: each Sire/Dam is either linked to a real Animal or a described parent (with its own `lineage_entry_gene` Genetics), nested to any depth and owned per Animal. Supports unknown parents, Copy Lineage, snapshot-on-delete and an Offspring list.
+  - Automatic migration runner (`db/migrate.py`, `PRAGMA user_version`, backup + restore) replaces hand-run `tools/migrate_*.py`.
+- **Still open (flagged "cheap now, expensive later" — §4.3):**
   - **No user/household/owner model.** No `user` table, no owner/household column anywhere. Fine under "one instance = one household," but zero scaffolding for the roadmap's multi-user feature. Needs a conscious call, not silent drift.
-  - **No animal-lineage fields.** `animal` has no `dam_id`/`sire_id` (or equivalent). Schema is still actively growing, so this is still the cheap moment.
 - Tracked in more detail in the `reqs-alignment-review` punch list (memory).
 
 ### 9.7 Hardware Recommendations — ⚪ Open
@@ -300,3 +302,4 @@ There's no typed entity-schema layer. Entity shape lives in three places that ca
 
 - **v1 (2026-08-25):** Initial document, synthesizing decisions through Session 5 (pricing, packaging, camera strategy, licensing recommendation) plus forward-looking build-strategy flags for future roadmap items.
 - **v2 (2026-08-28):** Absorbed `Reptile_App_Project_Plan.md` (now a stub). Added §8 Build Status and §10 Session Log. Rewrote §2.2 to reflect ADR 0013 (MQTT/ESP32 superseded by the Plugin/Ingest pipeline). Converted the Project Plan's 13-item tracker into §9, with statuses corrected against the actual codebase — data model (§9.6) and tech stack (§9.8) moved from "open" to "built"; feature phasing (§9.9) updated. Added §9.14 (plugin follow-ups) and §9.15 (Python entity-schema layer) from the 2026-08-28 review. Updated all cross-references that pointed at "Project Plan item N".
+- **2026-11-11:** §9.6 updated: lineage built under epic RHA-100 (RHA-38 closed); §3, §4.3 and §8 cross-references aligned. Multi-user remains open.
