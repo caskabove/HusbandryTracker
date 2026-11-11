@@ -3,8 +3,8 @@ Reptile_App_Technical_Requirements.md §9.15 (tracked as Jira RHA-16). Follows t
 the rest of schemas/ — see schemas/sensor.py's module docstring for the full boundary-rule
 reasoning.
 
-The simplest entity so far: `animal` has zero CHECK constraints and zero UNIQUE constraints in
-db/schema.sql, and there's no `_validate_animal`/validation function of any kind in
+The simplest entity so far: `animal` has no UNIQUE constraints and, until Sex (RHA-102), had no CHECK
+constraints in db/schema.sql (`sex`'s CHECK is enforced here by the AnimalSex enum), and there's no `_validate_animal`/validation function of any kind in
 web/admin_queries.py — `AnimalBase` needs no model validator, same as schemas/room.py. Unlike
 Room/Enclosure, `create_animal()` and `update_animal()` take the exact same field set — no
 UI-flow simplification to document here; `AnimalCreate`/`AnimalUpdate` genuinely mirror the real
@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from schemas.enums import AnimalSex
+
 
 class AnimalBase(BaseModel):
     enclosure_id: int                       # every Animal belongs to exactly one Enclosure — see CONTEXT.md: Animal
@@ -41,6 +43,9 @@ class AnimalBase(BaseModel):
     # set via set_animal_image()/remove_animal_image(), same "listed here but not through create/
     # update" reasoning as show_on_dashboard above.
     image_filename: str | None = None
+    # Sex (see CONTEXT.md: Animal; RHA-102): set through create_animal()/update_animal(), Unknown by
+    # default, always editable.
+    sex: AnimalSex = AnimalSex.UNKNOWN
 
 
 class AnimalCreate(AnimalBase):

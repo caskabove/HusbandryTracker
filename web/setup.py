@@ -174,7 +174,7 @@ def setup_animals(request: Request, enclosure_id: int):
 @router.post("/enclosures/{enclosure_id}/animals")
 def setup_create_animal(
     enclosure_id: int, name: str = Form(...), common: str = Form(""), scientific: str = Form(""), dob: str = Form(""),
-    species_profile: str = Form(""), life_stage: str = Form("adult"),
+    sex: str = Form("unknown"), species_profile: str = Form(""), life_stage: str = Form("adult"),
 ):
     name = name.strip()
     if not name:
@@ -184,7 +184,7 @@ def setup_create_animal(
                                   species_profile=species_profile, life_stage=life_stage),
             status_code=303,
         )
-    q.create_animal(enclosure_id, name, common or None, scientific or None, dob or None, species_profile or None)
+    q.create_animal(enclosure_id, name, common or None, scientific or None, dob or None, species_profile or None, sex=sex)
     return RedirectResponse(
         url=_wizard_redirect(f"/setup/enclosures/{enclosure_id}/animals",
                               species_profile=species_profile, life_stage=life_stage),

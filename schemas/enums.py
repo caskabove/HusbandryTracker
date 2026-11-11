@@ -62,3 +62,11 @@ class CareEventKind(str, Enum):
     WATERING = "watering"
     SPOT_CLEAN = "spot_clean"
     DEEP_CLEAN = "deep_clean"
+
+
+class AnimalSex(str, Enum):
+    """animal.sex (see CONTEXT.md: Animal; RHA-102). Must match the CHECK constraint in
+    db/schema.sql and web/queries.py's ANIMAL_SEXES list, which the web layer still uses."""
+    UNKNOWN = "unknown"
+    MALE = "male"
+    FEMALE = "female"

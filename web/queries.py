@@ -24,6 +24,11 @@ ANIMAL_CONDITION_LABELS = {
     "poor": "Poor", "ok": "OK", "good": "Good", "really_good": "Really Good",
 }
 
+# animal.sex's allowed values — see CONTEXT.md: Animal (RHA-102). Must match the CHECK constraint
+# in db/schema.sql. Unknown is the default and is listed first in forms.
+ANIMAL_SEXES = ["unknown", "male", "female"]
+ANIMAL_SEX_LABELS = {"unknown": "Unknown", "male": "Male", "female": "Female"}
+
 # feeding_detail's allowed values â€” see CONTEXT.md: Feeding Detail. Must match the CHECK
 # constraints in db/schema.sql.
 PREY_STATES = ["live", "frozen_thawed", "dry"]

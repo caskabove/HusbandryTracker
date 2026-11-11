@@ -19,7 +19,7 @@ from web import image_storage as img
 from web.outbox import write_command
 from web.status import nearest_target_time
 from web.queries import (
-    ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, CARE_EVENT_KINDS, FEEDING_RESULT_LABELS, FEEDING_RESULTS,
+    ANIMAL_CONDITION_LABELS, ANIMAL_CONDITIONS, ANIMAL_SEXES, CARE_EVENT_KINDS, FEEDING_RESULT_LABELS, FEEDING_RESULTS,
     PREY_STATE_LABELS, PREY_STATES, SHED_COMPLETENESS, SHED_COMPLETENESS_LABELS, SHED_STUCK_LOCATION_LABELS,
     _latest_reading, _normalize_datetime_local, _sparklines, days_since, get_latest_feeding_detail_any,
     log_care_event,
@@ -460,7 +460,7 @@ def delete_enclosure(enclosure_id: int) -> None:
 
 def create_animal(
     enclosure_id: int, name: str, common: str | None, scientific: str | None, dob: str | None,
-    species_profile: str | None = None,
+    species_profile: str | None = None, sex: str = "unknown",
 ) -> None:
     """show_on_dashboard (see CONTEXT.md: Animal) defaults on for only the first 3 Animals in an
     Enclosure — counting those already shown, not total Animals, so an Enclosure that's had some
@@ -470,16 +470,29 @@ def create_animal(
 
     species_profile (see CONTEXT.md: Species Profile; RHA-94) is only ever passed by the Setup
     Wizard, which carries its Enclosure step's pick through to this call — Admin's own "Add Animal"
-    form has no Species Profile picker, so it always leaves this NULL."""
+    form has no Species Profile picker, so it always leaves this NULL.
+
+    sex (see CONTEXT.md: Animal; RHA-102) defaults to Unknown; raises ValueError for anything
+    outside ANIMAL_SEXES."""
+    sex = _validated_sex(sex)
     with get_connection() as conn:
         (shown_count,) = conn.execute(
             "SELECT COUNT(*) FROM animal WHERE enclosure_id = ? AND show_on_dashboard = 1", (enclosure_id,)
         ).fetchone()
         conn.execute(
-            "INSERT INTO animal (enclosure_id, name, species_common, species_scientific, species_profile, dob, show_on_dashboard) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (enclosure_id, name, common or None, scientific or None, species_profile or None, dob or None, 1 if shown_count < 3 else 0),
+            "INSERT INTO animal (enclosure_id, name, species_common, species_scientific, species_profile, dob, sex, show_on_dashboard) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (enclosure_id, name, common or None, scientific or None, species_profile or None, dob or None, sex,
+             1 if shown_count < 3 else 0),
         )
+
+
+def _validated_sex(sex: str | None) -> str:
+    """An empty value means Unknown (a blank pick, or a caller that predates the field)."""
+    sex = (sex or "unknown").strip().lower()
+    if sex not in ANIMAL_SEXES:
+        raise ValueError(f"Unknown sex {sex!r}; expected one of {', '.join(ANIMAL_SEXES)}.")
+    return sex
 
 
 def delete_animal(animal_id: int) -> None:
@@ -653,11 +666,14 @@ def list_animals() -> list[dict]:
 
 
 def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | None,
-                   scientific: str | None, dob: str | None) -> None:
+                   scientific: str | None, dob: str | None, sex: str = "unknown") -> None:
+    """Re-sexing is always allowed and never deletes anything (see CONTEXT.md: Animal; RHA-102)."""
+    sex = _validated_sex(sex)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ? WHERE id = ?",
-            (enclosure_id, name, common or None, scientific or None, dob or None, animal_id),
+            "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ?, sex = ? "
+            "WHERE id = ?",
+            (enclosure_id, name, common or None, scientific or None, dob or None, sex, animal_id),
         )
 
 

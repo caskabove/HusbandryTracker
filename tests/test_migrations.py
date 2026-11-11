@@ -56,7 +56,7 @@ def _make_current_db(path: Path) -> None:
 
 def test_registry_is_numbered_one_to_n():
     assert [n for n, _, _ in MIGRATIONS] == list(range(1, len(MIGRATIONS) + 1))
-    assert LATEST_VERSION == len(MIGRATIONS) == 26
+    assert LATEST_VERSION == len(MIGRATIONS)
 
 
 def test_fresh_database_is_created_at_latest_version_without_running_migrations(db_path):
@@ -124,8 +124,8 @@ def test_only_pending_migrations_run(db_path, monkeypatch):
         "MIGRATIONS",
         [(n, name, (lambda conn, n=n: ran.append(n))) for n, name, _ in MIGRATIONS],
     )
-    assert run_migrations() == 2
-    assert ran == [25, 26]
+    assert run_migrations() == LATEST_VERSION - 24
+    assert ran == list(range(25, LATEST_VERSION + 1))
     assert _version(db_path) == LATEST_VERSION
 
 
@@ -141,15 +141,16 @@ def test_failed_migration_restores_backup_and_raises(db_path, monkeypatch):
         conn.execute("DELETE FROM room")
         raise RuntimeError("simulated failure")
 
-    monkeypatch.setattr(migrate_module, "MIGRATIONS", MIGRATIONS + [(27, "good", good), (28, "boom", boom)])
-    monkeypatch.setattr(migrate_module, "LATEST_VERSION", 28)
+    good_n, boom_n = LATEST_VERSION + 1, LATEST_VERSION + 2
+    monkeypatch.setattr(migrate_module, "MIGRATIONS", MIGRATIONS + [(good_n, "good", good), (boom_n, "boom", boom)])
+    monkeypatch.setattr(migrate_module, "LATEST_VERSION", boom_n)
 
     with pytest.raises(MigrationError) as excinfo:
         run_migrations()
 
     message = str(excinfo.value)
-    assert "migration 28 (boom)" in message and "simulated failure" in message and "restored" in message
-    # Everything from this run is undone, including migration 27 that succeeded before the failure.
+    assert f"migration {boom_n} (boom)" in message and "simulated failure" in message and "restored" in message
+    # Everything from this run is undone, including the migration that succeeded before the failure.
     assert _version(db_path) == LATEST_VERSION
     assert {"good_column", "half_done"}.isdisjoint(_columns(db_path, "room"))
     assert _query(db_path, "SELECT name FROM room") == [("Reptile room",)]

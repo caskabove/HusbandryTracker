@@ -49,6 +49,7 @@
                 <label>Common species <input type="text" name="common" value="{{ animal.species_common or '' }}"></label>
                 <label>Scientific name <input type="text" name="scientific" value="{{ animal.species_scientific or '' }}"></label>
                 <label>DOB <input type="text" name="dob" value="{{ animal.dob or '' }}" placeholder="YYYY-MM-DD or YYYY-MM"></label>
+                {% with selected_sex = animal.sex %}{% include "_animal_sex_select.html" %}{% endwith %}
                 <button type="submit">Save</button>
             </form>
         </section>

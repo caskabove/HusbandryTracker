@@ -1,0 +1,10 @@
+{# Sex picker shared by every Add/Edit Animal form (see CONTEXT.md: Animal; RHA-102). Options
+   must match web/queries.py's ANIMAL_SEXES. Set `selected_sex` to pre-select; defaults to Unknown. #}
+{% set _sex = selected_sex or "unknown" %}
+<label>Sex
+    <select name="sex">
+        <option value="unknown"{% if _sex == "unknown" %} selected{% endif %}>Unknown</option>
+        <option value="male"{% if _sex == "male" %} selected{% endif %}>Male</option>
+        <option value="female"{% if _sex == "female" %} selected{% endif %}>Female</option>
+    </select>
+</label>

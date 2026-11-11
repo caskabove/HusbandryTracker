@@ -47,6 +47,7 @@ from db.migrations import m0023_animal_enclosure_images
 from db.migrations import m0024_species_profile_kb
 from db.migrations import m0025_plug_timer_multi_cycle
 from db.migrations import m0026_user_auth
+from db.migrations import m0027_animal_sex
 
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "action_tracking", m0001_action_tracking.migrate),
@@ -75,6 +76,7 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (24, "species_profile_kb", m0024_species_profile_kb.migrate),
     (25, "plug_timer_multi_cycle", m0025_plug_timer_multi_cycle.migrate),
     (26, "user_auth", m0026_user_auth.migrate),
+    (27, "animal_sex", m0027_animal_sex.migrate),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]

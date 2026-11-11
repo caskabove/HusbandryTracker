@@ -32,6 +32,7 @@
                 <div class="animal-card-body">
                     <span class="animal-card-species">{{ animal.species_common }}{% if animal.species_scientific %} <em>({{ animal.species_scientific }})</em>{% endif %}</span>
                     <span class="animal-card-dob">DOB: {{ animal.dob or "unknown" }}</span>
+                    <span class="animal-card-sex">Sex: {{ (animal.sex or "unknown")|capitalize }}</span>
                 </div>
             </div>
             <p>

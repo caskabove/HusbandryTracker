@@ -520,13 +520,14 @@ def admin_create_animal_global(
     common: str = Form(""),
     scientific: str = Form(""),
     dob: str = Form(""),
+    sex: str = Form("unknown"),
 ):
     """The global Add Animal form on Admin (see admin_app.html; ADR 0050) — same as the Enclosure
     page's own Add Animal used to be, just with its own Enclosure picker instead of being scoped to
     one Enclosure via the URL."""
     if not enclosure_id:
         return RedirectResponse(url=f"/admin/app/?error={quote('Pick an Enclosure.')}", status_code=303)
-    q.create_animal(int(enclosure_id), name, common, scientific, dob)
+    q.create_animal(int(enclosure_id), name, common, scientific, dob, sex=sex)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -626,8 +627,9 @@ def admin_update_animal(
     common: str = Form(""),
     scientific: str = Form(""),
     dob: str = Form(""),
+    sex: str = Form("unknown"),
 ):
-    q.update_animal(animal_id, enclosure_id, name, common, scientific, dob)
+    q.update_animal(animal_id, enclosure_id, name, common, scientific, dob, sex)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 

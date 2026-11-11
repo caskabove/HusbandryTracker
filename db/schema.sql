@@ -179,7 +179,11 @@ CREATE TABLE IF NOT EXISTS animal (
     -- Animal Photo (see CONTEXT.md: Animal Photo) — just the filename (e.g. "14.jpg"), stored
     -- under data/images/animals/ (web/image_storage.py); NULL means no photo uploaded yet. One
     -- image per Animal, replaced wholesale on a new upload — never a history/gallery.
-    image_filename      TEXT
+    image_filename      TEXT,
+    -- Sex (see CONTEXT.md: Animal; RHA-102) on every Animal, corals and fish included. Always
+    -- editable, since mis-sexing is common; Unknown until someone says otherwise. Must match
+    -- web/queries.py's ANIMAL_SEXES.
+    sex                 TEXT NOT NULL DEFAULT 'unknown' CHECK (sex IN ('male', 'female', 'unknown'))
 );
 
 -- A manually-logged, backdatable Animal Log entry (see CONTEXT.md: Animal Log) — Weight/Length/
