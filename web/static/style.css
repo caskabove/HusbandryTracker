@@ -1190,3 +1190,4 @@ canvas.sparkline { display: block; }
 .lineage-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; }
 .lineage-slot h3 { margin: 0 0 0.4rem; }
 .lineage-copy { margin-top: 1rem; }
+.offspring-group { margin: 1rem 0 0.4rem; font-size: 1rem; }

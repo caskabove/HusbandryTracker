@@ -377,3 +377,63 @@ def test_enclosure_remove_button_warns_about_snapshots(temp_db, enclosure):
     page = _html(admin_routes.admin_enclosure_detail(_request(f"/admin/enclosures/{enclosure}"), enclosure))
     assert "Bob is a parent in 1 Lineage; it'll keep a snapshot of Bob. Remove Bob?" in page
     assert page.count("data-confirm=") == 1
+
+
+# --- Offspring (RHA-109) ---------------------------------------------------------------------------
+
+def _born(conn, enclosure: int, name: str, dob: str | None, sex: str = "unknown") -> int:
+    q.create_animal(enclosure, name, None, None, dob, "ball_python", sex)
+    return conn.execute("SELECT id FROM animal WHERE name = ?", (name,)).fetchone()["id"]
+
+
+def test_offspring_grouped_by_other_parent_and_sorted_by_dob(temp_db, enclosure):
+    bob = _animal(temp_db, enclosure, "Bob", "male")
+    sally = _animal(temp_db, enclosure, "Sally", "female")
+    late = _born(temp_db, enclosure, "Late", "2026-06-01")
+    early = _born(temp_db, enclosure, "Early", "2025-05-01")
+    mid = _born(temp_db, enclosure, "Mid", "2025-05-01")
+    loner = _born(temp_db, enclosure, "Loner", "2024-01-01")
+    nodob = _born(temp_db, enclosure, "No DOB", None)
+    for child in (late, early, mid, loner, nodob):
+        linq.link_parent(child, None, "sire", bob)
+    linq.link_parent(early, None, "dam", sally)
+    linq.link_parent(mid, None, "dam", sally)
+    linq.describe_parent(late, None, "dam", "Breeder Girl", None)
+    linq.describe_parent(nodob, None, "dam", "Breeder Girl", None)
+    genq.add_animal_gene(early, _gene(temp_db, "Clown"), "visual")
+
+    groups = linq.offspring(bob)
+    assert [(g["other"] and g["other"]["name"], [c["name"] for c in g["children"]]) for g in groups] == [
+        (None, ["Loner"]),
+        ("Sally", ["Early", "Mid"]),
+        ("Breeder Girl", ["Late", "No DOB"]),
+    ]
+    assert groups[1]["other"]["kind"] == "linked" and groups[1]["other"]["role_label"] == "Dam"
+    assert groups[1]["children"][0]["line"] == "Clown"
+    assert groups[1]["children"][0]["enclosure_name"] == "Rack"
+    assert [c["name"] for g in linq.offspring(sally) for c in g["children"]] == ["Early", "Mid"]
+
+
+def test_offspring_excludes_grandchildren_and_snapshots(temp_db, enclosure):
+    grand = _animal(temp_db, enclosure, "Grand", "male")
+    bob = _animal(temp_db, enclosure, "Bob", "male")
+    baby = _animal(temp_db, enclosure, "Baby")
+    linq.link_parent(bob, None, "sire", grand)
+    linq.link_parent(baby, None, "sire", bob)
+    dam = linq.describe_parent(baby, None, "dam", "D", None)
+    linq.link_parent(baby, dam, "sire", grand)  # Grand is Baby's grandsire, not its parent
+    assert [c["name"] for g in linq.offspring(grand) for c in g["children"]] == ["Bob"]
+
+    q.delete_animal(bob)  # Baby now holds a described snapshot of Bob, with Grand linked beneath it
+    assert linq.offspring(grand) == []  # snapshots aren't offspring
+
+
+def test_animal_page_offspring_card_only_when_there_are_some(temp_db, enclosure):
+    bob = _animal(temp_db, enclosure, "Bob", "male")
+    page = _html(admin_routes.admin_animal_detail(_request(f"/admin/animals/{bob}"), bob))
+    assert 'id="offspring"' not in page
+    baby = _born(temp_db, enclosure, "Baby", "2026-01-02")
+    linq.link_parent(baby, None, "sire", bob)
+    page = _html(admin_routes.admin_animal_detail(_request(f"/admin/animals/{bob}"), bob))
+    assert 'id="offspring"' in page and f'href="/admin/animals/{baby}">Baby</a>' in page
+    assert "Other parent unknown" in page and "2026-01-02" in page

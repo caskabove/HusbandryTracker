@@ -54,6 +54,35 @@
         </section>
         {% endif %}
 
+        {# Offspring (RHA-109): Animals whose own Sire or Dam links to this one, grouped by the other
+           parent where known (approximating clutches), sorted by DOB. Described snapshots aren't
+           offspring. Omitted when there are none (same convention as Recent Activity). #}
+        {% if offspring %}
+        <section class="admin-card" id="offspring">
+            <h2>Offspring</h2>
+            {% for group in offspring %}
+            <h3 class="offspring-group">
+                {% if group.other %}with {{ group.other.role_label }}
+                    {% if group.other.kind == "linked" %}<a href="/admin/animals/{{ group.other.animal_id }}">{{ group.other.name }}</a>{% else %}{{ group.other.name }} <span class="empty">(described)</span>{% endif %}
+                {% else %}Other parent unknown{% endif %}
+            </h3>
+            <table class="admin-table">
+                <thead><tr><th>Name</th><th>Morph / Genetics</th><th>DOB</th><th>Enclosure</th></tr></thead>
+                <tbody>
+                {% for c in group.children %}
+                    <tr>
+                        <td><a href="/admin/animals/{{ c.id }}">{{ c.name }}</a></td>
+                        <td>{{ c.line }}</td>
+                        <td>{{ c.dob or "" }}</td>
+                        <td>{% if c.enclosure_id %}<a href="/admin/enclosures/{{ c.enclosure_id }}">{{ c.enclosure_name }}</a>{% endif %}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endfor %}
+        </section>
+        {% endif %}
+
         {# Full merged history (Care Events + Growth/Condition + Shed Log), paginated — see
            CONTEXT.md: Recent Activity; grill-me decision. Hidden entirely (no placeholder) when
            this Animal has no history yet, same "hide the empty section" precedent as the

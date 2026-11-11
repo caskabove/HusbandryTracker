@@ -349,3 +349,55 @@ def snapshot_links_to(conn, animal_id: int) -> int:
         )
         _copy_children(conn, "child_animal_id", animal_id, None, entry_id)
     return len(entries)
+
+
+# --- Offspring (RHA-109) -------------------------------------------------------------------------
+
+def offspring(animal_id: int) -> list[dict]:
+    """Animals whose own Sire or Dam is a link to this Animal, grouped by the other parent where
+    known (approximating clutches): [{"other": {"kind": "linked"|"described", "name", "animal_id"?,
+    "role_label"} or None, "children": [{"id", "name", "line", "dob", "enclosure_id",
+    "enclosure_name", "role_label"}]}]. Children sort by DOB (unknown last), groups by their
+    earliest child. Described snapshots elsewhere aren't offspring; neither are grandchildren."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT a.*, le.role AS as_role, e.name AS enclosure_name,
+                      o.role AS other_role, o.linked_animal_id AS other_id, o.name AS other_name,
+                      oa.name AS other_animal_name
+               FROM lineage_entry le
+               JOIN animal a ON a.id = le.child_animal_id
+               LEFT JOIN enclosure e ON e.id = a.enclosure_id
+               LEFT JOIN lineage_entry o ON o.child_animal_id = a.id AND o.role != le.role
+               LEFT JOIN animal oa ON oa.id = o.linked_animal_id
+               WHERE le.linked_animal_id = ?""",
+            (animal_id,),
+        ).fetchall()
+    groups: dict = {}
+    for r in rows:
+        r = dict(r)
+        if r["other_role"] is None:
+            key, other = None, None
+        elif r["other_id"]:
+            key = ("linked", r["other_id"])
+            other = {"kind": "linked", "animal_id": r["other_id"], "name": r["other_animal_name"],
+                     "role_label": ROLE_LABELS[r["other_role"]]}
+        else:
+            name = r["other_name"] or f"Unnamed {ROLE_LABELS[r['other_role']]}"
+            key = ("described", name)
+            other = {"kind": "described", "name": name, "role_label": ROLE_LABELS[r["other_role"]]}
+        group = groups.setdefault(key, {"other": other, "children": []})
+        group["children"].append({
+            "id": r["id"], "name": r["name"], "line": genq.genetics_line(r) or "", "dob": r["dob"],
+            "enclosure_id": r["enclosure_id"], "enclosure_name": r["enclosure_name"],
+            "role_label": ROLE_LABELS[r["as_role"]],
+        })
+
+    def by_dob(child):
+        return (child["dob"] is None, child["dob"] or "", child["name"].casefold())
+
+    result = list(groups.values())
+    for group in result:
+        group["children"].sort(key=by_dob)
+    # Groups by their earliest child; the "other parent unknown" group last among equals.
+    result.sort(key=lambda g: (*by_dob(g["children"][0]), g["other"] is None))
+    return result

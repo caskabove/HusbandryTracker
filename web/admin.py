@@ -598,6 +598,7 @@ def admin_animal_detail(request: Request, animal_id: int, page: int = 1):
             "animal": animal, "enclosure_name": q.get_enclosure_name(animal["enclosure_id"]),
             "genetics_line": genq.genetics_line(animal),
             "lineage_tree": linq.lineage_tree(animal_id) if genq.genetics_species(animal) else [],
+            "offspring": linq.offspring(animal_id),
             "activity": activity, "page": page, "has_more": has_more,
             "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
             "shed_completeness": SHED_COMPLETENESS, "shed_completeness_labels": SHED_COMPLETENESS_LABELS,
