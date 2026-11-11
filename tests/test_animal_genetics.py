@@ -107,7 +107,7 @@ def test_a_gene_from_another_species_is_refused_and_duplicates_too(temp_db):
     with pytest.raises(ValueError, match="Ball Python Gene Catalog"):
         genq.add_animal_gene(bob["id"], _gene(temp_db, "Tremper Albino", "leopard_gecko"), "visual")
     genq.add_animal_gene(bob["id"], _gene(temp_db, "Clown"), "visual")
-    with pytest.raises(ValueError, match="already in this Animal's Genetics"):
+    with pytest.raises(ValueError, match="already in these Genetics"):
         genq.add_animal_gene(bob["id"], _gene(temp_db, "Clown"), "het")
 
 

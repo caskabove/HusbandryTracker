@@ -1179,3 +1179,13 @@ canvas.sparkline { display: block; }
 /* Genetics and Morph in standard notation (see CONTEXT.md: Genetics; RHA-105), on the Animal card
    and Animal Page. */
 .animal-card-genetics { font-size: 0.85rem; font-weight: 600; }
+
+/* Lineage (see CONTEXT.md: Lineage; RHA-106): nested Sire/Dam tree and the editing slots. */
+.lineage-tree { list-style: none; margin: 0.25rem 0 0.25rem 0.5rem; padding-left: 0.9rem; border-left: 2px solid var(--border, #ccc); }
+.lineage-tree li { margin: 0.3rem 0; }
+.lineage-tree summary { cursor: pointer; }
+.lineage-role { color: var(--text-muted); font-size: 0.8rem; margin-right: 0.25rem; }
+.lineage-line { margin-left: 0.4rem; font-size: 0.85rem; }
+.lineage-flag { margin-left: 0.4rem; font-size: 0.8rem; color: #b45309; font-weight: 600; }
+.lineage-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; }
+.lineage-slot h3 { margin: 0 0 0.4rem; }

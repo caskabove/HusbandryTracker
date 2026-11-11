@@ -18,8 +18,8 @@ INHERITANCES = ["recessive", "co_dominant", "dominant"]
 INHERITANCE_LABELS = {"recessive": "Recessive", "co_dominant": "Co-dominant", "dominant": "Dominant"}
 
 # (table, column) pairs that reference gene.id. Deleting a Gene still in use is blocked with a
-# count. Lineage (RHA-106) adds its table here when it's built.
-GENE_REFERENCES: list[tuple[str, str]] = [("animal_gene", "gene_id")]
+# count.
+GENE_REFERENCES: list[tuple[str, str]] = [("animal_gene", "gene_id"), ("lineage_entry_gene", "gene_id")]
 
 
 def _validated(name: str, inheritance: str) -> tuple[str, str]:

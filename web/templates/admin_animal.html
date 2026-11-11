@@ -8,6 +8,7 @@
 </head>
 <body>
     {% import "_quick_log_macro.html" as quick_log %}
+    {% import "_lineage_macros.html" as lineage %}
     <header class="page-header">
         <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
         <h1>{{ animal.name }}</h1>
@@ -41,6 +42,17 @@
                 <a href="/admin/animals/{{ animal.id }}/edit">edit</a>
             </p>
         </section>
+
+        {# Lineage (see CONTEXT.md: Lineage; RHA-106): read-only family tree, the first three
+           generations expanded. Linked parents bring their own live Lineage; Sex or species
+           mismatches are flagged, never refused. Omitted when there's none. #}
+        {% if lineage_tree %}
+        <section class="admin-card" id="lineage">
+            <h2>Lineage</h2>
+            {{ lineage.tree(lineage_tree) }}
+            <p><a href="/admin/animals/{{ animal.id }}/edit#lineage">edit Lineage</a></p>
+        </section>
+        {% endif %}
 
         {# Full merged history (Care Events + Growth/Condition + Shed Log), paginated — see
            CONTEXT.md: Recent Activity; grill-me decision. Hidden entirely (no placeholder) when

@@ -501,7 +501,15 @@ def _validated_sex(sex: str | None) -> str:
 
 
 def delete_animal(animal_id: int) -> None:
+    """Lineage Entries linking to this Animal as a parent keep its name and become described
+    (see CONTEXT.md: Lineage), so offspring trees don't lose the slot. RHA-108 extends this into a
+    full snapshot (Morph, Genetics and its own Lineage)."""
     with get_connection() as conn:
+        conn.execute(
+            "UPDATE lineage_entry SET name = (SELECT name FROM animal WHERE id = ?), linked_animal_id = NULL "
+            "WHERE linked_animal_id = ?",
+            (animal_id, animal_id),
+        )
         conn.execute("DELETE FROM animal WHERE id = ?", (animal_id,))
 
 
@@ -676,17 +684,22 @@ def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | No
     """Re-sexing is always allowed and never deletes anything (see CONTEXT.md: Animal; RHA-102).
     species_profile is the Edit form's Knowledge Base species pick (RHA-103); blank clears it.
 
-    Raises ValueError if the species would change while the Animal has Genetics: Genes belong to one
-    species (see CONTEXT.md: Genetics, Gene; RHA-105), so they'd silently stop making sense."""
+    Raises ValueError if the species would change while the Animal has Genetics or Lineage: Genes
+    and linked parents belong to one species (see CONTEXT.md: Genetics, Gene, Lineage; RHA-105,
+    RHA-106), so they'd silently stop making sense."""
     sex = _validated_sex(sex)
     species_profile = (species_profile or "").strip() or None
     with get_connection() as conn:
         current = conn.execute("SELECT species_profile FROM animal WHERE id = ?", (animal_id,)).fetchone()
         if current is not None and current["species_profile"] != species_profile:
             genes = conn.execute("SELECT COUNT(*) FROM animal_gene WHERE animal_id = ?", (animal_id,)).fetchone()[0]
-            if genes:
-                raise ValueError(f"This Animal has {genes} Gene{'s' if genes != 1 else ''} in its Genetics, which belong "
-                                 "to its current species. Remove them before changing its species.")
+            parents = conn.execute("SELECT COUNT(*) FROM lineage_entry WHERE child_animal_id = ?", (animal_id,)).fetchone()[0]
+            if genes or parents:
+                held = " and ".join(part for part in (
+                    f"{genes} Gene{'s' if genes != 1 else ''} in its Genetics" if genes else "",
+                    f"{parents} parent{'s' if parents != 1 else ''} in its Lineage" if parents else "") if part)
+                raise ValueError(f"This Animal has {held}, which belong to its current species. "
+                                 "Remove them before changing its species.")
         conn.execute(
             "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ?, sex = ?, "
             "species_profile = ? WHERE id = ?",

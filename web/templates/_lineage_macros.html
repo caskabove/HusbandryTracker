@@ -1,0 +1,73 @@
+{# Lineage (see CONTEXT.md: Lineage; RHA-106). tree() renders read-only nested nodes from
+   web/lineage_queries.py's lineage_tree(); the first OPEN_GENERATIONS start expanded. slots()
+   renders the Sire/Dam slots of an Animal or a described entry, with link / describe / remove
+   controls. #}
+
+{% macro node_summary(n, link_names=true) -%}
+    <span class="lineage-role">{{ n.role_label }}:</span>
+    {% if n.kind == "linked" and link_names %}<a href="/admin/animals/{{ n.animal_id }}">{{ n.name }}</a>{% else %}<strong>{{ n.name }}</strong>{% endif %}
+    {% if n.line %}<span class="lineage-line">{{ n.line }}</span>{% endif %}
+    {% if n.kind == "described" %}<span class="empty">(described)</span>{% endif %}
+    {% for flag in n.flags %}<span class="lineage-flag" title="Flagged, not refused (see CONTEXT.md: Lineage)">&#9888; {{ flag }}</span>{% endfor %}
+{%- endmacro %}
+
+{% macro tree(nodes) -%}
+<ul class="lineage-tree">
+    {% for n in nodes %}
+    <li>
+        {% if n.parents %}
+        <details{% if n.open %} open{% endif %}>
+            <summary>{{ node_summary(n) }}</summary>
+            {{ tree(n.parents) }}
+        </details>
+        {% else %}
+        <div class="lineage-leaf">{{ node_summary(n) }}</div>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{%- endmacro %}
+
+{% macro slots(slot_list, animal_id, owner_entry_id="") -%}
+<div class="lineage-slots">
+{% for slot in slot_list %}
+    <div class="lineage-slot">
+        <h3>{{ slot.label }}</h3>
+        {% if slot.node %}
+            <p>{{ node_summary(slot.node) }}</p>
+            <p>
+                {% if slot.node.kind == "described" %}
+                <a href="/admin/animals/{{ animal_id }}/lineage/{{ slot.node.entry_id }}">edit {{ slot.label }}, its Genetics and its parents</a> ·
+                {% else %}
+                <a href="/admin/animals/{{ slot.node.animal_id }}/edit#lineage">edit {{ slot.node.name }}'s own Lineage</a> ·
+                {% endif %}
+                <form method="post" action="/admin/animals/{{ animal_id }}/lineage/{{ slot.node.entry_id }}/delete" class="inline-form">
+                    <button type="submit" class="danger-small" title="Removes this parent{% if slot.node.kind == 'described' %} and every described ancestor beneath it{% endif %}">remove</button>
+                </form>
+            </p>
+        {% else %}
+            <form method="post" action="/admin/animals/{{ animal_id }}/lineage/link" class="admin-form">
+                <input type="hidden" name="owner_entry_id" value="{{ owner_entry_id }}">
+                <input type="hidden" name="role" value="{{ slot.role }}">
+                <label>Link to an Animal you have
+                    <select name="parent_animal_id" required>
+                        <option value="">{% if slot.candidates %}— pick an Animal —{% else %}— no matching Animals —{% endif %}</option>
+                        {% for c in slot.candidates %}
+                        <option value="{{ c.id }}">{{ c.name }}{% if c.sex == "unknown" %} (sex unknown){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit"{% if not slot.candidates %} disabled{% endif %}>Link {{ slot.label }}</button>
+            </form>
+            <form method="post" action="/admin/animals/{{ animal_id }}/lineage/describe" class="admin-form">
+                <input type="hidden" name="owner_entry_id" value="{{ owner_entry_id }}">
+                <input type="hidden" name="role" value="{{ slot.role }}">
+                <label>…or describe one you never owned <input type="text" name="name" placeholder="name, optional"></label>
+                <label>Morph <input type="text" name="morph" placeholder="optional"></label>
+                <button type="submit">Describe {{ slot.label }}</button>
+            </form>
+        {% endif %}
+    </div>
+{% endfor %}
+</div>
+{%- endmacro %}

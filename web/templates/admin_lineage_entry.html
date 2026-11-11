@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - {{ animal.name }}'s {{ entry_label }}</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    {% import "_lineage_macros.html" as lineage %}
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>{{ entry.name or "Unnamed " ~ entry_label }}</h1>
+        {% set nav_current = "control" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <p><a href="{{ back_url }}">&larr; Back to {{ back_label }}</a></p>
+
+        {# A described Lineage Entry (see CONTEXT.md: Lineage; RHA-106): an animal never owned, part of
+           {{ animal.name }}'s own Lineage only. #}
+        <section class="admin-card">
+            <h2>{{ entry_label }} in {{ animal.name }}'s Lineage <span class="empty">(described)</span></h2>
+            <p class="animal-genetics-line"><strong>{{ genetics_line }}</strong></p>
+            <form method="post" action="/admin/animals/{{ animal.id }}/lineage/{{ entry.id }}/update" class="admin-form">
+                <label>Name <input type="text" name="name" value="{{ entry.name or '' }}" placeholder="optional"></label>
+                <label>Morph <input type="text" name="morph" value="{{ entry.morph or '' }}" placeholder="optional, e.g. Banana Clown"></label>
+                <button type="submit">Save</button>
+            </form>
+        </section>
+
+        <section class="admin-card" id="genetics">
+            <h2>Genetics</h2>
+            {% include "_genetics_editor.html" %}
+        </section>
+
+        <section class="admin-card" id="lineage">
+            <h2>Parents of this {{ entry_label }}</h2>
+            {{ lineage.slots(slots, animal.id, entry.id) }}
+        </section>
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

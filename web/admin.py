@@ -26,6 +26,7 @@ from web import admin_queries as q
 from web import auth_queries as authq
 from web import gene_catalog_queries as gcq
 from web import genetics_queries as genq
+from web import lineage_queries as linq
 from web import graphs_queries as gq
 from web import plugin_catalog
 from web import species_kb_queries as skq
@@ -596,6 +597,7 @@ def admin_animal_detail(request: Request, animal_id: int, page: int = 1):
         {
             "animal": animal, "enclosure_name": q.get_enclosure_name(animal["enclosure_id"]),
             "genetics_line": genq.genetics_line(animal),
+            "lineage_tree": linq.lineage_tree(animal_id) if genq.genetics_species(animal) else [],
             "activity": activity, "page": page, "has_more": has_more,
             "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
             "shed_completeness": SHED_COMPLETENESS, "shed_completeness_labels": SHED_COMPLETENESS_LABELS,
@@ -653,6 +655,15 @@ def _genetics_context(animal: dict) -> dict:
         "genetics_species": species, "genetics": genetics,
         "genetics_line": genq.genetics_line(animal, genetics) if species else None,
         "species_genes": genq.species_genes(animal) if species else [],
+        "genetics_base": f"/admin/animals/{animal['id']}/genetics",
+        "lineage_slots": linq.slots_for(animal["id"], None) if species else [],
+        "lineage_tree": linq.lineage_tree(animal["id"]) if species else [],
+        **_genetics_labels(),
+    }
+
+
+def _genetics_labels() -> dict:
+    return {
         "gene_states": genq.STATES, "gene_state_labels": genq.STATE_LABELS,
         "valid_states": genq.VALID_STATES,
         "evidence_options": genq.EVIDENCE, "evidence_labels": genq.EVIDENCE_LABELS,
@@ -2083,3 +2094,132 @@ def admin_delete_gene(gene_id: int):
     except ValueError as exc:
         return _gene_catalog_redirect(str(exc))
     return _gene_catalog_redirect()
+
+
+# --- Lineage (see CONTEXT.md: Lineage; RHA-106) ------------------------------------------------------
+
+def _lineage_redirect(animal_id: int, owner_entry_id: int | None = None, error: str | None = None) -> RedirectResponse:
+    """Back to wherever the slot lives: a described entry's page, or the Animal's Edit page."""
+    query = f"?error={quote(error)}" if error else ""
+    if owner_entry_id:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/lineage/{owner_entry_id}{query}#lineage", status_code=303)
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit{query}#lineage", status_code=303)
+
+
+def _entry_id(value: str) -> int | None:
+    return int(value) if value and value.isdigit() else None
+
+
+@router.post("/animals/{animal_id}/lineage/link")
+def admin_link_parent(animal_id: int, owner_entry_id: str = Form(""), role: str = Form(""),
+                      parent_animal_id: str = Form("")):
+    owner = _entry_id(owner_entry_id)
+    try:
+        if not parent_animal_id.isdigit():
+            raise ValueError("Pick an Animal to link.")
+        linq.link_parent(animal_id, owner, role, int(parent_animal_id))
+    except ValueError as exc:
+        return _lineage_redirect(animal_id, owner, str(exc))
+    return _lineage_redirect(animal_id, owner)
+
+
+@router.post("/animals/{animal_id}/lineage/describe")
+def admin_describe_parent(animal_id: int, owner_entry_id: str = Form(""), role: str = Form(""),
+                          name: str = Form(""), morph: str = Form("")):
+    owner = _entry_id(owner_entry_id)
+    try:
+        linq.describe_parent(animal_id, owner, role, name, morph)
+    except ValueError as exc:
+        return _lineage_redirect(animal_id, owner, str(exc))
+    return _lineage_redirect(animal_id, owner)
+
+
+@router.get("/animals/{animal_id}/lineage/{entry_id}")
+def admin_lineage_entry(request: Request, animal_id: int, entry_id: int):
+    """A described Lineage Entry's own page: its name, Morph, Genetics and its Sire/Dam slots."""
+    animal = q.get_animal(animal_id)
+    try:
+        if animal is None:
+            raise ValueError("That Animal no longer exists.")
+        entry = linq.get_entry(animal_id, entry_id)
+    except ValueError:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit#lineage" if animal else "/admin", status_code=303)
+    if entry["linked_animal_id"]:
+        return RedirectResponse(url=f"/admin/animals/{entry['linked_animal_id']}/edit#lineage", status_code=303)
+    species = genq.genetics_species(animal)
+    genetics = genq.list_genetics("entry", entry_id)
+    if entry["child_entry_id"]:
+        owner = linq.get_entry(animal_id, entry["child_entry_id"])
+        back_url = f"/admin/animals/{animal_id}/lineage/{owner['id']}#lineage"
+        back_label = owner["name"] or f"Unnamed {linq.ROLE_LABELS[owner['role']]}"
+    else:
+        back_url, back_label = f"/admin/animals/{animal_id}/edit#lineage", f"Edit {animal['name']}"
+    return templates.TemplateResponse(
+        request, "admin_lineage_entry.html",
+        {
+            "animal": animal, "entry": entry, "entry_label": linq.ROLE_LABELS[entry["role"]],
+            "back_url": back_url, "back_label": back_label,
+            "genetics_species": species, "genetics": genetics,
+            "genetics_line": genq.notation(entry["morph"], genetics),
+            "species_genes": genq.catalog_for(species),
+            "genetics_base": f"/admin/animals/{animal_id}/lineage/{entry_id}/genetics",
+            "slots": linq.slots_for(animal_id, entry_id),
+            **_genetics_labels(),
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+def _entry_page(animal_id: int, entry_id: int, error: str | None = None, anchor: str = "") -> RedirectResponse:
+    query = f"?error={quote(error)}" if error else ""
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/lineage/{entry_id}{query}{anchor}", status_code=303)
+
+
+@router.post("/animals/{animal_id}/lineage/{entry_id}/update")
+def admin_update_lineage_entry(animal_id: int, entry_id: int, name: str = Form(""), morph: str = Form("")):
+    try:
+        linq.update_described(animal_id, entry_id, name, morph)
+    except ValueError as exc:
+        return _entry_page(animal_id, entry_id, str(exc))
+    return _entry_page(animal_id, entry_id)
+
+
+@router.post("/animals/{animal_id}/lineage/{entry_id}/delete")
+def admin_delete_lineage_entry(animal_id: int, entry_id: int):
+    try:
+        owner = linq.get_entry(animal_id, entry_id)["child_entry_id"]
+        linq.remove_entry(animal_id, entry_id)
+    except ValueError as exc:
+        return _lineage_redirect(animal_id, None, str(exc))
+    return _lineage_redirect(animal_id, owner)
+
+
+@router.post("/animals/{animal_id}/lineage/{entry_id}/genetics/add")
+def admin_add_entry_gene(animal_id: int, entry_id: int, gene_id: str = Form(""), new_gene_name: str = Form(""),
+                         new_gene_inheritance: str = Form(""), state: str = Form(""), percent: str = Form(""),
+                         evidence: str = Form("")):
+    try:
+        linq.add_entry_gene(animal_id, entry_id, int(gene_id) if gene_id.isdigit() else None, state, percent,
+                            evidence or None, new_gene_name=new_gene_name, new_gene_inheritance=new_gene_inheritance)
+    except ValueError as exc:
+        return _entry_page(animal_id, entry_id, str(exc), "#genetics")
+    return _entry_page(animal_id, entry_id, anchor="#genetics")
+
+
+@router.post("/animals/{animal_id}/lineage/{entry_id}/genetics/{row_id}/update")
+def admin_update_entry_gene(animal_id: int, entry_id: int, row_id: int, state: str = Form(""),
+                            percent: str = Form(""), evidence: str = Form("")):
+    try:
+        linq.update_entry_gene(animal_id, entry_id, row_id, state, percent, evidence or None)
+    except ValueError as exc:
+        return _entry_page(animal_id, entry_id, str(exc), "#genetics")
+    return _entry_page(animal_id, entry_id, anchor="#genetics")
+
+
+@router.post("/animals/{animal_id}/lineage/{entry_id}/genetics/{row_id}/delete")
+def admin_delete_entry_gene(animal_id: int, entry_id: int, row_id: int):
+    try:
+        linq.delete_entry_gene(animal_id, entry_id, row_id)
+    except ValueError as exc:
+        return _entry_page(animal_id, entry_id, str(exc), "#genetics")
+    return _entry_page(animal_id, entry_id, anchor="#genetics")

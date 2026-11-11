@@ -1,11 +1,13 @@
-"""Animal Genetics and Morph (see CONTEXT.md: Genetics, Morph, Gene; RHA-105).
+"""Genetics and Morph (see CONTEXT.md: Genetics, Morph, Gene; RHA-105, RHA-106).
 
-Genetics are rows of `animal_gene`: one Gene from the Animal's own species' Gene Catalog, its
-Gene State, a percentage (Possible Het only) and Evidence (Het only). They're always hand-entered,
-never derived from Lineage. Morph is the optional free-text `animal.morph`.
+Two things carry Genetics: an Animal (`animal_gene`) and a described Lineage Entry
+(`lineage_entry_gene`, RHA-106). Each row is one Gene from the species' Gene Catalog, its Gene
+State, a percentage (Possible Het only) and Evidence (Het only). They're always hand-entered, never
+derived from Lineage. Morph is free text on the owner (`animal.morph`, `lineage_entry.morph`).
 
 Both exist only for an Animal linked to a specific Knowledge Base species
-(web/species_kb_queries.py's linked_species()); for every other Animal the feature is absent.
+(web/species_kb_queries.py's linked_species()); a Lineage Entry uses its Animal's species. For
+every other Animal the feature is absent.
 """
 from __future__ import annotations
 
@@ -30,6 +32,9 @@ EVIDENCE_LABELS = {"claimed": "Claimed", "proven": "Proven"}
 # Display order inside a Morph built from Visual genes: the hobby writes co-dominant/dominant genes
 # before recessive ones ("Banana Clown", "Pastel Pied").
 _INHERITANCE_ORDER = {"co_dominant": 0, "dominant": 0, "recessive": 1}
+
+# Genetics owners: kind -> (table, owner column).
+_OWNERS = {"animal": ("animal_gene", "animal_id"), "entry": ("lineage_entry_gene", "entry_id")}
 
 
 def genetics_species(animal: dict) -> dict | None:
@@ -57,23 +62,25 @@ def _validated_state(inheritance: str, state: str, percent, evidence: str | None
     return state, None, None
 
 
-def list_animal_genetics(animal_id: int) -> list[dict]:
-    """The Animal's Genetics joined with each Gene's name and Inheritance, in display order."""
+# --- generic, per owner kind ---------------------------------------------------------------------
+
+def list_genetics(kind: str, owner_id: int) -> list[dict]:
+    """An owner's Genetics joined with each Gene's name and Inheritance, sorted by Gene name."""
+    table, column = _OWNERS[kind]
     with get_connection() as conn:
         rows = [dict(r) for r in conn.execute(
-            """SELECT ag.*, g.name AS gene_name, g.inheritance
-               FROM animal_gene ag JOIN gene g ON g.id = ag.gene_id
-               WHERE ag.animal_id = ? ORDER BY g.name COLLATE NOCASE""",
-            (animal_id,),
+            f"""SELECT x.*, g.name AS gene_name, g.inheritance
+                FROM {table} x JOIN gene g ON g.id = x.gene_id
+                WHERE x.{column} = ? ORDER BY g.name COLLATE NOCASE""",
+            (owner_id,),
         )]
     for row in rows:
         row["valid_states"] = VALID_STATES[row["inheritance"]]
     return rows
 
 
-def species_genes(animal: dict) -> list[dict]:
-    """The Gene Catalog entries the Animal's Genetics can be picked from (its own species only)."""
-    species = genetics_species(animal)
+def catalog_for(species: dict | None) -> list[dict]:
+    """The Gene Catalog entries of one species, for a Genetics picker."""
     if species is None:
         return []
     with get_connection() as conn:
@@ -83,22 +90,13 @@ def species_genes(animal: dict) -> list[dict]:
         )]
 
 
-def _animal_or_raise(conn: sqlite3.Connection, animal_id: int) -> dict:
-    row = conn.execute("SELECT * FROM animal WHERE id = ?", (animal_id,)).fetchone()
-    if row is None:
-        raise ValueError("That Animal no longer exists.")
-    return dict(row)
-
-
-def add_animal_gene(animal_id: int, gene_id: int | None, state: str, percent=None, evidence: str | None = None,
-                    new_gene_name: str | None = None, new_gene_inheritance: str | None = None) -> int:
-    """Adds one Gene to the Animal's Genetics. With no gene_id, new_gene_name/new_gene_inheritance
-    add the Gene to the species' catalog on the spot (or reuse a same-named one already there)."""
-    with get_connection() as conn:
-        animal = _animal_or_raise(conn, animal_id)
-    species = genetics_species(animal)
+def add_gene(kind: str, owner_id: int, species: dict | None, gene_id: int | None, state: str, percent=None,
+             evidence: str | None = None, new_gene_name: str | None = None, new_gene_inheritance: str | None = None) -> int:
+    """Adds one Gene to an owner's Genetics. With no gene_id, new_gene_name/new_gene_inheritance add
+    the Gene to the species' catalog on the spot (or reuse a same-named one already there)."""
     if species is None:
         raise ValueError("Link this Animal to a specific Knowledge Base species before adding Genetics.")
+    table, column = _OWNERS[kind]
 
     if not gene_id:
         name = (new_gene_name or "").strip()
@@ -119,42 +117,77 @@ def add_animal_gene(animal_id: int, gene_id: int | None, state: str, percent=Non
         state, percent, evidence = _validated_state(gene["inheritance"], state, percent, evidence)
         try:
             cur = conn.execute(
-                "INSERT INTO animal_gene (animal_id, gene_id, state, percent, evidence) VALUES (?, ?, ?, ?, ?)",
-                (animal_id, gene_id, state, percent, evidence),
+                f"INSERT INTO {table} ({column}, gene_id, state, percent, evidence) VALUES (?, ?, ?, ?, ?)",
+                (owner_id, gene_id, state, percent, evidence),
             )
         except sqlite3.IntegrityError:
-            raise ValueError(f"{gene['name']} is already in this Animal's Genetics; edit that row instead.") from None
+            raise ValueError(f"{gene['name']} is already in these Genetics; edit that row instead.") from None
         return cur.lastrowid
 
 
-def update_animal_gene(animal_id: int, row_id: int, state: str, percent=None, evidence: str | None = None) -> None:
+def update_gene(kind: str, owner_id: int, row_id: int, state: str, percent=None, evidence: str | None = None) -> None:
+    table, column = _OWNERS[kind]
     with get_connection() as conn:
         row = conn.execute(
-            """SELECT g.inheritance FROM animal_gene ag JOIN gene g ON g.id = ag.gene_id
-               WHERE ag.id = ? AND ag.animal_id = ?""",
-            (row_id, animal_id),
+            f"""SELECT g.inheritance FROM {table} x JOIN gene g ON g.id = x.gene_id
+                WHERE x.id = ? AND x.{column} = ?""",
+            (row_id, owner_id),
         ).fetchone()
         if row is None:
             raise ValueError("That Genetics row no longer exists.")
         state, percent, evidence = _validated_state(row["inheritance"], state, percent, evidence)
-        conn.execute("UPDATE animal_gene SET state = ?, percent = ?, evidence = ? WHERE id = ?",
+        conn.execute(f"UPDATE {table} SET state = ?, percent = ?, evidence = ? WHERE id = ?",
                      (state, percent, evidence, row_id))
 
 
-def delete_animal_gene(animal_id: int, row_id: int) -> None:
+def delete_gene(kind: str, owner_id: int, row_id: int) -> None:
+    table, column = _OWNERS[kind]
     with get_connection() as conn:
-        conn.execute("DELETE FROM animal_gene WHERE id = ? AND animal_id = ?", (row_id, animal_id))
+        conn.execute(f"DELETE FROM {table} WHERE id = ? AND {column} = ?", (row_id, owner_id))
+
+
+# --- Animals -------------------------------------------------------------------------------------
+
+def _animal_or_raise(animal_id: int) -> dict:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM animal WHERE id = ?", (animal_id,)).fetchone()
+    if row is None:
+        raise ValueError("That Animal no longer exists.")
+    return dict(row)
+
+
+def list_animal_genetics(animal_id: int) -> list[dict]:
+    return list_genetics("animal", animal_id)
+
+
+def species_genes(animal: dict) -> list[dict]:
+    """The Gene Catalog entries the Animal's Genetics can be picked from (its own species only)."""
+    return catalog_for(genetics_species(animal))
+
+
+def add_animal_gene(animal_id: int, gene_id: int | None, state: str, percent=None, evidence: str | None = None,
+                    new_gene_name: str | None = None, new_gene_inheritance: str | None = None) -> int:
+    species = genetics_species(_animal_or_raise(animal_id))
+    return add_gene("animal", animal_id, species, gene_id, state, percent, evidence, new_gene_name, new_gene_inheritance)
+
+
+def update_animal_gene(animal_id: int, row_id: int, state: str, percent=None, evidence: str | None = None) -> None:
+    update_gene("animal", animal_id, row_id, state, percent, evidence)
+
+
+def delete_animal_gene(animal_id: int, row_id: int) -> None:
+    delete_gene("animal", animal_id, row_id)
 
 
 def set_morph(animal_id: int, morph: str | None) -> None:
     """Blank clears it, so the Visual genes serve as the name again."""
-    with get_connection() as conn:
-        animal = _animal_or_raise(conn, animal_id)
-    if genetics_species(animal) is None:
+    if genetics_species(_animal_or_raise(animal_id)) is None:
         raise ValueError("Link this Animal to a specific Knowledge Base species before giving it a Morph.")
     with get_connection() as conn:
         conn.execute("UPDATE animal SET morph = ? WHERE id = ?", ((morph or "").strip() or None, animal_id))
 
+
+# --- notation ------------------------------------------------------------------------------------
 
 def morph_name(morph: str | None, genetics: list[dict]) -> str:
     """The Morph if given; else the Visual/Super genes joined ("Super Pastel Clown"); else Normal."""
@@ -172,13 +205,17 @@ def het_notation(gene: dict) -> str:
     return f"100% het {gene['gene_name']}" + (" (proven)" if gene["evidence"] == "proven" else "")
 
 
+def notation(morph: str | None, genetics: list[dict]) -> str:
+    """Standard notation, e.g. "Banana Clown · 66% het Albino · 100% het Pied (proven)"."""
+    hets = sorted((g for g in genetics if g["state"] in ("het", "possible_het")),
+                  key=lambda g: (-(g["percent"] or 100), g["gene_name"].lower()))
+    return " · ".join([morph_name(morph, genetics), *(het_notation(g) for g in hets)])
+
+
 def genetics_line(animal: dict, genetics: list[dict] | None = None) -> str | None:
-    """Standard notation, e.g. "Banana Clown · 66% het Albino · 100% het Pied (proven)". None for an
-    Animal Genetics/Morph don't apply to."""
+    """An Animal's standard notation, or None for an Animal Genetics/Morph don't apply to."""
     if genetics_species(animal) is None:
         return None
     if genetics is None:
         genetics = list_animal_genetics(animal["id"])
-    hets = sorted((g for g in genetics if g["state"] in ("het", "possible_het")),
-                  key=lambda g: (-(g["percent"] or 100), g["gene_name"].lower()))
-    return " · ".join([morph_name(animal.get("morph"), genetics), *(het_notation(g) for g in hets)])
+    return notation(animal.get("morph"), genetics)

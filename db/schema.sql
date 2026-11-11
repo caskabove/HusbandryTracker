@@ -876,3 +876,36 @@ CREATE TABLE IF NOT EXISTS animal_gene (
     UNIQUE (animal_id, gene_id)
 );
 CREATE INDEX IF NOT EXISTS idx_animal_gene_gene ON animal_gene(gene_id);
+
+-- Lineage (see CONTEXT.md: Lineage; ADR 0059; RHA-106): each row is one parent, filling the Sire or
+-- Dam slot of exactly one owner, an Animal (child_animal_id) or a described entry (child_entry_id).
+-- A row is linked (linked_animal_id set: that Animal's own live Morph/Genetics/Lineage are used and
+-- the row has no parents of its own) or described (name/morph here, Genetics in
+-- lineage_entry_gene, parents as further rows). Each Animal owns its described entries; deleting
+-- the Animal or an entry removes everything beneath it. Deleting a linked Animal keeps its name on
+-- the entry (web/admin_queries.py delete_animal) before the link is cleared.
+CREATE TABLE IF NOT EXISTS lineage_entry (
+    id                  INTEGER PRIMARY KEY,
+    child_animal_id     INTEGER REFERENCES animal(id) ON DELETE CASCADE,
+    child_entry_id      INTEGER REFERENCES lineage_entry(id) ON DELETE CASCADE,
+    role                TEXT NOT NULL CHECK (role IN ('sire', 'dam')),
+    linked_animal_id    INTEGER REFERENCES animal(id) ON DELETE SET NULL,
+    name                TEXT,
+    morph               TEXT,
+    CHECK ((child_animal_id IS NULL) != (child_entry_id IS NULL)),
+    UNIQUE (child_animal_id, role),
+    UNIQUE (child_entry_id, role)
+);
+CREATE INDEX IF NOT EXISTS idx_lineage_entry_linked ON lineage_entry(linked_animal_id);
+
+-- A described Lineage Entry's Genetics: same shape and rules as animal_gene.
+CREATE TABLE IF NOT EXISTS lineage_entry_gene (
+    id          INTEGER PRIMARY KEY,
+    entry_id    INTEGER NOT NULL REFERENCES lineage_entry(id) ON DELETE CASCADE,
+    gene_id     INTEGER NOT NULL REFERENCES gene(id),
+    state       TEXT NOT NULL CHECK (state IN ('visual', 'super', 'het', 'possible_het')),
+    percent     INTEGER CHECK (percent IS NULL OR percent BETWEEN 1 AND 99),
+    evidence    TEXT CHECK (evidence IS NULL OR evidence IN ('claimed', 'proven')),
+    UNIQUE (entry_id, gene_id)
+);
+CREATE INDEX IF NOT EXISTS idx_lineage_entry_gene_gene ON lineage_entry_gene(gene_id);
