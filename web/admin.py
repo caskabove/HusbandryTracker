@@ -657,6 +657,8 @@ def _genetics_context(animal: dict) -> dict:
         "species_genes": genq.species_genes(animal) if species else [],
         "genetics_base": f"/admin/animals/{animal['id']}/genetics",
         "lineage_slots": linq.slots_for(animal["id"], None) if species else [],
+        "lineage_copy_sources": linq.copy_sources(animal["id"]) if species else [],
+        "lineage_count": linq.lineage_entry_count(animal["id"]) if species else 0,
         "lineage_tree": linq.lineage_tree(animal["id"]) if species else [],
         **_genetics_labels(),
     }
@@ -2121,6 +2123,18 @@ def admin_link_parent(animal_id: int, owner_entry_id: str = Form(""), role: str 
     except ValueError as exc:
         return _lineage_redirect(animal_id, owner, str(exc))
     return _lineage_redirect(animal_id, owner)
+
+
+@router.post("/animals/{animal_id}/lineage/copy")
+def admin_copy_lineage(animal_id: int, source_animal_id: str = Form(""), replace: str = Form("")):
+    """Copy Lineage from another Animal (RHA-107): a deep copy, independent afterwards."""
+    try:
+        if not source_animal_id.isdigit():
+            raise ValueError("Pick an Animal to copy the Lineage from.")
+        linq.copy_lineage(animal_id, int(source_animal_id), replace=bool(replace))
+    except ValueError as exc:
+        return _lineage_redirect(animal_id, None, str(exc))
+    return _lineage_redirect(animal_id)
 
 
 @router.post("/animals/{animal_id}/lineage/describe")

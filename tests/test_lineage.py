@@ -227,3 +227,87 @@ def test_edit_page_animal_page_and_entry_page(temp_db, enclosure):
     assert response.headers["location"] == f"/admin/animals/{baby}/lineage/{dam}#genetics"
     (_, dam_node) = linq.lineage_tree(baby)
     assert dam_node["line"] == "Banana · 100% het Clown"
+
+
+# --- Copy Lineage (RHA-107) ------------------------------------------------------------------------
+
+def _clutch(conn, enclosure):
+    """Bob (linked Sire) and a described Dam with Genetics and a described grandsire, on Baby."""
+    bob = _animal(conn, enclosure, "Bob", "male")
+    baby = _animal(conn, enclosure, "Baby")
+    linq.link_parent(baby, None, "sire", bob)
+    dam = linq.describe_parent(baby, None, "dam", "Breeder Dam", "Pastel")
+    linq.add_entry_gene(baby, dam, _gene(conn, "Clown"), "het", 66)
+    linq.describe_parent(baby, dam, "sire", "Breeder Grandsire", None)
+    return bob, baby, dam
+
+
+def test_copy_lineage_deep_copies_described_entries_and_keeps_links(temp_db, enclosure):
+    bob, baby, dam = _clutch(temp_db, enclosure)
+    mate = _animal(temp_db, enclosure, "Clutch-mate")
+    linq.copy_lineage(mate, baby)
+
+    tree = linq.lineage_tree(mate)
+    assert _names(tree) == [("sire", "Bob"), ("dam", "Breeder Dam")]
+    assert tree[0]["kind"] == "linked" and tree[0]["animal_id"] == bob
+    assert tree[1]["line"] == linq.lineage_tree(baby)[1]["line"]
+    assert _names(tree[1]["parents"]) == [("sire", "Breeder Grandsire")]
+    assert tree[1]["entry_id"] != dam  # new rows, owned by the target
+    assert linq.root_animal_id(tree[1]["parents"][0]["entry_id"]) == mate
+
+
+def test_copied_trees_are_independent(temp_db, enclosure):
+    _, baby, dam = _clutch(temp_db, enclosure)
+    mate = _animal(temp_db, enclosure, "Clutch-mate")
+    linq.copy_lineage(mate, baby)
+    copied_dam = linq.lineage_tree(mate)[1]["entry_id"]
+
+    linq.update_described(mate, copied_dam, "Renamed Dam", None)
+    linq.remove_entry(baby, linq.lineage_tree(baby)[1]["parents"][0]["entry_id"])
+    assert linq.lineage_tree(baby)[1]["name"] == "Breeder Dam"
+    assert _names(linq.lineage_tree(mate)[1]["parents"]) == [("sire", "Breeder Grandsire")]
+    with pytest.raises(ValueError, match="isn't part of this Animal's Lineage"):
+        linq.update_described(baby, copied_dam, "x", None)
+
+
+def test_copy_needs_replace_to_overwrite_an_existing_lineage(temp_db, enclosure):
+    _, baby, _ = _clutch(temp_db, enclosure)
+    mate = _animal(temp_db, enclosure, "Clutch-mate")
+    linq.describe_parent(mate, None, "sire", "Wrong Sire", None)
+    with pytest.raises(ValueError, match="already has a Lineage"):
+        linq.copy_lineage(mate, baby)
+    assert _names(linq.lineage_tree(mate)) == [("sire", "Wrong Sire")]
+
+    linq.copy_lineage(mate, baby, replace=True)
+    assert _names(linq.lineage_tree(mate)) == [("sire", "Bob"), ("dam", "Breeder Dam")]
+    assert temp_db.execute("SELECT COUNT(*) FROM lineage_entry WHERE name = 'Wrong Sire'").fetchone()[0] == 0
+
+
+def test_copy_refuses_other_species_empty_sources_and_cycles(temp_db, enclosure):
+    bob, baby, _ = _clutch(temp_db, enclosure)
+    other = _animal(temp_db, enclosure, "Leo", species="leopard_gecko")
+    with pytest.raises(ValueError, match="same Knowledge Base species"):
+        linq.copy_lineage(other, baby)
+    empty = _animal(temp_db, enclosure, "Empty")
+    with pytest.raises(ValueError, match="no Lineage to copy"):
+        linq.copy_lineage(baby, empty, replace=True)
+    with pytest.raises(ValueError, match="its own ancestor"):  # Bob is Baby's Sire
+        linq.copy_lineage(bob, baby)
+    assert [s["name"] for s in linq.copy_sources(empty)] == ["Baby"]
+    assert linq.copy_sources(bob) == []
+
+
+def test_copy_route_and_edit_page_offer(temp_db, enclosure):
+    _, baby, _ = _clutch(temp_db, enclosure)
+    mate = _animal(temp_db, enclosure, "Clutch-mate")
+    page = _html(admin_routes.admin_edit_animal(_request(f"/admin/animals/{mate}/edit"), mate))
+    assert "Copy Lineage from" in page and "Replace the current Lineage" not in page
+
+    response = admin_routes.admin_copy_lineage(mate, str(baby), "")
+    assert response.headers["location"] == f"/admin/animals/{mate}/edit#lineage"
+    assert linq.lineage_entry_count(mate) == 2
+
+    response = admin_routes.admin_copy_lineage(mate, str(baby), "")
+    assert "error=" in response.headers["location"]
+    page = _html(admin_routes.admin_edit_animal(_request(f"/admin/animals/{mate}/edit"), mate))
+    assert "Replace the current Lineage" in page

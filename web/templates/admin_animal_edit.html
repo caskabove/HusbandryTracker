@@ -81,6 +81,22 @@
         <section class="admin-card" id="lineage">
             <h2>Lineage</h2>
             {{ lineage.slots(lineage_slots, animal.id) }}
+            {% if lineage_copy_sources %}
+            <form method="post" action="/admin/animals/{{ animal.id }}/lineage/copy" class="admin-form lineage-copy"
+                  {% if lineage_count %}onsubmit="return confirm('Replace the current Lineage with this copy? The current tree will be removed.');"{% endif %}>
+                <label>Copy Lineage from…
+                    <select name="source_animal_id" required>
+                        <option value="">— pick an Animal —</option>
+                        {% for s in lineage_copy_sources %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+                    </select>
+                </label>
+                {% if lineage_count %}
+                <label><input type="checkbox" name="replace" value="1" required> Replace the current Lineage</label>
+                {% endif %}
+                <button type="submit">Copy Lineage</button>
+                <span class="empty">A one-time copy: editing either tree afterwards doesn't change the other.</span>
+            </form>
+            {% endif %}
             {% if lineage_tree %}
             <h3>Family tree</h3>
             {{ lineage.tree(lineage_tree) }}

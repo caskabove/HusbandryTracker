@@ -255,3 +255,60 @@ def lineage_entry_count(animal_id: int) -> int:
     """Parents recorded directly on the Animal (described ones bring their ancestors with them)."""
     with get_connection() as conn:
         return conn.execute("SELECT COUNT(*) FROM lineage_entry WHERE child_animal_id = ?", (animal_id,)).fetchone()[0]
+
+
+# --- Copy Lineage (RHA-107) ----------------------------------------------------------------------
+
+def copy_sources(animal_id: int) -> list[dict]:
+    """Animals whose Lineage can be copied onto this one: same Knowledge Base species, with at least
+    one parent recorded, and not making this Animal its own ancestor."""
+    with get_connection() as conn:
+        animal = _animal(conn, animal_id)
+        if genq.genetics_species(animal) is None:
+            return []
+        rows = [dict(r) for r in conn.execute(
+            """SELECT id, name FROM animal a WHERE species_profile = ? AND id != ?
+                 AND EXISTS (SELECT 1 FROM lineage_entry WHERE child_animal_id = a.id)
+               ORDER BY name COLLATE NOCASE""",
+            (animal["species_profile"], animal_id),
+        )]
+    return [r for r in rows if animal_id not in linked_ancestors(r["id"])]
+
+
+def _copy_children(conn, column: str, source_owner: int, target_animal: int | None, target_entry: int | None) -> None:
+    for entry in conn.execute(f"SELECT * FROM lineage_entry WHERE {column} = ?", (source_owner,)).fetchall():
+        new_id = conn.execute(
+            "INSERT INTO lineage_entry (child_animal_id, child_entry_id, role, linked_animal_id, name, morph) VALUES (?, ?, ?, ?, ?, ?)",
+            (target_animal, target_entry, entry["role"], entry["linked_animal_id"], entry["name"], entry["morph"]),
+        ).lastrowid
+        if entry["linked_animal_id"]:
+            continue  # a linked parent brings its own live Lineage; nothing beneath it to copy
+        conn.execute(
+            """INSERT INTO lineage_entry_gene (entry_id, gene_id, state, percent, evidence)
+               SELECT ?, gene_id, state, percent, evidence FROM lineage_entry_gene WHERE entry_id = ?""",
+            (new_id, entry["id"]),
+        )
+        _copy_children(conn, "child_entry_id", entry["id"], None, new_id)
+
+
+def copy_lineage(animal_id: int, source_animal_id: int, replace: bool = False) -> None:
+    """Deep-copies the source Animal's whole Lineage onto this Animal: described entries (and their
+    Genetics) become new rows owned by this Animal, linked entries stay linked to the same Animals.
+    The two trees are independent afterwards. An existing Lineage is only overwritten with replace."""
+    with get_connection() as conn:
+        animal = _animal(conn, animal_id)
+        _species_or_raise(animal)
+        source = _animal(conn, source_animal_id)
+    if source_animal_id == animal_id:
+        raise ValueError("Pick a different Animal to copy from.")
+    if source["species_profile"] != animal["species_profile"]:
+        raise ValueError(f"{source['name']} isn't the same Knowledge Base species as {animal['name']}.")
+    if not lineage_entry_count(source_animal_id):
+        raise ValueError(f"{source['name']} has no Lineage to copy.")
+    if animal_id in linked_ancestors(source_animal_id):
+        raise ValueError(f"Copying {source['name']}'s Lineage would make {animal['name']} its own ancestor.")
+    if lineage_entry_count(animal_id) and not replace:
+        raise ValueError(f"{animal['name']} already has a Lineage; tick \"Replace the current Lineage\" to overwrite it.")
+    with get_connection() as conn:
+        conn.execute("DELETE FROM lineage_entry WHERE child_animal_id = ?", (animal_id,))
+        _copy_children(conn, "child_animal_id", source_animal_id, animal_id, None)
