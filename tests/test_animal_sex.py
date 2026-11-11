@@ -79,7 +79,7 @@ def test_blank_sex_means_unknown_and_garbage_is_rejected(temp_db):
 # --- routes and pages ----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("create", [
-    lambda enc: admin_routes.admin_create_animal_global(enclosure_id=str(enc), name="Rex", common="", scientific="", dob="", sex="female"),
+    lambda enc: admin_routes.admin_create_animal_global(enclosure_id=str(enc), name="Rex", common="", scientific="", dob="", sex="female", species_profile=""),
     lambda enc: setup_routes.setup_create_animal(enc, name="Rex", common="", scientific="", dob="", sex="female", species_profile="", life_stage="adult"),
     lambda enc: add_pet_routes.add_pet_create_animal(enc, name="Rex", common="", scientific="", dob="", sex="female", species_profile="", life_stage="adult"),
 ], ids=["admin", "setup-wizard", "add-new-pet"])
@@ -93,7 +93,7 @@ def test_edit_route_saves_sex(temp_db):
     q.create_animal(enclosure_id, "Rex", None, None, None)
     animal_id = _only_animal(temp_db)["id"]
 
-    admin_routes.admin_update_animal(animal_id, enclosure_id=enclosure_id, name="Rex", common="", scientific="", dob="", sex="male")
+    admin_routes.admin_update_animal(animal_id, enclosure_id=enclosure_id, name="Rex", common="", scientific="", dob="", sex="male", species_profile="")
 
     assert _only_animal(temp_db)["sex"] == "male"
 

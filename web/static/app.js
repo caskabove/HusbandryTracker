@@ -596,6 +596,16 @@ async function onDiscoverTuyaClick(button) {
 // selection if that profile is still offered under the new type. Called once on page load (Sensor
 // forms, whose Enclosure Type is fixed) and again on every Enclosure Type change (Enclosure forms,
 // where the user can still switch it).
+// Add/Edit Animal's Knowledge Base species picker (web/templates/_animal_species_select.html;
+// RHA-103): a specific species fills the same form's common/scientific name fields, which stay
+// editable afterwards. Catch-alls and "none" carry no data-common, so they leave the names alone.
+function onAnimalSpeciesPick(select) {
+    const option = select.options[select.selectedIndex];
+    if (!option || !option.dataset.common) return;
+    _setNamedField(select.form, "common", option.dataset.common);
+    _setNamedField(select.form, "scientific", option.dataset.scientific || "");
+}
+
 function populateSpeciesProfileSelect(select, enclosureType) {
     if (!select) return;
     const groups = SPECIES_PROFILE_GROUPS[enclosureType] || [];

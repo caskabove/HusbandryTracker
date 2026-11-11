@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from db.db import get_connection
 from schemas import enclosure_types as et
 from schemas.species_profile_kb import (
+    CATCH_ALL_PROFILE_KEYS,
     GENERIC_PROFILE_OPTIONS,
     PROFILE_CATEGORIES,
     ProfileCategory,
@@ -188,3 +189,59 @@ def species_profile_js_context() -> dict[str, str]:
         "species_profiles_json": json.dumps(profiles),
         "species_profile_groups_json": json.dumps(groups_by_enclosure_type),
     }
+
+
+# ---------------------------------------------------------------------------
+# Add/Edit Animal species picker (RHA-103; see CONTEXT.md: Species Profile)
+# ---------------------------------------------------------------------------
+
+OTHER_GROUP_LABEL = "Other / general"
+
+
+def animal_species_groups() -> list[dict]:
+    """Option groups for the Add/Edit Animal species picker, read live from the Knowledge Base:
+    one group per category holding its specific named species, in Knowledge Base order, then one
+    "Other / general" group of every catch-all (the "(other/unlisted)" rows and the general tank
+    types). Every option is {"key", "label", "common", "scientific"}; catch-alls carry no
+    common/scientific, so picking one doesn't overwrite the Animal's names.
+
+    Unlike the Enclosure form's picker this isn't filtered by Enclosure Type: an Animal's species
+    is a fact about the Animal, and Add Animal can pick any Enclosure."""
+    groups: list[dict] = []
+    other: list[dict] = []
+    for category in PROFILE_CATEGORIES:
+        named = []
+        for row in list_profiles(category.key):
+            if row["profile_key"] in CATCH_ALL_PROFILE_KEYS:
+                other.append({"key": row["profile_key"], "label": row["common_name"], "common": None, "scientific": None})
+            else:
+                named.append({"key": row["profile_key"], "label": row["common_name"],
+                              "common": row["common_name"], "scientific": row["scientific_name"]})
+        if named:
+            groups.append({"label": category.label, "options": named})
+    other.extend({"key": key, "label": label, "common": None, "scientific": None}
+                 for key, (label, _type) in GENERIC_PROFILE_OPTIONS.items())
+    groups.append({"label": OTHER_GROUP_LABEL, "options": other})
+    return groups
+
+
+def linked_species(profile_key: str | None) -> dict | None:
+    """The specific named Knowledge Base species an Animal is linked to, or None. Genes are defined
+    per specific species (see CONTEXT.md: Gene), so this is the gate for Genetics and Morph.
+
+    None for: no pick, a catch-all ("Snake (other/unlisted)", "Saltwater — Reef", ...), or a key
+    whose Knowledge Base row has since been deleted. Returns {"category", "id", "profile_key",
+    "common_name", "scientific_name"}. profile_key is unique within a category's table only; the
+    seed data has no cross-category duplicates, and the first category in PROFILE_CATEGORIES
+    order wins if a user ever creates one."""
+    if not profile_key or profile_key in CATCH_ALL_PROFILE_KEYS or profile_key in GENERIC_PROFILE_OPTIONS:
+        return None
+    with get_connection() as conn:
+        for category in PROFILE_CATEGORIES:
+            row = conn.execute(
+                f"SELECT id, profile_key, common_name, scientific_name FROM {category.table} WHERE profile_key = ?",
+                (profile_key,),
+            ).fetchone()
+            if row is not None:
+                return {"category": category.key, **dict(row)}
+    return None

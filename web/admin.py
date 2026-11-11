@@ -202,6 +202,7 @@ def admin_app(request: Request):
         "plug_groups": q.list_plug_groups(),
         "settings": q.get_settings(),
         "users": authq.list_users(), "current_user": request.state.user,
+        "species_groups": skq.animal_species_groups(),
         "error": request.query_params.get("error"),
         "notice": request.query_params.get("notice"),
     }
@@ -521,13 +522,14 @@ def admin_create_animal_global(
     scientific: str = Form(""),
     dob: str = Form(""),
     sex: str = Form("unknown"),
+    species_profile: str = Form(""),
 ):
     """The global Add Animal form on Admin (see admin_app.html; ADR 0050) — same as the Enclosure
     page's own Add Animal used to be, just with its own Enclosure picker instead of being scoped to
     one Enclosure via the URL."""
     if not enclosure_id:
         return RedirectResponse(url=f"/admin/app/?error={quote('Pick an Enclosure.')}", status_code=303)
-    q.create_animal(int(enclosure_id), name, common, scientific, dob, sex=sex)
+    q.create_animal(int(enclosure_id), name, common, scientific, dob, species_profile, sex=sex)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 
@@ -609,6 +611,7 @@ def admin_edit_animal(request: Request, animal_id: int):
         request, "admin_animal_edit.html",
         {
             "animal": animal, "enclosures": q.list_enclosures(),
+            "species_groups": skq.animal_species_groups(),
             "logs": q.list_animal_logs(animal_id),
             "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
             "shed_logs": q.list_shed_logs(animal_id),
@@ -628,8 +631,9 @@ def admin_update_animal(
     scientific: str = Form(""),
     dob: str = Form(""),
     sex: str = Form("unknown"),
+    species_profile: str = Form(""),
 ):
-    q.update_animal(animal_id, enclosure_id, name, common, scientific, dob, sex)
+    q.update_animal(animal_id, enclosure_id, name, common, scientific, dob, sex, species_profile)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
 
 

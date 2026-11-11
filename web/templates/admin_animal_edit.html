@@ -46,6 +46,7 @@
                     </select>
                 </label>
                 <label>Name <input type="text" name="name" value="{{ animal.name }}" required></label>
+                {% with selected_species = animal.species_profile %}{% include "_animal_species_select.html" %}{% endwith %}
                 <label>Common species <input type="text" name="common" value="{{ animal.species_common or '' }}"></label>
                 <label>Scientific name <input type="text" name="scientific" value="{{ animal.species_scientific or '' }}"></label>
                 <label>DOB <input type="text" name="dob" value="{{ animal.dob or '' }}" placeholder="YYYY-MM-DD or YYYY-MM"></label>

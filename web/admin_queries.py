@@ -468,13 +468,14 @@ def create_animal(
     until picked from the Enclosure's Admin page; the user can always flip any Animal's flag
     either way regardless of this default.
 
-    species_profile (see CONTEXT.md: Species Profile; RHA-94) is only ever passed by the Setup
-    Wizard, which carries its Enclosure step's pick through to this call — Admin's own "Add Animal"
-    form has no Species Profile picker, so it always leaves this NULL.
+    species_profile (see CONTEXT.md: Species Profile) comes from Admin's Add Animal species picker
+    (RHA-103), or from the Setup/Add New Pet Wizard, which carries its Enclosure step's pick
+    through to this call (RHA-94).
 
     sex (see CONTEXT.md: Animal; RHA-102) defaults to Unknown; raises ValueError for anything
     outside ANIMAL_SEXES."""
     sex = _validated_sex(sex)
+    species_profile = (species_profile or "").strip() or None
     with get_connection() as conn:
         (shown_count,) = conn.execute(
             "SELECT COUNT(*) FROM animal WHERE enclosure_id = ? AND show_on_dashboard = 1", (enclosure_id,)
@@ -666,14 +667,17 @@ def list_animals() -> list[dict]:
 
 
 def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | None,
-                   scientific: str | None, dob: str | None, sex: str = "unknown") -> None:
-    """Re-sexing is always allowed and never deletes anything (see CONTEXT.md: Animal; RHA-102)."""
+                   scientific: str | None, dob: str | None, sex: str = "unknown",
+                   species_profile: str | None = None) -> None:
+    """Re-sexing is always allowed and never deletes anything (see CONTEXT.md: Animal; RHA-102).
+    species_profile is the Edit form's Knowledge Base species pick (RHA-103); blank clears it."""
     sex = _validated_sex(sex)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ?, sex = ? "
-            "WHERE id = ?",
-            (enclosure_id, name, common or None, scientific or None, dob or None, sex, animal_id),
+            "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ?, sex = ?, "
+            "species_profile = ? WHERE id = ?",
+            (enclosure_id, name, common or None, scientific or None, dob or None, sex,
+             (species_profile or "").strip() or None, animal_id),
         )
 
 

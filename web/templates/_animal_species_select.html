@@ -1,0 +1,23 @@
+{# Knowledge Base species picker for Add/Edit Animal (see CONTEXT.md: Species Profile; RHA-103).
+   Needs `species_groups` (web/species_kb_queries.py's animal_species_groups()); set
+   `selected_species` to pre-select. Picking a specific species fills the form's common/scientific
+   name fields, which stay editable; catch-alls fill nothing. A saved key that's no longer in the
+   Knowledge Base stays selected, so saving the form doesn't silently drop it. #}
+{% set _selected = selected_species or "" %}
+{% set _offered = namespace(found=(_selected == "")) %}
+<label>Species (Knowledge Base)
+    <select name="species_profile" onchange="onAnimalSpeciesPick(this)">
+        <option value="">— none / I'll enter my own —</option>
+        {% for group in species_groups %}
+        <optgroup label="{{ group.label }}">
+            {% for o in group.options %}
+            {% if o.key == _selected %}{% set _offered.found = true %}{% endif %}
+            <option value="{{ o.key }}"{% if o.common %} data-common="{{ o.common }}"{% endif %}{% if o.scientific %} data-scientific="{{ o.scientific }}"{% endif %}{% if o.key == _selected %} selected{% endif %}>{{ o.label }}</option>
+            {% endfor %}
+        </optgroup>
+        {% endfor %}
+        {% if not _offered.found %}
+        <option value="{{ _selected }}" selected>{{ _selected }} (no longer in the Knowledge Base)</option>
+        {% endif %}
+    </select>
+</label>

@@ -137,6 +137,12 @@ def categories_for_enclosure_type(enclosure_type: str) -> tuple[ProfileCategory,
 # CONTEXT.md: Species Profile). Keys/labels unchanged from the pre-Knowledge-Base SPECIES_PROFILES
 # literal in web/static/app.js (ADR 0054) other than dropping its old placeholder "Insect" entry,
 # now a real category above.
+# Knowledge Base rows that are catch-alls rather than one specific species ("Snake (other/unlisted)"
+# etc., seeded in db/schema.sql). They stay pickable, but like GENERIC_PROFILE_OPTIONS below they
+# never count as a linked species for Genetics (see CONTEXT.md: Species Profile, Gene; RHA-103).
+# profile_key never changes when a row is renamed, so these keys are stable.
+CATCH_ALL_PROFILE_KEYS: frozenset[str] = frozenset({"snake_other", "lizard_other", "insect"})
+
 GENERIC_PROFILE_OPTIONS: dict[str, tuple[str, str]] = {
     # key: (label, enclosure_type)
     "tortoise": ("Tortoise", "basic"),
