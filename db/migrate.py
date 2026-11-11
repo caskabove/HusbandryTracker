@@ -34,7 +34,7 @@ from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
-from db.migrations import LATEST_VERSION, MIGRATIONS
+from db.migrations import LATEST_VERSION, MIGRATIONS, SEEDS
 from db.migrations._common import SCHEMA_PATH
 
 # Another process already migrating? Wait for it, up to this long, before giving up.
@@ -136,6 +136,8 @@ def _create_fresh(db_path: Path) -> None:
     try:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.executescript(SCHEMA_PATH.read_text())
+        for seed in SEEDS:  # seed data that, on an existing database, a migration adds
+            seed(conn)
         conn.execute(f"PRAGMA user_version = {LATEST_VERSION}")
         conn.commit()
     finally:

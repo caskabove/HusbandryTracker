@@ -842,3 +842,20 @@ VALUES
     ('malaysian_trumpet_snail', 'Malaysian Trumpet Snail', 'Melanoides tuberculata', 70, 80, 7.0, 8.0, 6, 15, 3, 8, 'Detritivore — substrate scavenger', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 5),
     ('dwarf_crayfish', 'Dwarf Crayfish (CPO)', 'Cambarellus patzcuarensis', 68, 78, 6.5, 8.0, 6, 15, 3, 8, 'Omnivore scavenger', 'Copper-sensitive; semi-aggressive toward small tankmates.', 'Care-sheet consensus (hobbyist reference ranges).', 6),
     ('assassin_snail', 'Assassin Snail', 'Clea helena', 70, 78, 7.0, 8.0, 8, 15, 3, 8, 'Carnivore — eats pest snails', 'Copper-sensitive — avoid copper-based medications.', 'Care-sheet consensus (hobbyist reference ranges).', 7);
+
+-- Gene Catalog (see CONTEXT.md: Gene, Gene Catalog; RHA-104): the Genes each specific Knowledge
+-- Base species can carry, editable from App Admin. A Gene points at its species by Knowledge Base
+-- category key + profile_key (stable across renames; the 7 KB tables share no single id to
+-- reference). Names are unique per species, case-insensitively; the same name in another species
+-- is a different Gene. Seeded once by db/migrations/m0028_gene_catalog.py, not here, so a deleted
+-- seed Gene stays deleted. inheritance must match web/gene_catalog_queries.py's INHERITANCES.
+CREATE TABLE IF NOT EXISTS gene (
+    id                  INTEGER PRIMARY KEY,
+    species_category    TEXT NOT NULL,
+    species_key         TEXT NOT NULL,
+    name                TEXT NOT NULL COLLATE NOCASE,
+    inheritance         TEXT NOT NULL CHECK (inheritance IN ('recessive', 'co_dominant', 'dominant')),
+    notes               TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (species_category, species_key, name)
+);

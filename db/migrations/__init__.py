@@ -48,6 +48,7 @@ from db.migrations import m0024_species_profile_kb
 from db.migrations import m0025_plug_timer_multi_cycle
 from db.migrations import m0026_user_auth
 from db.migrations import m0027_animal_sex
+from db.migrations import m0028_gene_catalog
 
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "action_tracking", m0001_action_tracking.migrate),
@@ -77,8 +78,16 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (25, "plug_timer_multi_cycle", m0025_plug_timer_multi_cycle.migrate),
     (26, "user_auth", m0026_user_auth.migrate),
     (27, "animal_sex", m0027_animal_sex.migrate),
+    (28, "gene_catalog", m0028_gene_catalog.migrate),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]
+
+# Seed-data steps a migration owns. A brand-new database is built straight from schema.sql at
+# LATEST_VERSION without running any migration, so db/migrate.py runs these on it instead; an
+# existing database gets them from the migration itself. Each must be idempotent.
+SEEDS: list[Callable[[sqlite3.Connection], object]] = [
+    m0028_gene_catalog.seed,
+]
 
 assert [v for v, _, _ in MIGRATIONS] == list(range(1, LATEST_VERSION + 1)), "migration numbers must be 1..N with no gaps"

@@ -200,7 +200,8 @@ OTHER_GROUP_LABEL = "Other / general"
 
 def animal_species_groups() -> list[dict]:
     """Option groups for the Add/Edit Animal species picker, read live from the Knowledge Base:
-    one group per category holding its specific named species, in Knowledge Base order, then one
+    one group per category ({"category", "label", "options"}) holding its specific named species,
+    in Knowledge Base order, then one
     "Other / general" group of every catch-all (the "(other/unlisted)" rows and the general tank
     types). Every option is {"key", "label", "common", "scientific"}; catch-alls carry no
     common/scientific, so picking one doesn't overwrite the Animal's names.
@@ -218,10 +219,10 @@ def animal_species_groups() -> list[dict]:
                 named.append({"key": row["profile_key"], "label": row["common_name"],
                               "common": row["common_name"], "scientific": row["scientific_name"]})
         if named:
-            groups.append({"label": category.label, "options": named})
+            groups.append({"category": category.key, "label": category.label, "options": named})
     other.extend({"key": key, "label": label, "common": None, "scientific": None}
                  for key, (label, _type) in GENERIC_PROFILE_OPTIONS.items())
-    groups.append({"label": OTHER_GROUP_LABEL, "options": other})
+    groups.append({"category": None, "label": OTHER_GROUP_LABEL, "options": other})
     return groups
 
 

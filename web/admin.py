@@ -24,6 +24,7 @@ from schemas import enclosure_types as et
 from schemas import species_profile_kb as skb
 from web import admin_queries as q
 from web import auth_queries as authq
+from web import gene_catalog_queries as gcq
 from web import graphs_queries as gq
 from web import plugin_catalog
 from web import species_kb_queries as skq
@@ -1961,3 +1962,52 @@ def admin_delete_knowledge_base_profile(category_key: str, profile_id: int):
     skb.category_by_key(category_key)  # raises ValueError (-> 500) on a bad category; never user-reachable
     skq.delete_profile(category_key, profile_id)
     return RedirectResponse(url=f"/admin/app/knowledge-base#kb-{category_key}", status_code=303)
+
+
+@router.get("/app/gene-catalog")
+def admin_gene_catalog(request: Request):
+    """The Gene Catalog (see CONTEXT.md: Gene, Gene Catalog; RHA-104): every species' Genes on one
+    page, inline-editable, with the Knowledge Base page's live search (filterKnowledgeBase)."""
+    return templates.TemplateResponse(
+        request, "admin_gene_catalog.html",
+        {
+            "genes_by_species": gcq.list_genes_by_species(),
+            "species_choices": gcq.species_choices(),
+            "inheritances": gcq.INHERITANCES, "inheritance_labels": gcq.INHERITANCE_LABELS,
+            "error": request.query_params.get("error"),
+        }
+    )
+
+
+def _gene_catalog_redirect(error: str | None = None, anchor: str = "") -> RedirectResponse:
+    query = f"?error={quote(error)}" if error else ""
+    return RedirectResponse(url=f"/admin/app/gene-catalog{query}{anchor}", status_code=303)
+
+
+@router.post("/app/gene-catalog/create")
+def admin_create_gene(species: str = Form(""), name: str = Form(""), inheritance: str = Form(""), notes: str = Form("")):
+    """species arrives as "<category>:<profile_key>" from the Add Gene form's picker."""
+    category, _, species_key = species.partition(":")
+    try:
+        gcq.create_gene(category, species_key, name, inheritance, notes)
+    except ValueError as exc:
+        return _gene_catalog_redirect(str(exc), "#gene-new")
+    return _gene_catalog_redirect(anchor=f"#genes-{category}-{species_key}")
+
+
+@router.post("/app/gene-catalog/{gene_id}/update")
+def admin_update_gene(gene_id: int, name: str = Form(""), inheritance: str = Form(""), notes: str = Form("")):
+    try:
+        gcq.update_gene(gene_id, name, inheritance, notes)
+    except ValueError as exc:
+        return _gene_catalog_redirect(str(exc))
+    return _gene_catalog_redirect()
+
+
+@router.post("/app/gene-catalog/{gene_id}/delete")
+def admin_delete_gene(gene_id: int):
+    try:
+        gcq.delete_gene(gene_id)
+    except ValueError as exc:
+        return _gene_catalog_redirect(str(exc))
+    return _gene_catalog_redirect()

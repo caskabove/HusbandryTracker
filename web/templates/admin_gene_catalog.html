@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker Gene Catalog</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Gene Catalog</h1>
+        {% set nav_current = "app_admin" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="admin-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        <p><a href="/admin/app/">&larr; Back to Admin</a></p>
+
+        <p class="empty">The Genes each species can carry (see CONTEXT.md: Gene, Gene Catalog). A
+            Gene belongs to one specific Knowledge Base species: a leopard gecko "Albino" and a ball
+            python "Albino" are different Genes. Polygenic looks like Harlequin or Tangerine aren't
+            Genes; describe those with a Morph on the Animal instead. A Gene that Animals or Lineage
+            Entries use can't be removed.</p>
+
+        <section class="admin-card" id="gene-new">
+            <h2>+ Add Gene</h2>
+            <form method="post" action="/admin/app/gene-catalog/create" class="admin-form">
+                <label>Species
+                    <select name="species" required>
+                        <option value="">— pick a species —</option>
+                        {% for group in species_choices %}
+                        <optgroup label="{{ group.label }}">
+                            {% for o in group.options %}
+                            <option value="{{ group.category }}:{{ o.key }}">{{ o.label }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Gene name <input type="text" name="name" placeholder="e.g. Clown" required></label>
+                <label>Inheritance
+                    <select name="inheritance">
+                        {% for value in inheritances %}
+                        <option value="{{ value }}">{{ inheritance_labels[value] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Notes <input type="text" name="notes" placeholder="optional, e.g. Super form name"></label>
+                <button type="submit">Add Gene</button>
+            </form>
+        </section>
+
+        <div class="kb-search-bar">
+            <input type="search" placeholder="Search Genes by name, species or notes…"
+                   oninput="filterKnowledgeBase(this.value)" aria-label="Search Gene Catalog">
+        </div>
+
+        {% for species in genes_by_species %}
+        <section class="admin-card kb-category" id="genes-{{ species.category }}-{{ species.key }}">
+            <h2>{{ species.label }}{% if species.scientific %} <em>({{ species.scientific }})</em>{% endif %}</h2>
+
+            {% for gene in species.genes %}
+            <form id="gene-{{ gene.id }}-update" method="post" action="/admin/app/gene-catalog/{{ gene.id }}/update"></form>
+            {% endfor %}
+
+            <table class="admin-table">
+                <thead><tr><th>Gene</th><th>Inheritance</th><th>Notes</th><th></th></tr></thead>
+                <tbody>
+                    {% for gene in species.genes %}
+                    <tr data-search="{{ (gene.name ~ ' ' ~ species.label ~ ' ' ~ (gene.notes or ''))|lower }}">
+                        <td><input form="gene-{{ gene.id }}-update" class="kb-name" type="text" name="name" value="{{ gene.name }}" required></td>
+                        <td>
+                            <select form="gene-{{ gene.id }}-update" name="inheritance">
+                                {% for value in inheritances %}
+                                <option value="{{ value }}"{% if value == gene.inheritance %} selected{% endif %}>{{ inheritance_labels[value] }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td><input form="gene-{{ gene.id }}-update" class="kb-text" type="text" name="notes" value="{{ gene.notes or '' }}"></td>
+                        <td>
+                            <button form="gene-{{ gene.id }}-update" type="submit">save</button> ·
+                            <form method="post" action="/admin/app/gene-catalog/{{ gene.id }}/delete" class="inline-form">
+                                <button type="submit" class="danger-small">remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        {% else %}
+        <p class="empty">No Genes yet. Add one above.</p>
+        {% endfor %}
+    </main>
+
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>
