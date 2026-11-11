@@ -340,7 +340,8 @@
                                openQuickLogDialog()/dismissQuickLogDialog(). #}
                             <a href="#" onclick="openQuickLogDialog('quick-log-modal-{{ a.id }}'); return false;">quick log</a> ·
                             <a href="/admin/animals/{{ a.id }}/edit">edit</a> ·
-                            <form method="post" action="/admin/animals/{{ a.id }}/delete" class="inline-form">
+                            <form method="post" action="/admin/animals/{{ a.id }}/delete" class="inline-form"
+                                  {% if a.lineages_linking %}data-confirm="{{ a.name }} is a parent in {{ a.lineages_linking }} Lineage{{ '' if a.lineages_linking == 1 else 's' }}; {{ 'it' if a.lineages_linking == 1 else 'they' }}'ll keep a snapshot of {{ a.name }}. Remove {{ a.name }}?" onsubmit="return confirm(this.dataset.confirm);"{% endif %}>
                                 <input type="hidden" name="enclosure_id" value="{{ enclosure.id }}">
                                 <button type="submit" class="danger-small">remove</button>
                             </form>

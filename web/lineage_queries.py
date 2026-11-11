@@ -312,3 +312,40 @@ def copy_lineage(animal_id: int, source_animal_id: int, replace: bool = False) -
     with get_connection() as conn:
         conn.execute("DELETE FROM lineage_entry WHERE child_animal_id = ?", (animal_id,))
         _copy_children(conn, "child_animal_id", source_animal_id, animal_id, None)
+
+
+# --- Snapshot on delete (RHA-108) ----------------------------------------------------------------
+
+def lineages_linking(animal_id: int) -> int:
+    """How many Animals' Lineages link to this Animal anywhere in their tree (directly or through a
+    described ancestor), i.e. how many trees deleting it will convert to a snapshot."""
+    with get_connection() as conn:
+        return conn.execute(
+            """WITH RECURSIVE up(id, child_animal_id, child_entry_id) AS (
+                   SELECT id, child_animal_id, child_entry_id FROM lineage_entry WHERE linked_animal_id = ?
+                   UNION
+                   SELECT le.id, le.child_animal_id, le.child_entry_id FROM lineage_entry le JOIN up ON le.id = up.child_entry_id
+               ) SELECT COUNT(DISTINCT child_animal_id) FROM up WHERE child_animal_id IS NOT NULL""",
+            (animal_id,),
+        ).fetchone()[0]
+
+
+def snapshot_links_to(conn, animal_id: int) -> int:
+    """Turns every Lineage Entry linking to this Animal into a described snapshot of it: its name,
+    Morph, Genetics and its own Lineage copied beneath (linked ancestors in that Lineage stay
+    linked). Each linking entry gets its own copy. Runs on the caller's connection so it shares the
+    delete's transaction. Returns the number of entries converted."""
+    animal = conn.execute("SELECT * FROM animal WHERE id = ?", (animal_id,)).fetchone()
+    if animal is None:
+        return 0
+    entries = [r["id"] for r in conn.execute("SELECT id FROM lineage_entry WHERE linked_animal_id = ?", (animal_id,))]
+    for entry_id in entries:
+        conn.execute("UPDATE lineage_entry SET linked_animal_id = NULL, name = ?, morph = ? WHERE id = ?",
+                     (animal["name"], animal["morph"], entry_id))
+        conn.execute(
+            """INSERT INTO lineage_entry_gene (entry_id, gene_id, state, percent, evidence)
+               SELECT ?, gene_id, state, percent, evidence FROM animal_gene WHERE animal_id = ?""",
+            (entry_id, animal_id),
+        )
+        _copy_children(conn, "child_animal_id", animal_id, None, entry_id)
+    return len(entries)

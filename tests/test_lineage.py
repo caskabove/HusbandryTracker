@@ -311,3 +311,69 @@ def test_copy_route_and_edit_page_offer(temp_db, enclosure):
     assert "error=" in response.headers["location"]
     page = _html(admin_routes.admin_edit_animal(_request(f"/admin/animals/{mate}/edit"), mate))
     assert "Replace the current Lineage" in page
+
+
+# --- Snapshot on delete (RHA-108) ------------------------------------------------------------------
+
+def test_deleting_a_linked_parent_snapshots_its_morph_genetics_and_lineage(temp_db, enclosure):
+    bob = _animal(temp_db, enclosure, "Bob", "male")
+    old_bob = _animal(temp_db, enclosure, "Old Bob", "male")
+    baby = _animal(temp_db, enclosure, "Baby")
+    genq.set_morph(bob, "Killer Clown")
+    genq.add_animal_gene(bob, _gene(temp_db, "Clown"), "visual")
+    linq.link_parent(bob, None, "sire", old_bob)
+    bob_dam = linq.describe_parent(bob, None, "dam", "Breeder Dam", None)
+    linq.add_entry_gene(bob, bob_dam, _gene(temp_db, "Clown"), "het")
+    linq.link_parent(baby, None, "sire", bob)
+    live_line = linq.lineage_tree(baby)[0]["line"]
+
+    q.delete_animal(bob)
+    (sire,) = linq.lineage_tree(baby)
+    assert (sire["kind"], sire["name"], sire["line"]) == ("described", "Bob", live_line)
+    assert _names(sire["parents"]) == [("sire", "Old Bob"), ("dam", "Breeder Dam")]
+    assert sire["parents"][0]["kind"] == "linked"  # still-living ancestors stay linked
+    assert "het Clown" in sire["parents"][1]["line"]
+    assert linq.root_animal_id(sire["parents"][1]["entry_id"]) == baby
+
+
+def test_each_child_gets_its_own_snapshot(temp_db, enclosure):
+    bob = _animal(temp_db, enclosure, "Bob", "male")
+    a, b = _animal(temp_db, enclosure, "A"), _animal(temp_db, enclosure, "B")
+    linq.describe_parent(bob, None, "dam", "Bob's Dam", None)
+    linq.link_parent(a, None, "sire", bob)
+    linq.link_parent(b, None, "sire", bob)
+    assert linq.lineages_linking(bob) == 2
+
+    q.delete_animal(bob)
+    sa, sb = linq.lineage_tree(a)[0], linq.lineage_tree(b)[0]
+    assert sa["parents"][0]["entry_id"] != sb["parents"][0]["entry_id"]
+    linq.remove_entry(a, sa["parents"][0]["entry_id"])
+    assert _names(linq.lineage_tree(b)[0]["parents"]) == [("dam", "Bob's Dam")]
+
+
+def test_deleting_a_grandparent_linked_through_a_linked_parent_keeps_every_tree(temp_db, enclosure):
+    grand = _animal(temp_db, enclosure, "Grand", "male")
+    bob = _animal(temp_db, enclosure, "Bob", "male")
+    baby = _animal(temp_db, enclosure, "Baby")
+    linq.link_parent(bob, None, "sire", grand)
+    linq.link_parent(baby, None, "sire", bob)
+    dam = linq.describe_parent(baby, None, "dam", "D", None)
+    linq.link_parent(baby, dam, "sire", grand)  # Grand also sits under a described entry
+    assert linq.lineages_linking(grand) == 2  # Bob's and Baby's
+
+    q.delete_animal(grand)
+    assert temp_db.execute("SELECT COUNT(*) FROM lineage_entry WHERE linked_animal_id IS NULL AND name = 'Grand'").fetchone()[0] == 2
+    sire, dam_node = linq.lineage_tree(baby)
+    assert sire["kind"] == "linked" and _names(sire["parents"]) == [("sire", "Grand")]
+    assert sire["parents"][0]["kind"] == "described"
+    assert _names(dam_node["parents"]) == [("sire", "Grand")] and dam_node["parents"][0]["kind"] == "described"
+    assert linq.lineage_tree(bob)[0]["name"] == "Grand"
+
+
+def test_enclosure_remove_button_warns_about_snapshots(temp_db, enclosure):
+    bob = _animal(temp_db, enclosure, "Bob", "male")
+    baby = _animal(temp_db, enclosure, "Baby")
+    linq.link_parent(baby, None, "sire", bob)
+    page = _html(admin_routes.admin_enclosure_detail(_request(f"/admin/enclosures/{enclosure}"), enclosure))
+    assert "Bob is a parent in 1 Lineage; it'll keep a snapshot of Bob. Remove Bob?" in page
+    assert page.count("data-confirm=") == 1

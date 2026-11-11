@@ -16,6 +16,7 @@ from plugins.govee_ble import identity as govee_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
 from web import genetics_queries as genq
+from web import lineage_queries as linq
 from web import image_storage as img
 from web.outbox import write_command
 from web.status import nearest_target_time
@@ -128,6 +129,8 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             # Genetics and Morph in standard notation (see CONTEXT.md: Genetics; RHA-105), None
             # when they don't apply to this Animal.
             animal["genetics_line"] = genq.genetics_line(animal)
+            # Lineages that will keep a snapshot of it if it is removed (RHA-108).
+            animal["lineages_linking"] = linq.lineages_linking(animal["id"])
         # Recent Activity (see CONTEXT.md: Recent Activity; grill-me decision) — the Animals card's
         # quick-view strip, merged across every Animal in this Enclosure.
         enclosure["activity"] = list_enclosure_activity(enclosure_id)
@@ -501,15 +504,11 @@ def _validated_sex(sex: str | None) -> str:
 
 
 def delete_animal(animal_id: int) -> None:
-    """Lineage Entries linking to this Animal as a parent keep its name and become described
-    (see CONTEXT.md: Lineage), so offspring trees don't lose the slot. RHA-108 extends this into a
-    full snapshot (Morph, Genetics and its own Lineage)."""
+    """Lineage Entries linking to this Animal as a parent first become described snapshots of it
+    (name, Morph, Genetics and its own Lineage; see CONTEXT.md: Lineage; RHA-108), in the same
+    transaction, so offspring trees stay intact. Its own logs etc. go by ON DELETE CASCADE."""
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE lineage_entry SET name = (SELECT name FROM animal WHERE id = ?), linked_animal_id = NULL "
-            "WHERE linked_animal_id = ?",
-            (animal_id, animal_id),
-        )
+        linq.snapshot_links_to(conn, animal_id)
         conn.execute("DELETE FROM animal WHERE id = ?", (animal_id,))
 
 
