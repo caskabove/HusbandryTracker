@@ -46,6 +46,9 @@ class AnimalBase(BaseModel):
     # Sex (see CONTEXT.md: Animal; RHA-102): set through create_animal()/update_animal(), Unknown by
     # default, always editable.
     sex: AnimalSex = AnimalSex.UNKNOWN
+    # Morph (see CONTEXT.md: Morph; RHA-105): set through web/genetics_queries.py's set_morph(), not
+    # create/update, same "listed here but not through create/update" reasoning as above.
+    morph: str | None = None
 
 
 class AnimalCreate(AnimalBase):

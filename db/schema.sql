@@ -183,7 +183,8 @@ CREATE TABLE IF NOT EXISTS animal (
     -- Sex (see CONTEXT.md: Animal; RHA-102) on every Animal, corals and fish included. Always
     -- editable, since mis-sexing is common; Unknown until someone says otherwise. Must match
     -- web/queries.py's ANIMAL_SEXES.
-    sex                 TEXT NOT NULL DEFAULT 'unknown' CHECK (sex IN ('male', 'female', 'unknown'))
+    sex                 TEXT NOT NULL DEFAULT 'unknown' CHECK (sex IN ('male', 'female', 'unknown')),
+    morph               TEXT  -- Morph (CONTEXT.md: Morph; RHA-105); NULL = named from its Visual genes
 );
 
 -- A manually-logged, backdatable Animal Log entry (see CONTEXT.md: Animal Log) — Weight/Length/
@@ -859,3 +860,19 @@ CREATE TABLE IF NOT EXISTS gene (
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (species_category, species_key, name)
 );
+
+-- An Animal's Genetics (see CONTEXT.md: Genetics; RHA-105): one row per Gene it carries, with its
+-- Gene State. percent is set only for a Possible Het (1-99); evidence only for a Het. Which states a
+-- Gene allows follows from its Inheritance and is enforced in web/genetics_queries.py. Always hand-
+-- entered, never derived from Lineage. Deleting a Gene still listed here is blocked
+-- (web/gene_catalog_queries.py's GENE_REFERENCES); deleting the Animal removes its rows.
+CREATE TABLE IF NOT EXISTS animal_gene (
+    id          INTEGER PRIMARY KEY,
+    animal_id   INTEGER NOT NULL REFERENCES animal(id) ON DELETE CASCADE,
+    gene_id     INTEGER NOT NULL REFERENCES gene(id),
+    state       TEXT NOT NULL CHECK (state IN ('visual', 'super', 'het', 'possible_het')),
+    percent     INTEGER CHECK (percent IS NULL OR percent BETWEEN 1 AND 99),
+    evidence    TEXT CHECK (evidence IS NULL OR evidence IN ('claimed', 'proven')),
+    UNIQUE (animal_id, gene_id)
+);
+CREATE INDEX IF NOT EXISTS idx_animal_gene_gene ON animal_gene(gene_id);

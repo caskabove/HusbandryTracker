@@ -323,6 +323,7 @@
                         <a href="/admin/animals/{{ a.id }}" class="animal-card-name">{{ a.name }}</a>
                         <span class="animal-card-species">{{ a.species_common }}{% if a.species_scientific %} <em>({{ a.species_scientific }})</em>{% endif %}</span>
                         <span class="animal-card-dob">DOB: {{ a.dob or "unknown" }}</span>
+                        {% if a.genetics_line %}<span class="animal-card-genetics">{{ a.genetics_line }}</span>{% endif %}
                         <label class="animal-card-dashboard">
                             {# Show on Dashboard (see CONTEXT.md: Animal) — auto-submits on change,
                                same pattern as this page's other single-field quick toggles. #}

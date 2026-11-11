@@ -25,6 +25,7 @@ from schemas import species_profile_kb as skb
 from web import admin_queries as q
 from web import auth_queries as authq
 from web import gene_catalog_queries as gcq
+from web import genetics_queries as genq
 from web import graphs_queries as gq
 from web import plugin_catalog
 from web import species_kb_queries as skq
@@ -594,6 +595,7 @@ def admin_animal_detail(request: Request, animal_id: int, page: int = 1):
         request, "admin_animal.html",
         {
             "animal": animal, "enclosure_name": q.get_enclosure_name(animal["enclosure_id"]),
+            "genetics_line": genq.genetics_line(animal),
             "activity": activity, "page": page, "has_more": has_more,
             "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
             "shed_completeness": SHED_COMPLETENESS, "shed_completeness_labels": SHED_COMPLETENESS_LABELS,
@@ -613,6 +615,7 @@ def admin_edit_animal(request: Request, animal_id: int):
         {
             "animal": animal, "enclosures": q.list_enclosures(),
             "species_groups": skq.animal_species_groups(),
+            **_genetics_context(animal),
             "logs": q.list_animal_logs(animal_id),
             "animal_conditions": ANIMAL_CONDITIONS, "animal_condition_labels": ANIMAL_CONDITION_LABELS,
             "shed_logs": q.list_shed_logs(animal_id),
@@ -634,8 +637,77 @@ def admin_update_animal(
     sex: str = Form("unknown"),
     species_profile: str = Form(""),
 ):
-    q.update_animal(animal_id, enclosure_id, name, common, scientific, dob, sex, species_profile)
+    try:
+        q.update_animal(animal_id, enclosure_id, name, common, scientific, dob, sex, species_profile)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/admin/animals/{animal_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}", status_code=303)
+
+
+def _genetics_context(animal: dict) -> dict:
+    """The Edit Animal page's Genetics & Morph card (see CONTEXT.md: Genetics, Morph; RHA-105).
+    genetics_species is None when they don't apply, and the card is left out."""
+    species = genq.genetics_species(animal)
+    genetics = genq.list_animal_genetics(animal["id"]) if species else []
+    return {
+        "genetics_species": species, "genetics": genetics,
+        "genetics_line": genq.genetics_line(animal, genetics) if species else None,
+        "species_genes": genq.species_genes(animal) if species else [],
+        "gene_states": genq.STATES, "gene_state_labels": genq.STATE_LABELS,
+        "valid_states": genq.VALID_STATES,
+        "evidence_options": genq.EVIDENCE, "evidence_labels": genq.EVIDENCE_LABELS,
+        "inheritances": gcq.INHERITANCES, "inheritance_labels": gcq.INHERITANCE_LABELS,
+    }
+
+
+def _genetics_redirect(animal_id: int, error: str | None = None) -> RedirectResponse:
+    query = f"?error={quote(error)}" if error else ""
+    return RedirectResponse(url=f"/admin/animals/{animal_id}/edit{query}#genetics", status_code=303)
+
+
+@router.post("/animals/{animal_id}/morph")
+def admin_set_morph(animal_id: int, morph: str = Form("")):
+    try:
+        genq.set_morph(animal_id, morph)
+    except ValueError as exc:
+        return _genetics_redirect(animal_id, str(exc))
+    return _genetics_redirect(animal_id)
+
+
+@router.post("/animals/{animal_id}/genetics/add")
+def admin_add_animal_gene(
+    animal_id: int,
+    gene_id: str = Form(""),
+    new_gene_name: str = Form(""),
+    new_gene_inheritance: str = Form(""),
+    state: str = Form(""),
+    percent: str = Form(""),
+    evidence: str = Form(""),
+):
+    """gene_id is a catalog Gene's id, or "new" to add new_gene_name to the species' catalog on the
+    spot (see CONTEXT.md: Gene Catalog)."""
+    try:
+        genq.add_animal_gene(animal_id, int(gene_id) if gene_id.isdigit() else None, state, percent, evidence or None,
+                             new_gene_name=new_gene_name, new_gene_inheritance=new_gene_inheritance)
+    except ValueError as exc:
+        return _genetics_redirect(animal_id, str(exc))
+    return _genetics_redirect(animal_id)
+
+
+@router.post("/animals/{animal_id}/genetics/{row_id}/update")
+def admin_update_animal_gene(animal_id: int, row_id: int, state: str = Form(""), percent: str = Form(""),
+                             evidence: str = Form("")):
+    try:
+        genq.update_animal_gene(animal_id, row_id, state, percent, evidence or None)
+    except ValueError as exc:
+        return _genetics_redirect(animal_id, str(exc))
+    return _genetics_redirect(animal_id)
+
+
+@router.post("/animals/{animal_id}/genetics/{row_id}/delete")
+def admin_delete_animal_gene(animal_id: int, row_id: int):
+    genq.delete_animal_gene(animal_id, row_id)
+    return _genetics_redirect(animal_id)
 
 
 @router.post("/animals/{animal_id}/image")

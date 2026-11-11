@@ -1175,3 +1175,7 @@ canvas.sparkline { display: block; }
 .sparkline-range-btn + .sparkline-range-btn { border-left: 1px solid var(--border); }
 .sparkline-range-btn:hover { color: var(--text); }
 .sparkline-range-btn.active { background: var(--primary); color: var(--text); }
+
+/* Genetics and Morph in standard notation (see CONTEXT.md: Genetics; RHA-105), on the Animal card
+   and Animal Page. */
+.animal-card-genetics { font-size: 0.85rem; font-weight: 600; }

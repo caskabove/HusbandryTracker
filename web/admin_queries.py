@@ -15,6 +15,7 @@ from db.db import get_connection
 from plugins.govee_ble import identity as govee_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
+from web import genetics_queries as genq
 from web import image_storage as img
 from web.outbox import write_command
 from web.status import nearest_target_time
@@ -124,6 +125,9 @@ def get_enclosure(enclosure_id: int) -> dict | None:
         for animal in enclosure["animals"]:
             animal["logs"] = list_animal_logs(animal["id"])
             animal["shed_logs"] = list_shed_logs(animal["id"])
+            # Genetics and Morph in standard notation (see CONTEXT.md: Genetics; RHA-105), None
+            # when they don't apply to this Animal.
+            animal["genetics_line"] = genq.genetics_line(animal)
         # Recent Activity (see CONTEXT.md: Recent Activity; grill-me decision) — the Animals card's
         # quick-view strip, merged across every Animal in this Enclosure.
         enclosure["activity"] = list_enclosure_activity(enclosure_id)
@@ -670,14 +674,24 @@ def update_animal(animal_id: int, enclosure_id: int, name: str, common: str | No
                    scientific: str | None, dob: str | None, sex: str = "unknown",
                    species_profile: str | None = None) -> None:
     """Re-sexing is always allowed and never deletes anything (see CONTEXT.md: Animal; RHA-102).
-    species_profile is the Edit form's Knowledge Base species pick (RHA-103); blank clears it."""
+    species_profile is the Edit form's Knowledge Base species pick (RHA-103); blank clears it.
+
+    Raises ValueError if the species would change while the Animal has Genetics: Genes belong to one
+    species (see CONTEXT.md: Genetics, Gene; RHA-105), so they'd silently stop making sense."""
     sex = _validated_sex(sex)
+    species_profile = (species_profile or "").strip() or None
     with get_connection() as conn:
+        current = conn.execute("SELECT species_profile FROM animal WHERE id = ?", (animal_id,)).fetchone()
+        if current is not None and current["species_profile"] != species_profile:
+            genes = conn.execute("SELECT COUNT(*) FROM animal_gene WHERE animal_id = ?", (animal_id,)).fetchone()[0]
+            if genes:
+                raise ValueError(f"This Animal has {genes} Gene{'s' if genes != 1 else ''} in its Genetics, which belong "
+                                 "to its current species. Remove them before changing its species.")
         conn.execute(
             "UPDATE animal SET enclosure_id = ?, name = ?, species_common = ?, species_scientific = ?, dob = ?, sex = ?, "
             "species_profile = ? WHERE id = ?",
             (enclosure_id, name, common or None, scientific or None, dob or None, sex,
-             (species_profile or "").strip() or None, animal_id),
+             species_profile, animal_id),
         )
 
 

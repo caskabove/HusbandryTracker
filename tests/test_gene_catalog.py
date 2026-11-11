@@ -10,6 +10,7 @@ from starlette.requests import Request
 
 import db.db as db_module
 from db.migrate import run_migrations
+from db.migrations import LATEST_VERSION
 from db.migrations import m0028_gene_catalog
 from web import admin as admin_routes
 from web import gene_catalog_queries as gcq
@@ -67,7 +68,7 @@ def test_existing_database_is_seeded_by_migration_28_and_a_deleted_seed_gene_sta
     conn.commit()
     conn.close()
 
-    assert run_migrations() == 1
+    assert run_migrations() == LATEST_VERSION - 27
     db_module.init_db()  # schema.sql replays on every startup; it must not re-seed
     conn = sqlite3.connect(path)
     assert conn.execute("SELECT COUNT(*) FROM gene").fetchone()[0] == len(m0028_gene_catalog.GENES)

@@ -850,3 +850,31 @@ function filterKnowledgeBase(query) {
         section.style.display = (anyVisible || !needle) ? "" : "none";
     });
 }
+
+// Genetics & Morph card on Edit Animal (see CONTEXT.md: Genetics; RHA-105). The Gene picked (or the
+// Inheritance given for a new Gene) decides which Gene States are offered: Het/Possible Het only
+// for Recessive, Super only for Co-dominant. The server enforces the same rule.
+function onGeneticsGenePick(select) {
+    const form = select.form;
+    const isNew = select.value === "new";
+    form.querySelectorAll(".genetics-new-gene").forEach(function (block) { setToggleBlock(block, isNew); });
+    const option = select.options[select.selectedIndex];
+    const inheritance = isNew ? form.elements.new_gene_inheritance.value : (option && option.dataset.inheritance);
+    const validStates = JSON.parse(form.dataset.validStates || "{}")[inheritance];
+    const stateSelect = form.elements.state;
+    Array.from(stateSelect.options).forEach(function (o) {
+        const allowed = !validStates || validStates.indexOf(o.value) !== -1;
+        o.hidden = !allowed;
+        o.disabled = !allowed;
+    });
+    if (stateSelect.selectedOptions[0] && stateSelect.selectedOptions[0].disabled) stateSelect.value = "visual";
+    onGeneticsStateChange(stateSelect);
+}
+
+// Possible Het takes a percentage; Het takes Evidence (a Possible Het is never Proven). Works for
+// the add form (fields inside the form) and each Genetics row (fields in the same table row).
+function onGeneticsStateChange(select) {
+    const scope = select.closest("tr") || select.form;
+    scope.querySelectorAll(".genetics-percent").forEach(function (block) { setToggleBlock(block, select.value === "possible_het"); });
+    scope.querySelectorAll(".genetics-evidence").forEach(function (block) { setToggleBlock(block, select.value === "het"); });
+}
