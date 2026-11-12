@@ -16,6 +16,12 @@
 
     <main class="admin-main">
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+
+        <p>
+            <a href="/admin/enclosures/{{ animal.enclosure_id }}">&larr; Back to {{ enclosure_name }}</a> &middot;
+            <a href="/admin/animals/{{ animal.id }}">view {{ animal.name }}'s page</a>
+        </p>
+
         <section class="admin-card">
             <h2>{{ animal.name }}</h2>
 

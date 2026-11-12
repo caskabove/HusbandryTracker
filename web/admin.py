@@ -385,7 +385,7 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
     if enclosure["room_id"] and not enclosure["sensors"]:
         room = q.get_room(enclosure["room_id"])
         room_sensors = room["sensors"] if room else []
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request, "admin_enclosure.html",
         {
             "enclosure": enclosure, "care_kinds": CARE_EVENT_KINDS, "rooms": q.list_rooms(),
@@ -402,6 +402,11 @@ def admin_enclosure_detail(request: Request, enclosure_id: int):
             "error": request.query_params.get("error"),
         }
     )
+    # Never serve this page from the browser's cache on Back (an Animal edited on its own pages
+    # changes the cards, Recent Activity and Care Timers here); admin_enclosure.html also reloads
+    # on a back-forward-cache restore.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.post("/enclosures/{enclosure_id}/care-events/start-from-today")
@@ -592,7 +597,7 @@ def admin_animal_detail(request: Request, animal_id: int, page: int = 1):
     activity, has_more = q.list_animal_activity(animal_id, page)
     animal["logs"] = q.list_animal_logs(animal_id)
     animal["shed_logs"] = q.list_shed_logs(animal_id)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request, "admin_animal.html",
         {
             "animal": animal, "enclosure_name": q.get_enclosure_name(animal["enclosure_id"]),
@@ -606,6 +611,9 @@ def admin_animal_detail(request: Request, animal_id: int, page: int = 1):
             "error": request.query_params.get("error"),
         }
     )
+    # Same as admin_enclosure_detail(): Back from the Edit page must show the edits.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.get("/animals/{animal_id}/edit")
@@ -617,6 +625,7 @@ def admin_edit_animal(request: Request, animal_id: int):
         request, "admin_animal_edit.html",
         {
             "animal": animal, "enclosures": q.list_enclosures(),
+            "enclosure_name": q.get_enclosure_name(animal["enclosure_id"]),
             "species_groups": skq.animal_species_groups(),
             **_genetics_context(animal),
             "logs": q.list_animal_logs(animal_id),

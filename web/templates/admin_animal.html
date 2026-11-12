@@ -118,5 +118,8 @@
         </dialog>
     </main>
     <script src="/static/app.js?v={{ asset_version }}"></script>
+    {# Browser Back can restore this page from the back-forward cache, frozen as it was before
+       an Animal was edited — reload it so the edits show (the route also sends no-store). #}
+    <script>window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });</script>
 </body>
 </html>

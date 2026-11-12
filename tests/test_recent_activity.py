@@ -242,6 +242,28 @@ def test_enclosure_page_hides_the_activity_strip_when_theres_no_activity_yet(tem
     assert "activity-feed" not in html
 
 
+def test_edit_animal_page_links_back_to_its_enclosure_and_animal_page(temp_db):
+    enclosure_id = _make_enclosure("Bob Tank")
+    animal_id = _make_animal(enclosure_id, "Bob")
+
+    html = _html(admin_routes.admin_edit_animal(_request(f"/admin/animals/{animal_id}/edit"), animal_id))
+
+    assert f'<a href="/admin/enclosures/{enclosure_id}">&larr; Back to Bob Tank</a>' in html
+    assert f'<a href="/admin/animals/{animal_id}">' in html
+
+
+def test_enclosure_and_animal_pages_are_never_served_stale_on_back(temp_db):
+    enclosure_id = _make_enclosure()
+    animal_id = _make_animal(enclosure_id, "Bob")
+
+    enclosure = admin_routes.admin_enclosure_detail(_request(f"/admin/enclosures/{enclosure_id}"), enclosure_id)
+    animal = admin_routes.admin_animal_detail(_request(f"/admin/animals/{animal_id}"), animal_id)
+
+    for response in (enclosure, animal):
+        assert response.headers["cache-control"] == "no-store"
+        assert "e.persisted" in _html(response)
+
+
 # --- _quick_log_redirect's 3-way branch -------------------------------------------------------------
 
 def test_quick_log_redirect_prefers_enclosure_over_animal_page_flag():
