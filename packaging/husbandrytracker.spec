@@ -51,6 +51,12 @@ DATAS = [
     (str(REPO_ROOT / "plugins" / "log_husbandry" / "skill"), "plugins/log_husbandry/skill"),
 ]
 
+# The release version (see version.py) — written from the git tag by .github/workflows/release.yml
+# right before freezing. A local build without it still works; the About page then reports a
+# development build.
+if (REPO_ROOT / "VERSION").exists():
+    DATAS.append((str(REPO_ROOT / "VERSION"), "."))
+
 # uvicorn and bleak both pick implementations dynamically at runtime (uvicorn's protocol/loop
 # backends by string name; bleak's Windows backend via the `winrt` WinRT-projection namespace
 # package spread across several winrt-Windows.* distributions), which PyInstaller's static import

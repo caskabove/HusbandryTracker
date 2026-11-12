@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - About</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>About</h1>
+        {% set nav_current = "about" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="guide-main">
+        <section class="admin-card view-data-section">
+            <h2>Husbandry Tracker</h2>
+            <p>Version <strong class="app-version">{{ app_version }}</strong></p>
+            <p class="help-text">Check the <a href="{{ releases_url }}" target="_blank" rel="noopener">releases page</a> for newer versions, and include the version above when asking for help.</p>
+            <p class="help-text">Free software, licensed under the GNU Affero General Public License v3.</p>
+        </section>
+    </main>
+</body>
+</html>

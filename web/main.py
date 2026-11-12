@@ -29,6 +29,7 @@ from fastapi.templating import Jinja2Templates
 
 from active_plugins import is_plugin_active
 from app_paths import APP_ROOT
+from version import APP_VERSION
 from db.db import get_connection, init_db
 from schemas import enclosure_types as et
 from web.govee_refresh import refresh_sensors
@@ -151,6 +152,18 @@ def help_topic(request: Request, slug: str):
         raise HTTPException(status_code=404, detail="Unknown Help topic.")
     content_html = (HELP_DIR / f"{slug}.html").read_text(encoding="utf-8")
     return templates.TemplateResponse(request, "help.html", {"title": topic["title"], "content_html": content_html})
+
+
+# About — which version is installed (see version.py for where APP_VERSION comes from), so a user
+# can tell whether they're on the latest release or quote it when asking for help.
+RELEASES_URL = "https://github.com/caskabove/HusbandryTracker/releases"
+
+
+@app.get("/about")
+def about(request: Request):
+    return templates.TemplateResponse(
+        request, "about.html", {"app_version": APP_VERSION, "releases_url": RELEASES_URL}
+    )
 
 
 async def _refresh_smart_sensors(column: str, entity_id: int) -> str | None:

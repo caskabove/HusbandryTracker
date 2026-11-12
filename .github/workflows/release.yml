@@ -27,17 +27,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r packaging/requirements-build.txt
 
-      - name: Freeze with PyInstaller
-        run: pyinstaller packaging/husbandrytracker.spec --noconfirm
-
-      - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
-
       - name: Determine version from tag
         id: version
         shell: bash
         run: |
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          # Bundled by packaging/husbandrytracker.spec and shown on the About page (see version.py).
+          printf '%s' "${GITHUB_REF_NAME#v}" > VERSION
           # A pre-release version string (e.g. v1.0.0-beta) keeps the Release off GitHub's
           # /releases/latest endpoint, which is what README.md's download link uses — so a beta
           # build never lands in front of the non-technical users that link targets.
@@ -45,6 +41,12 @@ jobs:
             *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
           esac
+
+      - name: Freeze with PyInstaller
+        run: pyinstaller packaging/husbandrytracker.spec --noconfirm
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
 
       - name: Compile installer
         shell: cmd
