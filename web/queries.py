@@ -485,7 +485,7 @@ def log_reading(sensor_id: int, values: dict[str, float | None], recorded_at: st
     reading and Target Range color-coding work unchanged either way. recorded_at backdates it to when
     the measurement was actually taken; pass None (the default) to log it as now.
 
-    values maps a sensor_reading column name (e.g. "temperature_c", "ph", "ammonia_ppm" — see
+    values maps a sensor_reading column name (e.g. "temperature_c", "ph", "tds_ppm" — see
     schemas/enclosure_types.py's TARGET_RANGE_METRICS.reading_column, the fixed set of names this
     can ever be) to the value to log, already in storage units — web/main.py's create_reading()
     does the one unit conversion needed (Fahrenheit input -> Celsius) before calling this, same as

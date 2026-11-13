@@ -28,12 +28,16 @@ from schemas.enums import TrackingMode
 # TARGET_RANGE_METRICS rather than re-listed by hand — see CONTEXT.md: Target Range; ADR 0011.
 # That module is already the single source of truth for these column names (web/admin_queries.py's
 # _target_range_sql() builds its INSERT/UPDATE column list from the same tuple), so this is a
-# second reader of it, not a second source of truth.
+# second reader of it, not a second source of truth. RETIRED_TARGET_RANGE_METRICS (Ammonia/Nitrite,
+# ADR 0060) are included too: their columns are still physically on `sensor`, and this mirrors the
+# row as stored, even though no Enclosure Type offers them any more.
+_ALL_METRICS = et.TARGET_RANGE_METRICS + et.RETIRED_TARGET_RANGE_METRICS
+
 _TargetRangeFields = create_model(
     "_SensorTargetRangeFields",
     **{
         column: (float | None, None)
-        for metric in et.TARGET_RANGE_METRICS
+        for metric in _ALL_METRICS
         for column in (metric.min_column, metric.max_column)
     },
 )
@@ -43,7 +47,7 @@ _VolatilityFields = create_model(
     "_SensorVolatilityFields",
     **{
         metric.volatility_column: (str | None, None)
-        for metric in et.TARGET_RANGE_METRICS
+        for metric in _ALL_METRICS
     },
 )
 

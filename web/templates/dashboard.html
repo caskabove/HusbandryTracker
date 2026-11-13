@@ -17,7 +17,7 @@
     {# A Reading row shared by an Enclosure's own Sensors, a Room's ambient Sensors, and an
        Enclosure's Fallback Sensor. Loops every Target Range metric (see CONTEXT.md: Reading,
        Target Range; schemas/enclosure_types.py's TARGET_RANGE_METRICS) rather than hardcoding
-       temperature/humidity, so a pH/ammonia/etc. Reading shows up the same way once a Sensor
+       temperature/humidity, so a pH/KH/etc. Reading shows up the same way once a Sensor
        actually has one — a pill only ever appears for a metric this Reading has a value for.
        `sensor` supplies each metric's Target Range for coloring; pass none for a Fallback
        Sensor's Reading (used together with colored=false — see CONTEXT.md: Fallback Sensor —

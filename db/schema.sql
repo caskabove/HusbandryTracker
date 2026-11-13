@@ -215,13 +215,17 @@ CREATE INDEX IF NOT EXISTS idx_animal_log_animal_time ON animal_log (animal_id, 
 -- IR thermometer spot-check has no humidity number to give) — that "at least one" rule is enforced
 -- in web/admin_queries.py with a friendly error, not here, so a bad value gets a clear message
 -- instead of a raw SQLite CHECK failure.
--- target_ph/ammonia/nitrite/nitrate are Freshwater+ (see CONTEXT.md: Enclosure Type);
--- target_specific_gravity/salinity/alkalinity/calcium/magnesium/phosphate are Saltwater-only.
+-- target_ph/nitrate are Freshwater/Saltwater/Amphibian (see CONTEXT.md: Enclosure Type);
+-- target_alkalinity (shown as "KH") and target_phosphate are Freshwater+Saltwater; target_tds is
+-- Freshwater-only; target_specific_gravity/salinity/calcium/magnesium are Saltwater-only.
+-- target_ammonia/nitrite (and volatility_ammonia/nitrite, sensor_reading.ammonia_ppm/nitrite_ppm)
+-- are RETIRED, not dropped (see ADR 0060): no Enclosure Type offers them any more and no code reads
+-- or writes them, but the columns stay so an older install's data survives and they can return.
 -- Specific Gravity and Salinity are two separate Target Range metrics (e.g. 1.026 SG / 35 ppm) —
 -- both describe the same water property, read off different instruments, so they're tracked and
 -- targeted independently rather than one derived from the other. Which columns are
 -- shown/editable for a given Sensor depends on its Enclosure's enclosure_type, decided in code
--- (schemas/enclosure_types.py) — see ADR 0011. Ammonia/nitrite/phosphate "min" will usually just be
+-- (schemas/enclosure_types.py) — see ADR 0011. Nitrate/phosphate "min" will usually just be
 -- 0 (the target is "as low as possible"), stored as a real min/max pair anyway for the same shape
 -- as every other Target Range metric.
 CREATE TABLE IF NOT EXISTS sensor (
@@ -266,6 +270,8 @@ CREATE TABLE IF NOT EXISTS sensor (
     target_magnesium_ppm_max    REAL,
     target_phosphate_ppm_min    REAL,
     target_phosphate_ppm_max    REAL,
+    target_tds_ppm_min          REAL,  -- Total Dissolved Solids, whole ppm (ADR 0060)
+    target_tds_ppm_max          REAL,
     -- Volatility (see CONTEXT.md: Volatility; ADR 0025) — Manual Sensor only, one nullable
     -- override per Target Range metric. NULL means "use that metric's own default_volatility"
     -- (schemas/enclosure_types.py's TargetRangeMetric) rather than defaulting here, so a fresh
@@ -283,6 +289,7 @@ CREATE TABLE IF NOT EXISTS sensor (
     volatility_calcium          TEXT CHECK (volatility_calcium IS NULL OR volatility_calcium IN ('fast', 'slow')),
     volatility_magnesium        TEXT CHECK (volatility_magnesium IS NULL OR volatility_magnesium IN ('fast', 'slow')),
     volatility_phosphate        TEXT CHECK (volatility_phosphate IS NULL OR volatility_phosphate IN ('fast', 'slow')),
+    volatility_tds              TEXT CHECK (volatility_tds IS NULL OR volatility_tds IN ('fast', 'slow')),
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (plugin, external_id),
     CHECK (
@@ -466,7 +473,8 @@ CREATE TABLE IF NOT EXISTS sensor_reading (
     alkalinity_dkh REAL,
     calcium_ppm    REAL,
     magnesium_ppm  REAL,
-    phosphate_ppm  REAL
+    phosphate_ppm  REAL,
+    tds_ppm        REAL
 );
 CREATE INDEX IF NOT EXISTS idx_sensor_reading_sensor_time ON sensor_reading (sensor_id, recorded_at);
 

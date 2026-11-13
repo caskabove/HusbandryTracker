@@ -68,7 +68,7 @@ class TargetRangeMetric:
 
 
 # Ordered for display — core environmental metrics first, then water chemistry roughly in the
-# order a test kit strip reads them. Ammonia/nitrite/nitrate/phosphate targets are usually just "as
+# order a test kit strip reads them. Nitrate/phosphate targets are usually just "as
 # low as possible" (min left at 0) — still a real min/max pair for the same shape as every other
 # metric (see db/schema.sql's comment on the sensor table).
 TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
@@ -97,14 +97,18 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
                        ("freshwater", "saltwater", "amphibian"),
                        step="0.01", decimals=2, period_slot_band=True,
                        volatility_column="volatility_ph"),
-    TargetRangeMetric("ammonia", "Ammonia", "ppm",
-                       "target_ammonia_ppm_min", "target_ammonia_ppm_max", "ammonia_ppm",
-                       ("freshwater", "saltwater", "amphibian"),
-                       volatility_column="volatility_ammonia", default_volatility="slow"),
-    TargetRangeMetric("nitrite", "Nitrite", "ppm",
-                       "target_nitrite_ppm_min", "target_nitrite_ppm_max", "nitrite_ppm",
-                       ("freshwater", "saltwater", "amphibian"),
-                       volatility_column="volatility_nitrite", default_volatility="slow"),
+    # KH — carbonate hardness, the same dKH reading reef keepers call alkalinity (see ADR 0060). The
+    # key/columns keep their original "alkalinity" names; only the label changed.
+    TargetRangeMetric("alkalinity", "KH", "dKH",
+                       "target_alkalinity_dkh_min", "target_alkalinity_dkh_max", "alkalinity_dkh",
+                       ("freshwater", "saltwater"),
+                       volatility_column="volatility_alkalinity"),
+    # TDS (Total Dissolved Solids) — a freshwater pen reading in whole ppm. Not Saltwater: seawater
+    # sits around 35,000 ppm TDS, which says nothing salinity/SG don't already (see ADR 0060).
+    TargetRangeMetric("tds", "TDS", "ppm",
+                       "target_tds_ppm_min", "target_tds_ppm_max", "tds_ppm",
+                       ("freshwater",), step="1", decimals=0,
+                       volatility_column="volatility_tds", default_volatility="slow"),
     TargetRangeMetric("nitrate", "NO₃", "ppm",
                        "target_nitrate_ppm_min", "target_nitrate_ppm_max", "nitrate_ppm",
                        ("freshwater", "saltwater", "amphibian"),
@@ -117,10 +121,6 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
                        "target_salinity_ppm_min", "target_salinity_ppm_max", "salinity_ppm",
                        ("saltwater",),
                        volatility_column="volatility_salinity", default_volatility="slow"),
-    TargetRangeMetric("alkalinity", "Alkalinity", "dKH",
-                       "target_alkalinity_dkh_min", "target_alkalinity_dkh_max", "alkalinity_dkh",
-                       ("saltwater",),
-                       volatility_column="volatility_alkalinity"),
     TargetRangeMetric("calcium", "Ca", "ppm",
                        "target_calcium_ppm_min", "target_calcium_ppm_max", "calcium_ppm",
                        ("saltwater",),
@@ -131,8 +131,26 @@ TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
                        volatility_column="volatility_magnesium", default_volatility="slow"),
     TargetRangeMetric("phosphate", "Phosphate", "ppm",
                        "target_phosphate_ppm_min", "target_phosphate_ppm_max", "phosphate_ppm",
-                       ("saltwater",),
+                       ("freshwater", "saltwater"),
                        volatility_column="volatility_phosphate", default_volatility="slow"),
+)
+
+# Retired metrics (see ADR 0060) — Ammonia and Nitrite read 0 in any cycled tank and were only ever
+# hand-entered, so they were taken off every Enclosure Type. Deliberately kept OUT of
+# TARGET_RANGE_METRICS rather than given an empty enclosure_types: every caller that iterates that
+# tuple (web/admin_queries.py's _target_range_sql/_volatility_sql above all) would otherwise write
+# NULL over their columns on each Sensor save, erasing whatever an older install recorded. Their
+# db/schema.sql columns stay in place, untouched. To bring one back, move its entry into
+# TARGET_RANGE_METRICS and re-add its Form() params in web/admin.py and web/main.py.
+RETIRED_TARGET_RANGE_METRICS: tuple[TargetRangeMetric, ...] = (
+    TargetRangeMetric("ammonia", "Ammonia", "ppm",
+                       "target_ammonia_ppm_min", "target_ammonia_ppm_max", "ammonia_ppm",
+                       ("freshwater", "saltwater", "amphibian"),
+                       volatility_column="volatility_ammonia", default_volatility="slow"),
+    TargetRangeMetric("nitrite", "Nitrite", "ppm",
+                       "target_nitrite_ppm_min", "target_nitrite_ppm_max", "nitrite_ppm",
+                       ("freshwater", "saltwater", "amphibian"),
+                       volatility_column="volatility_nitrite", default_volatility="slow"),
 )
 
 _METRICS_BY_KEY = {m.key: m for m in TARGET_RANGE_METRICS}

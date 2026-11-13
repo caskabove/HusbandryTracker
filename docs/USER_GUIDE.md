@@ -194,9 +194,10 @@ ambient sensor between them, feel free to skip this and come back to [Section
    - **Enclosure Type** — **Basic** (snake/lizard/tortoise/insect — the default), **Freshwater**,
      **Saltwater**, or **Amphibian**. This decides which Target Range fields you'll be offered when
      you add a Sensor in a moment: Basic and Amphibian offer temperature, humidity, and UVB Index;
-     Freshwater/Saltwater/Amphibian add water-chemistry fields instead (pH, ammonia, nitrite,
-     nitrate, and — Saltwater only — specific gravity, salinity, alkalinity, calcium, magnesium,
-     phosphate). You can change this later from Enclosure Settings if you got it wrong; it just
+     Freshwater/Saltwater/Amphibian add water-chemistry fields instead: all three get pH and
+     nitrate; Freshwater adds KH, TDS (Total Dissolved Solids), and phosphate; Saltwater adds KH,
+     specific gravity, salinity, calcium, magnesium, and phosphate. You can change this later from
+     Enclosure Settings if you got it wrong; it just
      changes which fields show, nothing already saved is erased.
    - **Bioactive** — check this box if it has a live cleanup crew (isopods, springtails, live
      plants). Besides relaxing how often a Deep-clean is expected, this also unlocks a **Plants**

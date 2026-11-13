@@ -11,6 +11,10 @@ Every table also carries `profile_key` (TEXT UNIQUE — the dropdown value, carr
 `animal.species_profile`; see CONTEXT.md: Animal, Species Profile), `common_name`, `scientific_name`,
 `notes` (sources/free text), and `sort_order`, handled generically in web/species_kb_queries.py
 rather than listed per-category here, since every table has them identically (see db/schema.sql).
+
+A column can exist in db/schema.sql without a ProfileField here: the fish tables' ammonia_ppm_max/
+nitrite_ppm_max were retired along with the Ammonia/Nitrite Target Range metrics (ADR 0060). Since
+web/species_kb_queries.py only ever writes the listed fields, a hidden column is left untouched.
 """
 from __future__ import annotations
 
@@ -69,8 +73,6 @@ PROFILE_CATEGORIES: tuple[ProfileCategory, ...] = (
         ProfileField("salinity_sg_max", "Salinity/SG max", "", step="0.001"),
         ProfileField("ph_min", "pH min", "", step="0.1"),
         ProfileField("ph_max", "pH max", "", step="0.1"),
-        ProfileField("ammonia_ppm_max", "Ammonia target", "ppm", step="0.1"),
-        ProfileField("nitrite_ppm_max", "Nitrite target", "ppm", step="0.1"),
         ProfileField("nitrate_ppm_max", "Nitrate target", "ppm", step="0.1"),
         ProfileField("diet", "Diet / feeding frequency", "", kind="text"),
     )),
@@ -83,8 +85,6 @@ PROFILE_CATEGORIES: tuple[ProfileCategory, ...] = (
         ProfileField("gh_max", "GH max", "dGH"),
         ProfileField("kh_min", "KH min", "dKH"),
         ProfileField("kh_max", "KH max", "dKH"),
-        ProfileField("ammonia_ppm_max", "Ammonia target", "ppm", step="0.1"),
-        ProfileField("nitrite_ppm_max", "Nitrite target", "ppm", step="0.1"),
         ProfileField("nitrate_ppm_max", "Nitrate target", "ppm", step="0.1"),
         ProfileField("diet", "Diet / feeding frequency", "", kind="text"),
     )),
@@ -95,8 +95,8 @@ PROFILE_CATEGORIES: tuple[ProfileCategory, ...] = (
         ProfileField("salinity_sg_max", "Salinity/SG max", "", step="0.001"),
         ProfileField("ph_min", "pH min", "", step="0.1"),
         ProfileField("ph_max", "pH max", "", step="0.1"),
-        ProfileField("alkalinity_dkh_min", "Alkalinity min", "dKH"),
-        ProfileField("alkalinity_dkh_max", "Alkalinity max", "dKH"),
+        ProfileField("alkalinity_dkh_min", "KH min", "dKH"),
+        ProfileField("alkalinity_dkh_max", "KH max", "dKH"),
         ProfileField("calcium_ppm_min", "Calcium min", "ppm"),
         ProfileField("calcium_ppm_max", "Calcium max", "ppm"),
         ProfileField("diet", "Diet / feeding frequency", "", kind="text"),

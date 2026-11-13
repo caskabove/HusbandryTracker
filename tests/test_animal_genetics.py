@@ -9,6 +9,7 @@ from starlette.requests import Request
 
 import db.db as db_module
 from db.migrate import run_migrations
+from db.migrations import LATEST_VERSION
 from web import admin as admin_routes
 from web import admin_queries as q
 from web import gene_catalog_queries as gcq
@@ -159,7 +160,7 @@ def test_migration_29_adds_morph_and_animal_gene_to_an_existing_database(tmp_pat
     conn.commit()
     conn.close()
 
-    assert run_migrations() == 1
+    assert run_migrations() == LATEST_VERSION - 28  # 29 plus any later migrations
     conn = sqlite3.connect(path)
     assert "morph" in {r[1] for r in conn.execute("PRAGMA table_info(animal)")}
     assert conn.execute("SELECT COUNT(*) FROM animal_gene").fetchone()[0] == 0
