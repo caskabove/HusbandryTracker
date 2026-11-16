@@ -15,7 +15,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from web import auth_queries as q
-from web.theme import DEFAULT_SWATCH, THEMES
+from web.theme import DEFAULT_LOGO, DEFAULT_SWATCH, THEMES, logo_for_theme
 
 ROOT = Path(__file__).resolve().parent.parent
 STYLE = (ROOT / "web" / "static" / "style.css").read_text(encoding="utf-8")
@@ -111,6 +111,15 @@ def test_every_page_template_carries_the_theme_hook():
     assert [p.name for p in pages if '<html lang="en"{{ html_theme_attr() }}>' not in p.read_text(encoding="utf-8")] == []
 
 
+@pytest.mark.parametrize("slug", [None, *THEMES])
+def test_every_theme_has_its_logo_file(slug):
+    assert (ROOT / "web" / logo_for_theme(slug).lstrip("/")).is_file()
+
+
+def test_no_template_hardcodes_the_logo():
+    assert [p.name for p in TEMPLATES.glob("*.html") if "images/logo.png" in p.read_text(encoding="utf-8")] == []
+
+
 # --- the per-user choice -----------------------------------------------------------------------
 
 def _logged_in_client(role: str = "user") -> TestClient:
@@ -128,6 +137,7 @@ def test_a_new_user_gets_the_default_theme(temp_db):
     with _logged_in_client() as client:
         html = client.get("/settings").text
     assert '<html lang="en">' in html
+    assert f'src="{DEFAULT_LOGO}"' in html
     assert re.search(r'<input type="radio" name="theme" value="" checked>', html)
 
 
@@ -138,7 +148,9 @@ def test_picking_a_theme_applies_it_server_side_and_persists(temp_db):
         assert "notice=Theme%20set%20to%20Desert" in response.headers["location"]
 
         for path in ("/settings", "/about", "/help"):
-            assert '<html lang="en" data-theme="desert">' in client.get(path).text
+            html = client.get(path).text
+            assert '<html lang="en" data-theme="desert">' in html
+            assert 'src="/static/images/caskabove-logo-desert.png"' in html
 
     # Stored on the account, not the browser: a brand-new session (another device) gets it too.
     from web.main import app

@@ -71,6 +71,22 @@ def html_theme_attr(context) -> Markup:
     return Markup(f' data-theme="{slug}"') if slug else Markup("")
 
 
+DEFAULT_LOGO = "/static/images/logo.png"
+
+
+def logo_for_theme(slug: str | None) -> str:
+    """Each Theme has its own recolored header logo, web/static/images/caskabove-logo-<slug>.png;
+    Default keeps the original logo.png."""
+    return f"/static/images/caskabove-logo-{slug}.png" if slug in THEMES else DEFAULT_LOGO
+
+
+@pass_context
+def logo_url(context) -> str:
+    """The header logo URL matching the current user's Theme."""
+    return logo_for_theme(theme_for_request(context.get("request")))
+
+
 def install(templates) -> None:
     """Every router has its own Jinja2Templates instance, so each one calls this."""
     templates.env.globals["html_theme_attr"] = html_theme_attr
+    templates.env.globals["logo_url"] = logo_url

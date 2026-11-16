@@ -8,7 +8,7 @@
 </head>
 <body>
     <header class="page-header">
-        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <img src="{{ logo_url() }}" alt="CaskAbove Chameleons" class="header-logo">
         <h1>{{ owner_label }} &mdash; Graphs</h1>
         {% set nav_current = "control" if owner_kind == "room" else "enclosures" %}{% include "_nav.html" %}
     </header>

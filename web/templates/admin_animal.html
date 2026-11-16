@@ -10,7 +10,7 @@
     {% import "_quick_log_macro.html" as quick_log %}
     {% import "_lineage_macros.html" as lineage %}
     <header class="page-header">
-        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <img src="{{ logo_url() }}" alt="CaskAbove Chameleons" class="header-logo">
         <h1>{{ animal.name }}</h1>
         {% set nav_current = "enclosures" %}{% include "_nav.html" %}
     </header>

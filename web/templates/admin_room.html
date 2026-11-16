@@ -9,7 +9,7 @@
 <body>
     {% import "_plug_cycles_macro.html" as plug_cycles %}
     <header class="page-header">
-        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <img src="{{ logo_url() }}" alt="CaskAbove Chameleons" class="header-logo">
         <h1>{{ room.name }}</h1>
         {% set nav_current = "control" %}{% include "_nav.html" %}
     </header>
