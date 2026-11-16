@@ -23,6 +23,9 @@
     --hover-tint: rgba(255, 255, 255, 0.08);
     --hover-tint-soft: rgba(255, 255, 255, 0.04);
     --header-divider: rgba(255, 255, 255, 0.2);
+    /* Header background scene (RHA-119). Default has none: its header stays the flat --primary. */
+    --header-image: none;
+    --header-image-narrow: none;
     --drop-target-bg: rgba(79, 157, 118, 0.15);
     --backdrop: rgba(0, 0, 0, 0.6);
     /* Read by graphs.js (a canvas can't use var() directly). --chart-scheme picks the series
@@ -69,6 +72,8 @@
     --on-primary-bright: #131916;
     --on-accent: #131916;
     --header-divider: rgba(19, 25, 22, 0.3);
+    --header-image: url("/static/images/header-forest.svg");
+    --header-image-narrow: url("/static/images/header-forest-narrow.svg");
     --drop-target-bg: rgba(142, 175, 144, 0.15);
     --chart-line: #3fb3b3;
 }
@@ -79,7 +84,7 @@
     --panel-header-bg: #1f3c4a;
     --room-bg: #081622;
     --room-header-bg: #15232e;
-    --primary: #1B9691;
+    --primary: #1b9691;
     --primary-bright: #21b6b1;
     --secondary: #3a7ca5;
     --accent: #ff6f61;
@@ -90,6 +95,8 @@
     --on-primary-bright: #08151f;
     --on-accent: #08151f;
     --header-divider: rgba(8, 21, 31, 0.3);
+    --header-image: url("/static/images/header-ocean-reef.svg");
+    --header-image-narrow: url("/static/images/header-ocean-reef-narrow.svg");
     --drop-target-bg: rgba(33, 182, 177, 0.15);
     --chart-line: #6fc3e8;
 }
@@ -100,7 +107,7 @@
     --panel-header-bg: #2b3633;
     --room-bg: #0f1314;
     --room-header-bg: #1c2021;
-    --primary: #659E59;
+    --primary: #659e59;
     --primary-bright: #7bc74d;
     --secondary: #2e9e8f;
     --accent: #c8445a;
@@ -111,6 +118,8 @@
     --on-primary-bright: #0e1212;
     --on-accent: #ffffff;
     --header-divider: rgba(14, 18, 18, 0.3);
+    --header-image: url("/static/images/header-planted-tank.svg");
+    --header-image-narrow: url("/static/images/header-planted-tank-narrow.svg");
     --drop-target-bg: rgba(123, 199, 77, 0.15);
     --chart-line: #3fb3b3;
 }
@@ -127,12 +136,14 @@
     --text: #3b2a20;
     --text-muted: #68584d;
     --border: #d8d0c6;
-    --on-primary: #140c08;
+    --on-primary: #f4e9d8;
     --on-primary-bright: #f4e9d8;
     --on-accent: #f4e9d8;
     --hover-tint: rgba(59, 42, 32, 0.08);
     --hover-tint-soft: rgba(59, 42, 32, 0.04);
-    --header-divider: rgba(20, 12, 8, 0.3);
+    --header-divider: rgba(244, 233, 216, 0.3);
+    --header-image: url("/static/images/header-desert.svg");
+    --header-image-narrow: url("/static/images/header-desert-narrow.svg");
     --drop-target-bg: rgba(140, 72, 42, 0.12);
     --backdrop: rgba(59, 42, 32, 0.5);
     --chart-line: #007f7f;
@@ -157,8 +168,20 @@
     --on-primary-bright: #0a1610;
     --on-accent: #000000;
     --header-divider: rgba(10, 22, 16, 0.3);
+    --header-image: url("/static/images/header-jungle.svg");
+    --header-image-narrow: url("/static/images/header-jungle-narrow.svg");
     --drop-target-bg: rgba(66, 181, 118, 0.15);
     --chart-line: #3fb3b3;
+}
+
+/* Page title font (RHA-119): Amatic SC Bold, latin subset, self-hosted so an offline install
+   needs no external request. SIL OFL 1.1, see fonts/AmaticSC-OFL.txt. */
+@font-face {
+    font-family: "Amatic SC";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("/static/fonts/amatic-sc-latin-700-normal.woff2") format("woff2");
 }
 
 * { box-sizing: border-box; }
@@ -197,7 +220,14 @@ body {
 /* Logo (left) / title (center) / nav (right, stacked one-per-line rather than a single row) — a
    fixed three-column layout rather than the title+nav flowing inline together. */
 .page-header {
-    background: var(--primary);
+    /* The Theme's scene sits on top of the --primary fill, which shows through if it fails to load
+       (RHA-119). The scenes' colors are derived from each Theme's --primary: change one, regenerate
+       its two SVGs. */
+    background-color: var(--primary);
+    background-image: var(--header-image);
+    background-position: center bottom;
+    background-size: cover;
+    background-repeat: no-repeat;
     color: var(--on-primary);
     padding: 0.6rem 1.5rem;
     display: grid;
@@ -215,11 +245,21 @@ body {
     width: auto;
     display: block;
 }
+/* Amatic SC is thin-stroked, so it needs the larger size to stay readable (RHA-119). */
 .page-header h1 {
     margin: 0;
-    font-size: 2.4rem;
-    letter-spacing: 0.02em;
+    font-family: "Amatic SC", -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-weight: 700;
+    font-size: 4.2rem;
+    line-height: 1.1;
+    letter-spacing: 0.04em;
     text-align: center;
+}
+/* Narrow screens: the simplified scene (no tall silhouettes behind the title or nav) and a
+   slightly smaller title. */
+@media (max-width: 900px) {
+    .page-header { background-image: var(--header-image-narrow); }
+    .page-header h1 { font-size: 3.4rem; }
 }
 .page-header nav {
     display: flex;

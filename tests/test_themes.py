@@ -25,7 +25,8 @@ TEMPLATES = ROOT / "web" / "templates"
 REQUIRED_TOKENS = {
     "bg", "panel-bg", "panel-header-bg", "room-bg", "room-header-bg", "primary", "primary-bright",
     "secondary", "accent", "text", "text-muted", "border", "on-primary", "on-primary-bright",
-    "on-accent", "header-divider", "drop-target-bg", "chart-line", "color-scheme",
+    "on-accent", "header-divider", "header-image", "header-image-narrow", "drop-target-bg",
+    "chart-line", "color-scheme",
 }
 SURFACES = ("bg", "panel-bg", "panel-header-bg", "room-bg", "room-header-bg")
 AA = 4.5
@@ -116,6 +117,33 @@ def test_every_theme_has_its_logo_file(slug):
     assert (ROOT / "web" / logo_for_theme(slug).lstrip("/")).is_file()
 
 
+@pytest.mark.parametrize("slug", THEMES)
+def test_every_theme_has_its_header_scenes(slug):
+    # RHA-119: a full-width scene plus a simplified one for narrow screens, both on disk.
+    t = _theme(slug)
+    for token, name in (("header-image", f"header-{slug}.svg"), ("header-image-narrow", f"header-{slug}-narrow.svg")):
+        assert t[token] == f'url("/static/images/{name}")'
+        assert (ROOT / "web" / "static" / "images" / name).is_file()
+
+
+def test_default_theme_has_no_header_scene():
+    root = _block(":root")
+    assert root["--header-image"] == root["--header-image-narrow"] == "none"
+
+
+def test_header_title_font_is_self_hosted():
+    faces = re.findall(r"@font-face\s*\{(.*?)\}", STYLE, re.S)
+    assert faces and all("http" not in f for f in faces)
+    assert (ROOT / "web" / "static" / "fonts" / "amatic-sc-latin-700-normal.woff2").is_file()
+    assert (ROOT / "web" / "static" / "fonts" / "AmaticSC-OFL.txt").is_file()
+
+
+def test_every_template_cache_busts_the_logo():
+    pages = [p for p in TEMPLATES.glob("*.html") if "logo_url()" in p.read_text(encoding="utf-8")]
+    assert pages
+    assert [p.name for p in pages if 'src="{{ logo_url() }}?v={{ asset_version }}"' not in p.read_text(encoding="utf-8")] == []
+
+
 def test_no_template_hardcodes_the_logo():
     assert [p.name for p in TEMPLATES.glob("*.html") if "images/logo.png" in p.read_text(encoding="utf-8")] == []
 
@@ -137,7 +165,7 @@ def test_a_new_user_gets_the_default_theme(temp_db):
     with _logged_in_client() as client:
         html = client.get("/settings").text
     assert '<html lang="en">' in html
-    assert f'src="{DEFAULT_LOGO}"' in html
+    assert f'src="{DEFAULT_LOGO}?v=' in html
     assert re.search(r'<input type="radio" name="theme" value="" checked>', html)
 
 
@@ -150,7 +178,7 @@ def test_picking_a_theme_applies_it_server_side_and_persists(temp_db):
         for path in ("/settings", "/about", "/help"):
             html = client.get(path).text
             assert '<html lang="en" data-theme="desert">' in html
-            assert 'src="/static/images/caskabove-logo-desert.png"' in html
+            assert 'src="/static/images/caskabove-logo-desert.png?v=' in html
 
     # Stored on the account, not the browser: a brand-new session (another device) gets it too.
     from web.main import app

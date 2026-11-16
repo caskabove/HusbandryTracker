@@ -27,17 +27,17 @@ THEMES: dict[str, dict] = {
     "ocean-reef": {
         "label": "Ocean Reef",
         "description": "Deep navy water, turquoise, coral accent.",
-        "swatch": ["#0B1E2D", "#12303F", "#1FB5B0", "#3A7CA5", "#FF6F61", "#E6F4F1"],
+        "swatch": ["#0B1E2D", "#12303F", "#1B9691", "#3A7CA5", "#FF6F61", "#E6F4F1"],
     },
     "planted-tank": {
         "label": "Planted Tank",
         "description": "Near-black substrate, bright plant green, red stem-plant accent.",
-        "swatch": ["#14191A", "#1F2A28", "#7BC74D", "#2E9E8F", "#C8445A", "#EAF2E6"],
+        "swatch": ["#14191A", "#1F2A28", "#659E59", "#2E9E8F", "#C8445A", "#EAF2E6"],
     },
     "desert": {
         "label": "Desert",
         "description": "The light theme: sand, terracotta, sage, dusk purple.",
-        "swatch": ["#F4E9D8", "#FBF5EA", "#C2643B", "#8A9A6B", "#5B4A7A", "#3B2A20"],
+        "swatch": ["#F4E9D8", "#FBF5EA", "#733114", "#8A9A6B", "#5B4A7A", "#3B2A20"],
     },
     "jungle": {
         "label": "Jungle",

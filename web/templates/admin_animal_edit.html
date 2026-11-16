@@ -9,7 +9,7 @@
 <body>
     {% import "_lineage_macros.html" as lineage %}
     <header class="page-header">
-        <img src="{{ logo_url() }}" alt="CaskAbove Chameleons" class="header-logo">
+        <img src="{{ logo_url() }}?v={{ asset_version }}" alt="CaskAbove Chameleons" class="header-logo">
         <h1>Edit Animal</h1>
         {% set nav_current = "control" %}{% include "_nav.html" %}
     </header>
