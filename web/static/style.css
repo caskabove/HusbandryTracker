@@ -1,14 +1,5 @@
 :root {
-    /*--bg: #0d1913;*/
-    /*--panel-bg: #16261e;*/
-    /*--panel-header-bg: #1c3327;*/
-    /*--room-bg: #0a140f;      !* a shade darker than --bg itself — the Room "frame" around its Enclosures *!*/
-    /*--room-header-bg: #14241b; !* darker than --panel-header-bg, so a Room's header reads apart from an Enclosure's *!*/
-    /*--primary: #2f6b4f;*/
-    /*--primary-bright: #4f9d76;*/
-    /*--text: #e8f0ec;*/
-    /*--text-muted: #93a89c;*/
-    /*--border: #24402f;*/
+
     --bg: #0d161a;             /* Deep oceanic abyss */
     --panel-bg: #162226;       /* Dark midnight blue */
     --panel-header-bg: #1c2d33;/* Deep sea ridge */
@@ -262,6 +253,7 @@ button.danger {
     color: #fff;
 }
 .inline-form { display: inline; }
+.note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .danger-small {
     background: none;
     border: none;

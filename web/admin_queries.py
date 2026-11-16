@@ -193,6 +193,13 @@ def get_enclosure(enclosure_id: int) -> dict | None:
             (enclosure_id,),
         )]
 
+        # Enclosure Notes (see CONTEXT.md: Enclosure Note; RHA-116) — full history, newest first;
+        # the template shows the first ENCLOSURE_NOTES_VISIBLE and tucks the rest behind "Show all".
+        enclosure["notes"] = [dict(r) for r in conn.execute(
+            "SELECT * FROM enclosure_note WHERE enclosure_id = ? ORDER BY occurred_at DESC, id DESC",
+            (enclosure_id,),
+        )]
+
         return enclosure
 
 
@@ -330,6 +337,25 @@ def log_plant_health(enclosure_id: int, note: str, plant_id: int | None = None,
             "INSERT INTO plant_health_log (enclosure_id, plant_id, note, occurred_at) VALUES (?, ?, ?, ?)",
             (enclosure_id, plant_id, note, occurred_at),
         )
+
+
+def log_enclosure_note(enclosure_id: int, note: str, occurred_at: str | None = None) -> None:
+    """See CONTEXT.md: Enclosure Note. Backdatable like Plant Health (blank occurred_at = now)."""
+    if not note or not note.strip():
+        raise ValueError("Enter a note.")
+    occurred_at = _normalize_datetime_local(occurred_at)
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO enclosure_note (enclosure_id, note, occurred_at) VALUES (?, ?, ?)",
+            (enclosure_id, note.strip(), occurred_at),
+        )
+
+
+def delete_enclosure_note(note_id: int, enclosure_id: int) -> None:
+    """Scoped to enclosure_id too, so a stale or hand-edited form can't delete another
+    Enclosure's note."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM enclosure_note WHERE id = ? AND enclosure_id = ?", (note_id, enclosure_id))
 
 
 def _validate_enclosure_type(enclosure_type: str) -> None:

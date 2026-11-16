@@ -156,6 +156,18 @@ CREATE TABLE IF NOT EXISTS plant_health_log (
 );
 CREATE INDEX IF NOT EXISTS idx_plant_health_log_enclosure_time ON plant_health_log (enclosure_id, occurred_at);
 
+-- A manually-logged, backdatable, free-text Enclosure Note (see CONTEXT.md: Enclosure Note; RHA-116)
+-- — anything worth remembering about the Enclosure as a whole ("rearranged hides", "medicated").
+-- Same shape as plant_health_log minus the Plant reference, and likewise not a care_event kind:
+-- no action-with-an-interval, so nothing for Care Interval/staleness to track.
+CREATE TABLE IF NOT EXISTS enclosure_note (
+    id           INTEGER PRIMARY KEY,
+    enclosure_id INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,
+    note         TEXT NOT NULL,
+    occurred_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_enclosure_note_enclosure_time ON enclosure_note (enclosure_id, occurred_at);
+
 CREATE TABLE IF NOT EXISTS animal (
     id                  INTEGER PRIMARY KEY,
     enclosure_id        INTEGER NOT NULL REFERENCES enclosure(id) ON DELETE CASCADE,

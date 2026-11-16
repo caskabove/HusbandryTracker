@@ -400,6 +400,18 @@ rows default to shown for the first three registered under the same parent, and 
 keep an Enclosure or Room with a lot of sensors from overwhelming the dashboard; flip any of them
 either way at any time, the default only applies the moment a row is created.
 
+### 4.8 Keeping Notes on an Enclosure
+
+Every enclosure's page has a **Notes** card right below Care, for anything worth remembering that
+isn't a feeding, watering, or cleaning: "rearranged the hides", "started Baytril 0.1ml, day 1 of
+10", "swapped the substrate to coco fiber". Type the note (it can run several lines), optionally
+set **When** if it happened earlier (leave it blank to log it as now), and click **Add Note**.
+
+The newest 10 notes show in the table; older ones are under **Show all** below it. Each note has a
+**delete** link. There's no editing a note in place: if you got something wrong, delete it and add
+it again. Notes don't have intervals or reminders, and they don't show up on the Dashboard or in
+View Data.
+
 ---
 
 ## 5. Tracking an Animal's Growth and Condition

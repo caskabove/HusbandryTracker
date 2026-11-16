@@ -581,6 +581,23 @@ def admin_log_plant_health(
     return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#plant-health", status_code=303)
 
 
+@router.post("/enclosures/{enclosure_id}/notes")
+def admin_log_enclosure_note(enclosure_id: int, note: str = Form(""), occurred_at: str = Form("")):
+    try:
+        q.log_enclosure_note(enclosure_id, note, occurred_at)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/admin/enclosures/{enclosure_id}?error={quote(str(exc))}#notes", status_code=303
+        )
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#notes", status_code=303)
+
+
+@router.post("/enclosures/{enclosure_id}/notes/{note_id}/delete")
+def admin_delete_enclosure_note(enclosure_id: int, note_id: int):
+    q.delete_enclosure_note(note_id, enclosure_id)
+    return RedirectResponse(url=f"/admin/enclosures/{enclosure_id}#notes", status_code=303)
+
+
 @router.get("/animals/{animal_id}")
 def admin_animal_detail(request: Request, animal_id: int, page: int = 1):
     """Animal page (see CONTEXT.md: Recent Activity; grill-me decision) — a read-first profile for

@@ -280,6 +280,51 @@
             </form>
         </dialog>
 
+        {# Enclosure Notes (see CONTEXT.md: Enclosure Note; RHA-116) — free-text, backdatable,
+           add + delete only. Newest 10 shown; anything older sits behind "Show all". #}
+        {% macro note_row(entry) %}
+            <tr>
+                <td>{{ entry.occurred_at }}</td>
+                <td class="note-text">{{ entry.note }}</td>
+                <td>
+                    <form method="post" action="/admin/enclosures/{{ enclosure.id }}/notes/{{ entry.id }}/delete"
+                          class="inline-form" onsubmit="return confirm('Delete this note? This cannot be undone.');">
+                        <button type="submit" class="danger-small">delete</button>
+                    </form>
+                </td>
+            </tr>
+        {% endmacro %}
+        <section class="admin-card" id="notes">
+            <h2>Notes</h2>
+            <table class="admin-table">
+                <thead><tr><th>When</th><th>Note</th><th></th></tr></thead>
+                <tbody>
+                {% for entry in enclosure.notes[:10] %}
+                    {{ note_row(entry) }}
+                {% else %}
+                    <tr><td colspan="3" class="empty">No notes yet</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% if enclosure.notes | length > 10 %}
+            <details>
+                <summary>Show all {{ enclosure.notes | length }} notes</summary>
+                <table class="admin-table">
+                    <tbody>
+                    {% for entry in enclosure.notes[10:] %}
+                        {{ note_row(entry) }}
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </details>
+            {% endif %}
+            <form method="post" action="/admin/enclosures/{{ enclosure.id }}/notes" class="admin-form">
+                <label>Note <textarea name="note" rows="3" placeholder="e.g. rearranged hides, started Baytril 0.1ml day 1 of 10" required></textarea></label>
+                <label>When <input type="datetime-local" name="occurred_at" title="Leave blank to log as now"></label>
+                <button type="submit">Add Note</button>
+            </form>
+        </section>
+
         <section class="admin-card">
             <h2>Animals</h2>
 
