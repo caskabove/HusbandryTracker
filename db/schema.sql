@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS user (
     password_hash   TEXT NOT NULL,
     role            TEXT NOT NULL CHECK (role IN ('admin', 'user')),
     is_active       INTEGER NOT NULL DEFAULT 1,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    -- The user's color Theme slug (see web/theme.py, CONTEXT.md: Theme; RHA-118). NULL = Default.
+    -- No CHECK: the list of Themes lives in code, and an unknown slug just renders as Default.
+    theme           TEXT
 );
 
 -- A logged-in session, keyed by the random token stored (HttpOnly, SameSite=Lax) in the browser's

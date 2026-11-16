@@ -91,6 +91,17 @@ inbox:
 
 See [Help → Accounts and Login](/help/accounts) for a visual walkthrough of both.
 
+### Choosing a color theme
+
+Every account can pick its own color theme: click **Settings** in the menu, choose one, and click
+**Save Theme**. The choice is saved to your account, so it follows you to any computer or phone you
+log in on, and doesn't change anyone else's view. The options are **Default** (the original blue),
+**Forest**, **Ocean Reef**, **Planted Tank**, **Desert** (the only light theme) and **Jungle**.
+
+Whatever theme you pick, the status colors (green, yellow, red and gray; see
+[What the colors mean](#what-the-colors-mean)) stay exactly the same, so a problem always looks
+like a problem.
+
 The tray icon turns **yellow** if something's restarting and **red** if something's failed
 repeatedly and needs your attention — see [Section 15](#15-if-somethings-not-working) if that
 happens.

@@ -30,10 +30,12 @@ from web.wizard_shared import (
     target_ranges_from_form as _target_ranges_from_form,
     wizard_redirect as _wizard_redirect,
 )
+from web.theme import install as install_theme
 
 _WEB_DIR = APP_ROOT / "web"
 router = APIRouter(prefix="/setup")
 templates = Jinja2Templates(directory=_WEB_DIR / "templates")
+install_theme(templates)  # data-theme on <html> (see web/theme.py; RHA-118)
 # Same cache-busting setup as web/admin.py's own separate Jinja2Templates instance — see its
 # identical comment.
 templates.env.globals["asset_version"] = str(int(

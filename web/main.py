@@ -43,6 +43,8 @@ from web.login import router as login_router
 from web.queries import CARE_EVENT_KINDS, assign_enclosure_room, get_dashboard_data, log_reading, reorder_rooms
 from web.setup import router as setup_router
 from web.status import care_interval_status, target_range_status
+from web import auth_queries as auth_q
+from web.theme import DEFAULT_SWATCH, THEMES, install as install_theme, theme_for_request
 
 BASE_DIR = APP_ROOT / "web"
 USER_GUIDE_PATH = APP_ROOT / "docs" / "USER_GUIDE.md"
@@ -62,6 +64,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 (IMAGES_DIR / "enclosures").mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+install_theme(templates)  # data-theme on <html> (see web/theme.py; RHA-118)
 templates.env.globals["target_range_status"] = target_range_status
 templates.env.globals["care_interval_status"] = care_interval_status
 # Lets dashboard.html's reading_row()/reading_log_form() macros loop over every possible Target
@@ -164,6 +167,32 @@ def about(request: Request):
     return templates.TemplateResponse(
         request, "about.html", {"app_version": APP_VERSION, "releases_url": RELEASES_URL}
     )
+
+
+# Settings — per-user preferences, open to every logged-in user (unlike App Admin). Today that's
+# just the color Theme (see web/theme.py, CONTEXT.md: Theme; RHA-118).
+@app.get("/settings")
+def settings_page(request: Request, notice: str | None = None, error: str | None = None):
+    return templates.TemplateResponse(request, "settings.html", {
+        "themes": THEMES,
+        "default_swatch": DEFAULT_SWATCH,
+        "current_theme": theme_for_request(request),
+        "notice": notice,
+        "error": error,
+    })
+
+
+@app.post("/settings/theme")
+def settings_set_theme(request: Request, theme: str = Form("")):
+    user = getattr(request.state, "user", None)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    try:
+        auth_q.set_user_theme(user["id"], theme)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/settings?error={quote(str(exc))}", status_code=303)
+    label = THEMES[theme]["label"] if theme else "Default"
+    return RedirectResponse(url=f"/settings?notice={quote(f'Theme set to {label}.')}", status_code=303)
 
 
 async def _refresh_smart_sensors(column: str, entity_id: int) -> str | None:

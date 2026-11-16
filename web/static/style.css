@@ -1,23 +1,191 @@
+/* Color tokens. Every themeable color in the UI reads from one of these: no hardcoded colors
+   below these blocks except the fixed status set. The plain :root block is the Default theme (the
+   original ocean-blue scheme); each Theme further down overrides the same token names under
+   :root[data-theme="<slug>"] (see web/theme.py, CONTEXT.md: Theme; RHA-118). The data-theme
+   attribute is rendered server-side on <html>, so a page never flashes Default first. */
 :root {
-
     --bg: #0d161a;             /* Deep oceanic abyss */
     --panel-bg: #162226;       /* Dark midnight blue */
     --panel-header-bg: #1c2d33;/* Deep sea ridge */
     --room-bg: #0a1114;        /* A shade darker than --bg — Trench dark */
     --room-header-bg: #142024; /* Darker than panel header, distinct room frame */
     --primary: #2f566b;        /* Classic ocean blue accent */
-    --primary-bright: #4f829d; /* Cresting wave / bright sea foam */
+    --primary-bright: #4f829d; /* Cresting wave / bright sea foam: links, outlines, badges */
     --text: #e8eef0;           /* Soft icy blue-white */
     --text-muted: #93a2a8;     /* Muted sea spray gray */
     --border: #243740;
 
+    --secondary: #007f7f;              /* Quote/aside rules */
+    --accent: var(--primary-bright);   /* Hover fill on buttons */
+    --on-primary: var(--text);         /* Text on a --primary fill (header, buttons) */
+    --on-primary-bright: #0d1913;      /* Text on a --primary-bright fill (badges) */
+    --on-accent: #0d1913;              /* Text on an --accent fill (button hover) */
+    --hover-tint: rgba(255, 255, 255, 0.08);
+    --hover-tint-soft: rgba(255, 255, 255, 0.04);
+    --header-divider: rgba(255, 255, 255, 0.2);
+    --drop-target-bg: rgba(79, 157, 118, 0.15);
+    --backdrop: rgba(0, 0, 0, 0.6);
+    /* Read by graphs.js (a canvas can't use var() directly). --chart-scheme picks the series
+       palette: "dark" (bright lines) or "light" (deeper shades that hold up on a light Surface). */
+    --chart-line: #007f7f;
+    --chart-scheme: dark;
+
+    /* Status colors: FIXED. Deliberately never overridden by a Theme, so an alert always looks
+       like an alert (RHA-118). The *-ink tokens are the text drawn on top of them. */
     --status-green: #4caf72;
     --status-yellow: #dcb24c;
     --status-red: #d9584f;
     --status-unknown: #5c7268;
+    --status-ink: #0d1913;
+    --status-ink-light: #fff;
+    --status-unknown-ink: #e8eef0;
+    --lineage-flag: #b45309;
+}
+
+/* ---- Themes (RHA-118) -------------------------------------------------------------------------
+   The ticket's six palette roles map onto the tokens as: Background -> --bg, Surface ->
+   --panel-bg, Primary -> --primary, Secondary -> --secondary, Accent -> --accent, Text -> --text.
+   Derived (not in the ticket's palette): --panel-header-bg (Surface 6% toward Text), --room-bg
+   (Background 25% toward black; Desert: 6% toward Text), --room-header-bg (--room-bg 6% toward
+   Text), --border (Surface 18% toward Text), --text-muted (Text 40% toward Background, nudged back
+   until it clears 4.5:1 on every surface), --primary-bright (Primary nudged lighter, or darker for
+   Desert, until it clears 4.5:1 as link text on every surface), and the --on-* inks (whichever
+   of light/dark clears 4.5:1 on that fill). tests/test_themes.py re-checks every ratio. */
+:root[data-theme="forest"] {
+    color-scheme: dark;  /* native controls: scrollbars, date pickers, checkboxes */
+    --bg: #1b2420;
+    --panel-bg: #26332c;
+    --panel-header-bg: #323e37;
+    --room-bg: #141b18;
+    --room-header-bg: #212824;
+    --primary: #5e8c61;
+    --primary-bright: #8eaf90;
+    --secondary: #8a6f4e;
+    --accent: #d9a441;
+    --text: #e8ede4;
+    --text-muted: #a2a9a2;
+    --border: #49544d;
+    --on-primary: #131916;
+    --on-primary-bright: #131916;
+    --on-accent: #131916;
+    --header-divider: rgba(19, 25, 22, 0.3);
+    --drop-target-bg: rgba(142, 175, 144, 0.15);
+    --chart-line: #3fb3b3;
+}
+:root[data-theme="ocean-reef"] {
+    color-scheme: dark;  /* native controls: scrollbars, date pickers, checkboxes */
+    --bg: #0b1e2d;
+    --panel-bg: #12303f;
+    --panel-header-bg: #1f3c4a;
+    --room-bg: #081622;
+    --room-header-bg: #15232e;
+    --primary: #1fb5b0;
+    --primary-bright: #21b6b1;
+    --secondary: #3a7ca5;
+    --accent: #ff6f61;
+    --text: #e6f4f1;
+    --text-muted: #96a6aa;
+    --border: #38535f;
+    --on-primary: #08151f;
+    --on-primary-bright: #08151f;
+    --on-accent: #08151f;
+    --header-divider: rgba(8, 21, 31, 0.3);
+    --drop-target-bg: rgba(33, 182, 177, 0.15);
+    --chart-line: #6fc3e8;
+}
+:root[data-theme="planted-tank"] {
+    color-scheme: dark;  /* native controls: scrollbars, date pickers, checkboxes */
+    --bg: #14191a;
+    --panel-bg: #1f2a28;
+    --panel-header-bg: #2b3633;
+    --room-bg: #0f1314;
+    --room-header-bg: #1c2021;
+    --primary: #7bc74d;
+    --primary-bright: #7bc74d;
+    --secondary: #2e9e8f;
+    --accent: #c8445a;
+    --text: #eaf2e6;
+    --text-muted: #989f98;
+    --border: #444e4a;
+    --on-primary: #0e1212;
+    --on-primary-bright: #0e1212;
+    --on-accent: #ffffff;
+    --header-divider: rgba(14, 18, 18, 0.3);
+    --drop-target-bg: rgba(123, 199, 77, 0.15);
+    --chart-line: #3fb3b3;
+}
+:root[data-theme="desert"] {
+    --bg: #f4e9d8;
+    --panel-bg: #fbf5ea;
+    --panel-header-bg: #efe9de;
+    --room-bg: #e9decd;
+    --room-header-bg: #dfd3c3;
+    --primary: #c2643b;
+    --primary-bright: #8c482a;
+    --secondary: #8a9a6b;
+    --accent: #5b4a7a;
+    --text: #3b2a20;
+    --text-muted: #68584d;
+    --border: #d8d0c6;
+    --on-primary: #140c08;
+    --on-primary-bright: #f4e9d8;
+    --on-accent: #f4e9d8;
+    --hover-tint: rgba(59, 42, 32, 0.08);
+    --hover-tint-soft: rgba(59, 42, 32, 0.04);
+    --header-divider: rgba(20, 12, 8, 0.3);
+    --drop-target-bg: rgba(140, 72, 42, 0.12);
+    --backdrop: rgba(59, 42, 32, 0.5);
+    --chart-line: #007f7f;
+    --chart-scheme: light;
+    color-scheme: light;
+}
+:root[data-theme="jungle"] {
+    color-scheme: dark;  /* native controls: scrollbars, date pickers, checkboxes */
+    --bg: #0e1f17;
+    --panel-bg: #163024;
+    --panel-header-bg: #233c30;
+    --room-bg: #0a1711;
+    --room-header-bg: #18241e;
+    --primary: #18a558;
+    --primary-bright: #42b576;
+    --secondary: #0f7b6c;
+    --accent: #e0368c;
+    --text: #f0f7ec;
+    --text-muted: #99a49a;
+    --border: #3d5448;
+    --on-primary: #0a1610;
+    --on-primary-bright: #0a1610;
+    --on-accent: #000000;
+    --header-divider: rgba(10, 22, 16, 0.3);
+    --drop-target-bg: rgba(66, 181, 118, 0.15);
+    --chart-line: #3fb3b3;
 }
 
 * { box-sizing: border-box; }
+
+/* Plain links with no class-specific color fall back to the browser's blue/purple, which is
+   unreadable on most Themes. :where() keeps this at a bare `a`'s specificity, so every existing
+   `.something a { color: ... }` rule still wins; Default is left exactly as it was. */
+:where(:root[data-theme]) a { color: var(--primary-bright); }
+
+/* Settings > Theme picker (RHA-118): one row per Theme, a six-chip swatch of its palette roles
+   (Background, Surface, Primary, Secondary, Accent, Text) beside its name. */
+.theme-picker.admin-form { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.theme-picker .theme-option {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+}
+.theme-picker .theme-option:hover { background: var(--hover-tint); }
+.theme-picker .theme-option:has(input:checked) { border-color: var(--primary-bright); }
+.theme-swatch { display: inline-flex; flex-shrink: 0; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.theme-swatch span { width: 1.1rem; height: 1.6rem; }
+.theme-option-text { display: flex; flex-direction: column; gap: 0.1rem; }
+.theme-option-text .help-text { margin: 0; }
 
 body {
     margin: 0;
@@ -30,6 +198,7 @@ body {
    fixed three-column layout rather than the title+nav flowing inline together. */
 .page-header {
     background: var(--primary);
+    color: var(--on-primary);
     padding: 0.6rem 1.5rem;
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -61,7 +230,7 @@ body {
     white-space: nowrap;
 }
 .page-header nav a {
-    color: var(--text);
+    color: var(--on-primary);
     text-decoration: none;
     opacity: 0.85;
 }
@@ -76,13 +245,13 @@ body {
     gap: 0.2rem;
     margin-top: 0.3rem;
     padding-top: 0.3rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    border-top: 1px solid var(--header-divider);
     opacity: 0.85;
 }
 .nav-user button {
     background: none;
     border: none;
-    color: var(--text);
+    color: var(--on-primary);
     text-decoration: underline;
     cursor: pointer;
     font-size: 0.9rem;
@@ -233,14 +402,14 @@ body {
 }
 .admin-form button {
     background: var(--primary);
-    color: var(--text);
+    color: var(--on-primary);
     border: 1px solid var(--primary-bright);
     border-radius: 6px;
     padding: 0.4rem 0.9rem;
     cursor: pointer;
     height: fit-content;
 }
-.admin-form button:hover { background: var(--primary-bright); color: #0d1913; }
+.admin-form button:hover { background: var(--accent); color: var(--on-accent); }
 .discover-device { display: flex; flex-direction: column; gap: 0.4rem; }
 .discover-results { display: flex; flex-direction: column; gap: 0.3rem; max-width: 320px; }
 .discover-results button { font-size: 0.8rem; text-align: left; }
@@ -250,7 +419,7 @@ body {
 button.danger {
     background: var(--status-red);
     border-color: var(--status-red);
-    color: #fff;
+    color: var(--status-ink-light);
 }
 .inline-form { display: inline; }
 .note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -319,7 +488,7 @@ button.danger {
     margin: 1.8em 0;
 }
 .guide-content blockquote {
-    border-left: 3px solid var(--primary);
+    border-left: 3px solid var(--secondary);
     margin: 1em 0;
     padding: 0.2em 1em;
     color: var(--text-muted);
@@ -373,7 +542,7 @@ button.danger {
 /* Drag-and-drop Enclosure -> Room reassignment, and Room -> Room reordering (see CONTEXT.md: Room).
    .dragging is whatever's being dragged (an Enclosure panel, or a Room section via its own
    .drag-handle); .drop-target is the Room section (or Ungrouped) currently under the cursor. */
-.room-section.drop-target { background: rgba(79, 157, 118, 0.15); outline: 2px dashed var(--primary-bright); outline-offset: 4px; }
+.room-section.drop-target { background: var(--drop-target-bg); outline: 2px dashed var(--primary-bright); outline-offset: 4px; }
 .panel { cursor: grab; }
 .panel.dragging, .room-section.dragging { opacity: 0.4; }
 .panel.dragging { cursor: grabbing; }
@@ -464,7 +633,7 @@ button.danger {
     font-size: 0.75rem;
     cursor: pointer;
 }
-.entity-refresh-form button:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.entity-refresh-form button:hover { background: var(--hover-tint); color: var(--text); }
 
 .panel-grid {
     display: grid;
@@ -504,7 +673,7 @@ button.danger {
     min-width: 0;
 }
 .panel-header-link:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--hover-tint-soft);
 }
 .panel-header h2 {
     margin: 0 0 0.5rem 0;
@@ -519,7 +688,7 @@ button.danger {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     background: var(--primary-bright);
-    color: #0d1913;
+    color: var(--on-primary-bright);
     padding: 0.15rem 0.5rem;
     border-radius: 999px;
     font-weight: 600;
@@ -626,14 +795,14 @@ button.danger {
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 600;
-    color: #0d1913;
+    color: var(--status-ink);
     text-decoration: none;
 }
 a.pill:hover { opacity: 0.85; }
 .status-green { background: var(--status-green); }
 .status-yellow { background: var(--status-yellow); }
-.status-red { background: var(--status-red); color: #fff; }
-.status-unknown { background: var(--status-unknown); color: var(--text); }
+.status-red { background: var(--status-red); color: var(--status-ink-light); }
+.status-unknown { background: var(--status-unknown); color: var(--status-unknown-ink); }
 
 /* Target Schedule vs Detected Schedule (see CONTEXT.md: Target Schedule, Detected Schedule, Timer
    Warning) — the Target (manual-set) half of a "target/detected" pair renders lighter/muted so the
@@ -671,7 +840,7 @@ a.pill:hover { opacity: 0.85; }
     border: 1px solid var(--border);
     border-radius: 10px;
 }
-.care-prompt-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+.care-prompt-modal::backdrop { background: var(--backdrop); }
 .care-prompt-header {
     display: flex;
     justify-content: space-between;
@@ -692,14 +861,14 @@ a.pill:hover { opacity: 0.85; }
 .care-prompt-actions { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
 .care-prompt-actions button {
     background: var(--primary);
-    color: var(--text);
+    color: var(--on-primary);
     border: 1px solid var(--primary-bright);
     border-radius: 6px;
     padding: 0.35rem 0.7rem;
     font-size: 0.85rem;
     cursor: pointer;
 }
-.care-prompt-actions button:hover { background: var(--primary-bright); color: #0d1913; }
+.care-prompt-actions button:hover { background: var(--accent); color: var(--on-accent); }
 .care-prompt-actions form { margin: 0; }
 
 /* Log Feeding Dialog (see CONTEXT.md: Log Feeding Dialog; ADR 0043) — reuses .care-prompt-modal's
@@ -923,14 +1092,14 @@ a.pill:hover { opacity: 0.85; }
 .log-form input[type="datetime-local"] { width: 11rem; }
 .log-form button {
     background: var(--primary);
-    color: var(--text);
+    color: var(--on-primary);
     border: 1px solid var(--primary-bright);
     border-radius: 6px;
     padding: 0.25rem 0.6rem;
     font-size: 0.8rem;
     cursor: pointer;
 }
-.log-form button:hover { background: var(--primary-bright); color: #0d1913; }
+.log-form button:hover { background: var(--accent); color: var(--on-accent); }
 .reading-form {
     margin: 0.2rem 0 0.6rem;
     padding-left: 9.4rem;
@@ -985,7 +1154,7 @@ a.setup-skip-link:hover { color: var(--text); }
 .error-banner {
     grid-column: 1 / -1;
     background: var(--status-red);
-    color: #fff;
+    color: var(--status-ink-light);
     padding: 0.6rem 1rem;
     border-radius: 8px;
     font-weight: 600;
@@ -996,7 +1165,7 @@ a.setup-skip-link:hover { color: var(--text); }
 .notice-banner {
     grid-column: 1 / -1;
     background: var(--status-green);
-    color: #fff;
+    color: var(--status-ink-light);
     padding: 0.6rem 1rem;
     border-radius: 8px;
     font-weight: 600;
@@ -1008,14 +1177,14 @@ a.setup-skip-link:hover { color: var(--text); }
 a.button-link {
     display: inline-block;
     background: var(--primary);
-    color: var(--text);
+    color: var(--on-primary);
     border: 1px solid var(--primary-bright);
     border-radius: 6px;
     padding: 0.4rem 0.9rem;
     text-decoration: none;
     font-size: 0.9rem;
 }
-a.button-link:hover { background: var(--primary-bright); color: #0d1913; }
+a.button-link:hover { background: var(--accent); color: var(--on-accent); }
 span.button-link.disabled {
     display: inline-block;
     border: 1px solid var(--border);
@@ -1092,7 +1261,7 @@ span.button-link.disabled {
     border: 1px solid var(--border);
     border-radius: 10px;
 }
-.graph-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+.graph-modal::backdrop { background: var(--backdrop); }
 .graph-modal-header {
     display: flex;
     justify-content: space-between;
@@ -1166,19 +1335,19 @@ canvas.sparkline { display: block; }
 }
 .sparkline-range-btn + .sparkline-range-btn { border-left: 1px solid var(--border); }
 .sparkline-range-btn:hover { color: var(--text); }
-.sparkline-range-btn.active { background: var(--primary); color: var(--text); }
+.sparkline-range-btn.active { background: var(--primary); color: var(--on-primary); }
 
 /* Genetics and Morph in standard notation (see CONTEXT.md: Genetics; RHA-105), on the Animal card
    and Animal Page. */
 .animal-card-genetics { font-size: 0.85rem; font-weight: 600; }
 
 /* Lineage (see CONTEXT.md: Lineage; RHA-106): nested Sire/Dam tree and the editing slots. */
-.lineage-tree { list-style: none; margin: 0.25rem 0 0.25rem 0.5rem; padding-left: 0.9rem; border-left: 2px solid var(--border, #ccc); }
+.lineage-tree { list-style: none; margin: 0.25rem 0 0.25rem 0.5rem; padding-left: 0.9rem; border-left: 2px solid var(--border); }
 .lineage-tree li { margin: 0.3rem 0; }
 .lineage-tree summary { cursor: pointer; }
 .lineage-role { color: var(--text-muted); font-size: 0.8rem; margin-right: 0.25rem; }
 .lineage-line { margin-left: 0.4rem; font-size: 0.85rem; }
-.lineage-flag { margin-left: 0.4rem; font-size: 0.8rem; color: #b45309; font-weight: 600; }
+.lineage-flag { margin-left: 0.4rem; font-size: 0.8rem; color: var(--lineage-flag); font-weight: 600; }
 .lineage-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; }
 .lineage-slot h3 { margin: 0 0 0.4rem; }
 .lineage-copy { margin-top: 1rem; }

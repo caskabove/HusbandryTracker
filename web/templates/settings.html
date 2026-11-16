@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en"{{ html_theme_attr() }}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Husbandry Tracker - Settings</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="/static/images/logo.png" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Settings</h1>
+        {% set nav_current = "settings" %}{% include "_nav.html" %}
+    </header>
+
+    <main class="guide-main">
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        {% if notice %}<p class="notice-banner">{{ notice }}</p>{% endif %}
+        <section class="admin-card view-data-section">
+            <h2>Theme</h2>
+            {# See CONTEXT.md: Theme; web/theme.py; RHA-118. Saved to your account, so it follows you
+               to every device you log in on. Status colors (Green/Yellow/Red pills, error banners)
+               stay the same in every Theme. The swatch colors below are preview data, not UI
+               chrome, which is why they're inline rather than read from the stylesheet. #}
+            <p class="help-text">Applies to every page, on every device you log in on. Status colors (in range, warning, out of range) look the same in every theme.</p>
+            <form method="post" action="/settings/theme" class="admin-form theme-picker">
+                {% macro theme_option(slug, label, description, swatch) %}
+                <label class="theme-option">
+                    <input type="radio" name="theme" value="{{ slug }}" {% if (current_theme or "") == slug %}checked{% endif %}>
+                    <span class="theme-swatch" aria-hidden="true">
+                        {% for color in swatch %}<span style="background:{{ color }}"></span>{% endfor %}
+                    </span>
+                    <span class="theme-option-text">
+                        <strong>{{ label }}</strong>
+                        <span class="help-text">{{ description }}</span>
+                    </span>
+                </label>
+                {% endmacro %}
+                {{ theme_option("", "Default", "The original ocean-blue scheme.", default_swatch) }}
+                {% for slug, t in themes.items() %}
+                    {{ theme_option(slug, t.label, t.description, t.swatch) }}
+                {% endfor %}
+                <div><button type="submit">Save Theme</button></div>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

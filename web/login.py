@@ -18,10 +18,12 @@ from fastapi.templating import Jinja2Templates
 from app_paths import APP_ROOT
 from web import auth_queries as q
 from web.auth import SESSION_COOKIE_NAME, clear_session_cookie, set_session_cookie
+from web.theme import install as install_theme
 
 _WEB_DIR = APP_ROOT / "web"
 router = APIRouter(prefix="")
 templates = Jinja2Templates(directory=_WEB_DIR / "templates")
+install_theme(templates)  # data-theme on <html> (see web/theme.py; RHA-118)
 templates.env.globals["asset_version"] = str(int(
     max(f.stat().st_mtime for f in (_WEB_DIR / "static").iterdir() if f.is_file())
 ))

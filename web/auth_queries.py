@@ -105,6 +105,15 @@ def set_user_active(user_id: int, is_active: bool) -> None:
         delete_all_sessions_for_user(user_id)
 
 
+def set_user_theme(user_id: int, theme: str | None) -> None:
+    """Stores the user's color Theme (see web/theme.py; RHA-118). None/"" resets to Default."""
+    from web.theme import is_valid_theme
+    if not is_valid_theme(theme):
+        raise ValueError("Pick a valid theme.")
+    with get_connection() as conn:
+        conn.execute("UPDATE user SET theme = ? WHERE id = ?", (theme or None, user_id))
+
+
 def set_user_role(user_id: int, role: str) -> None:
     if role not in ("admin", "user"):
         raise ValueError("Pick a valid role.")

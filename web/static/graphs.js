@@ -4,10 +4,30 @@
 // number on a linear scale, with a tick callback formatting it for display, rather than Chart.js's
 // own "time" scale (which requires one).
 
-const GRAPH_PALETTE = ["#4f9d6e", "#4f8fd6", "#d6a24f", "#d65f5f", "#9d6ed6", "#5fd6c6", "#d64f9d", "#8fd64f"];
-const SPARKLINE_COLOR = "#007f7f";
-const SPARKLINE_TARGET_RANGE_COLOR = "#4caf72"; // var(--status-green) — canvas fills can't read CSS vars
-const SPARKLINE_AXIS_COLOR = "#93a89c"; // var(--text-muted)
+// Theme-dependent colors come from the CSS tokens on <html> (see style.css's :root blocks,
+// CONTEXT.md: Theme; RHA-118): a canvas can't use var() itself, so they're read once here. The
+// page's data-theme is rendered server-side, so the tokens are final by the time this runs.
+const THEME_STYLE = getComputedStyle(document.documentElement);
+function themeToken(name, fallback) {
+    return THEME_STYLE.getPropertyValue(name).trim() || fallback;
+}
+// Series colors. A light Theme (Desert) gets deeper shades of the same hues, so every line keeps
+// at least 3:1 against its Surface; the hue order is the same, so a series keeps its "color".
+const GRAPH_PALETTE_DARK_BG = ["#4f9d6e", "#4f8fd6", "#d6a24f", "#d65f5f", "#9d6ed6", "#5fd6c6", "#d64f9d", "#8fd64f"];
+const GRAPH_PALETTE_LIGHT_BG = ["#499065", "#4985c7", "#a37b3c", "#d25d5d", "#9a6cd2", "#3f8d83", "#d64f9d", "#5e8d34"];
+const GRAPH_PALETTE = themeToken("--chart-scheme", "dark") === "light" ? GRAPH_PALETTE_LIGHT_BG : GRAPH_PALETTE_DARK_BG;
+// Must stay #rrggbb: an alpha suffix ("2a") gets appended to it for the band fill below.
+const SPARKLINE_COLOR = themeToken("--chart-line", "#007f7f");
+// Status green is fixed across Themes (it means "acceptable zone"), so it stays a literal.
+const SPARKLINE_TARGET_RANGE_COLOR = "#4caf72"; // var(--status-green)
+const SPARKLINE_AXIS_COLOR = themeToken("--text-muted", "#93a89c");
+// Chart.js's own defaults (#666 labels, near-black gridlines) only suit a white page. Under a
+// Theme, legends/ticks/gridlines follow its muted text and border colors instead; the Default
+// theme is left exactly as it was.
+if (document.documentElement.dataset.theme && typeof Chart !== "undefined") {
+    Chart.defaults.color = SPARKLINE_AXIS_COLOR;
+    Chart.defaults.borderColor = themeToken("--border", Chart.defaults.borderColor);
+}
 
 // A combined Temperature+Humidity Sparkline (RHA-93: one Sensor reporting both shares one chart
 // instead of two) — fixed line colors pulled from Graphs' own GRAPH_PALETTE rather than a new

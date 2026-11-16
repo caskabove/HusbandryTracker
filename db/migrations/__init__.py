@@ -52,6 +52,7 @@ from db.migrations import m0028_gene_catalog
 from db.migrations import m0029_animal_genetics
 from db.migrations import m0030_tds_metric
 from db.migrations import m0031_enclosure_note
+from db.migrations import m0032_user_theme
 
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "action_tracking", m0001_action_tracking.migrate),
@@ -85,6 +86,7 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (29, "animal_genetics", m0029_animal_genetics.migrate),
     (30, "tds_metric", m0030_tds_metric.migrate),
     (31, "enclosure_note", m0031_enclosure_note.migrate),
+    (32, "user_theme", m0032_user_theme.migrate),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]

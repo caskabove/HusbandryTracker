@@ -3,6 +3,7 @@
     <a href="/admin/enclosures" {% if nav_current == "enclosures" %}aria-current="page"{% endif %}>Rooms and Enclosures</a>
     <a href="/admin" {% if nav_current == "control" %}aria-current="page"{% endif %}>Plugs and Sensors</a>
     <a href="/admin/app" {% if nav_current == "app_admin" %}aria-current="page"{% endif %}>Admin</a>
+    <a href="/settings" {% if nav_current == "settings" %}aria-current="page"{% endif %}>Settings</a>
     <a href="/help" {% if nav_current == "help" %}aria-current="page"{% endif %}>Help</a>
     <a href="/about" {% if nav_current == "about" %}aria-current="page"{% endif %}>About</a>
     {% if request.state.user %}

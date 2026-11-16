@@ -40,10 +40,12 @@ from web.queries import (
     SHED_STUCK_LOCATION_LABELS, SHED_STUCK_LOCATIONS, log_care_event, log_reading,
 )
 from web.status import acknowledged_drift_status, care_interval_status, schedule_drift_status, target_range_status
+from web.theme import install as install_theme
 
 _WEB_DIR = APP_ROOT / "web"
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory=_WEB_DIR / "templates")
+install_theme(templates)  # data-theme on <html> (see web/theme.py; RHA-118)
 templates.env.globals["care_interval_status"] = care_interval_status
 templates.env.globals["target_range_status"] = target_range_status
 templates.env.globals["schedule_drift_status"] = schedule_drift_status
