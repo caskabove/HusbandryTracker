@@ -1747,7 +1747,9 @@ def send_plug_command(plug_id: int, is_on: bool, note: str | None = None) -> dic
 
 def list_rooms() -> list[dict]:
     with get_connection() as conn:
-        return [dict(row) for row in conn.execute("SELECT * FROM room ORDER BY name")]
+        # Same user drag-set order as the dashboard (see web/queries.py's reorder_rooms()), so the
+        # Rooms table and every Room picker match it; `name` only breaks sort_order ties.
+        return [dict(row) for row in conn.execute("SELECT * FROM room ORDER BY sort_order, name")]
 
 
 def create_room(name: str) -> int:

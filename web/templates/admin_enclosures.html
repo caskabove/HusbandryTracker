@@ -19,17 +19,23 @@
         <section class="admin-card">
             <h2>Rooms</h2>
             <table class="admin-table">
-                <thead><tr><th>Name</th><th>Enclosures</th><th>Light Schedule</th><th></th></tr></thead>
+                <thead><tr><th></th><th>Name</th><th>Enclosures</th><th>Light Schedule</th><th></th></tr></thead>
                 <tbody>
+                {# Drag a row's handle onto another row to reorder Rooms — same order the dashboard
+                   uses, persisted via app.js's onRoomDrop -> /rooms/reorder (see CONTEXT.md: Room). #}
                 {% for r in rooms %}
-                    <tr>
-                        <td class="admin-table-primary"><a href="/admin/rooms/{{ r.id }}">{{ r.name }}</a></td>
+                    <tr class="room-row" data-room-id="{{ r.id }}"
+                        ondragover="onRoomDragOver(event)" ondragleave="onRoomDragLeave(event)" ondrop="onRoomDrop(event)">
+                        <td><span class="drag-handle" draggable="true" title="Drag to reorder"
+                                  ondragstart="onRoomDragStart(event)" ondragend="onRoomDragEnd(event)">&#9776;</span></td>
+                        <td class="admin-table-primary"><a href="/admin/rooms/{{ r.id }}"
+                            ondragstart="onRoomDragStart(event)" ondragend="onRoomDragEnd(event)">{{ r.name }}</a></td>
                         <td>{{ enclosure_count_by_room.get(r.id, 0) }}</td>
                         <td>{% if r.light_on_time and r.light_off_time %}{{ r.light_on_time }}&ndash;{{ r.light_off_time }}{% else %}not set{% endif %}</td>
                         <td><a href="/admin/rooms/{{ r.id }}">edit</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="empty">No rooms yet — add one below.</td></tr>
+                    <tr><td colspan="5" class="empty">No rooms yet — add one below.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

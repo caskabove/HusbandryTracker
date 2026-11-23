@@ -410,15 +410,20 @@
                    reorder_rooms(). Same room-section ondragover/ondrop above also handles an
                    Enclosure panel dropped here to reassign it (CONTEXT.md: Room) — onRoomDrop
                    tells the two apart by dataTransfer type. #}
-                <button type="button" class="collapse-toggle drag-handle" draggable="true" title="Drag to reorder"
-                        ondragstart="onRoomDragStart(event)" ondragend="onRoomDragEnd(event)">&#9776;</button>
+                {# A <span>, not a <button>: Firefox never starts a drag from a <button>. The Room
+                   name link below is a second drag source for the same reorder — grabbing the name
+                   is what people naturally do, and an un-handled link drag would otherwise carry
+                   the link's URL as text onto the drop target. #}
+                <span class="collapse-toggle drag-handle" draggable="true" title="Drag to reorder"
+                      ondragstart="onRoomDragStart(event)" ondragend="onRoomDragEnd(event)">&#9776;</span>
                 <button type="button" class="collapse-toggle" onclick="toggleCollapse(this)" title="Collapse/expand">&#9662;</button>
                 <div class="room-header-main">
                 {# The Sparkline click-through (ADR 0024) makes room-summary's own charts into real
                    <a> links — nested <a> elements are invalid HTML, so the "edit this Room" link
                    below can no longer wrap room-summary the way it used to; it now only wraps the
                    room name itself, with room-summary pulled out as a sibling. #}
-                <a href="/admin/rooms/{{ room.id }}" class="room-header-link" title="Edit {{ room.name }}">
+                <a href="/admin/rooms/{{ room.id }}" class="room-header-link" title="Edit {{ room.name }} (drag to reorder)"
+                   ondragstart="onRoomDragStart(event)" ondragend="onRoomDragEnd(event)">
                     <h2>{{ room.name }}</h2>
                 </a>
                     <div class="room-summary">

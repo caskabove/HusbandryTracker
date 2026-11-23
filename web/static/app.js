@@ -255,11 +255,13 @@ applySavedCollapseState();
 // is a full page reload rather than a partial DOM update.
 //
 // Both drag sources share the same room-section ondragover/ondrop handlers below; onRoomDrop tells
-// them apart by dataTransfer type — "text/plain" (an Enclosure's id) vs "application/x-room-id" (a
-// Room's own id, set only by onRoomDragStart) — rather than by two separate drop handlers, since a
-// single drop target still needs to pick exactly one interpretation of whatever was dropped on it.
+// them apart by dataTransfer type — "application/x-enclosure-id" vs "application/x-room-id" —
+// rather than by two separate drop handlers, since a single drop target still needs to pick exactly
+// one interpretation of whatever was dropped on it. Both are custom types on purpose: "text/plain"
+// is also what the browser fills in for any stray link or text-selection drag (e.g. a Room's name
+// link), which used to be misread as an Enclosure id and POSTed to /enclosures/<url>/assign-room.
 function onEnclosureDragStart(event) {
-    event.dataTransfer.setData("text/plain", event.currentTarget.dataset.enclosureId);
+    event.dataTransfer.setData("application/x-enclosure-id", event.currentTarget.dataset.enclosureId);
     event.dataTransfer.effectAllowed = "move";
     event.currentTarget.classList.add("dragging");
 }
@@ -270,16 +272,23 @@ function onEnclosureDragEnd(event) {
 
 // The handle is the drag source, not the whole .room-header (which also hosts the "edit this Room"
 // link, Refresh button, and Log Reading forms) — but it's the Room's .room-section that needs the
-// .dragging styling and that onRoomDrop below reorders, so this reaches up to it.
+// .dragging styling and that onRoomDrop below reorders, so this reaches up to it. The same handlers
+// also drive the Rooms & Enclosures admin page's Rooms table, where each Room is a .room-row.
+const ROOM_ITEM_SELECTOR = ".room-section, .room-row";
+
 function onRoomDragStart(event) {
-    const section = event.currentTarget.closest(".room-section");
+    const section = event.currentTarget.closest(ROOM_ITEM_SELECTOR);
+    // The Room name link is also a drag source; stop this drag from bubbling up to an enclosing
+    // draggable, and drop the URL/text the browser pre-filled for the link.
+    event.stopPropagation();
+    event.dataTransfer.clearData();
     event.dataTransfer.setData("application/x-room-id", section.dataset.roomId);
     event.dataTransfer.effectAllowed = "move";
     section.classList.add("dragging");
 }
 
 function onRoomDragEnd(event) {
-    event.currentTarget.closest(".room-section").classList.remove("dragging");
+    event.currentTarget.closest(ROOM_ITEM_SELECTOR).classList.remove("dragging");
 }
 
 function onRoomDragOver(event) {
@@ -299,8 +308,8 @@ async function onRoomDrop(event) {
         await reorderRoom(draggedRoomId, event.currentTarget);
         return;
     }
-    const enclosureId = event.dataTransfer.getData("text/plain");
-    if (!enclosureId) return;
+    const enclosureId = event.dataTransfer.getData("application/x-enclosure-id");
+    if (!enclosureId) return;  // a foreign drag (stray link, selected text) — ignore it
     const roomId = event.currentTarget.dataset.roomId;  // "" means Ungrouped (room_id -> NULL)
     try {
         const response = await fetch(`/enclosures/${enclosureId}/assign-room`, {
@@ -325,7 +334,8 @@ async function onRoomDrop(event) {
 async function reorderRoom(draggedRoomId, targetSection) {
     const targetRoomId = targetSection.dataset.roomId;
     if (!targetRoomId || targetRoomId === draggedRoomId) return;
-    const order = Array.from(document.querySelectorAll(".room-section"))
+    const itemSelector = targetSection.classList.contains("room-row") ? ".room-row" : ".room-section";
+    const order = Array.from(document.querySelectorAll(itemSelector))
         .map(function (section) { return section.dataset.roomId; })
         .filter(function (roomId) { return roomId; });
     const fromIndex = order.indexOf(draggedRoomId);
@@ -878,3 +888,63 @@ function onGeneticsStateChange(select) {
     scope.querySelectorAll(".genetics-percent").forEach(function (block) { setToggleBlock(block, select.value === "possible_het"); });
     scope.querySelectorAll(".genetics-evidence").forEach(function (block) { setToggleBlock(block, select.value === "het"); });
 }
+
+// Enclosure page "Back" link — returns to whichever page opened the Enclosure page (the dashboard,
+// Rooms and Enclosures, or a Room's own page) at the same scroll position. Clicking any link to an
+// Enclosure page from one of those origin pages remembers that page's URL and scrollY in
+// sessionStorage (per-tab, like the browser's own history); the Enclosure page's Back link then
+// navigates there and the origin page scrolls itself back on load. Not history.back(): every
+// form on the Enclosure page POSTs and redirects back to itself, so the browser's history would
+// step through those submissions first.
+const ENCLOSURE_BACK_KEY = "enclosure-back";
+const ENCLOSURE_BACK_RESTORE_KEY = "enclosure-back-restore";
+const ENCLOSURE_PAGE_PATH = /^\/admin\/enclosures\/\d+$/;
+const ENCLOSURE_BACK_ORIGINS = [
+    { path: /^\/$/, label: "Dashboard" },
+    { path: /^\/admin\/enclosures\/?$/, label: "Rooms and Enclosures" },
+    { path: /^\/admin\/rooms\/\d+$/, label: "Room" },
+];
+
+function enclosureBackOrigin(pathname) {
+    return ENCLOSURE_BACK_ORIGINS.find(function (origin) { return origin.path.test(pathname); });
+}
+
+(function initEnclosureBack() {
+    const origin = enclosureBackOrigin(location.pathname);
+    if (origin) {
+        document.addEventListener("click", function (event) {
+            const link = event.target.closest("a[href]");
+            if (!link) return;
+            const url = new URL(link.href, location.href);
+            if (url.origin !== location.origin || !ENCLOSURE_PAGE_PATH.test(url.pathname)) return;
+            try {
+                sessionStorage.setItem(ENCLOSURE_BACK_KEY, JSON.stringify({
+                    url: location.pathname + location.search, scrollY: window.scrollY, label: origin.label,
+                }));
+            } catch (e) { /* sessionStorage unavailable — Back just falls back to the dashboard */ }
+        }, true);
+
+        // Back from an Enclosure page: restore the remembered scroll once layout (charts, images)
+        // has settled. Only when this exact URL is the one Back was pressed for.
+        window.addEventListener("load", function () {
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(ENCLOSURE_BACK_RESTORE_KEY) || "null");
+                sessionStorage.removeItem(ENCLOSURE_BACK_RESTORE_KEY);
+                if (saved && saved.url === location.pathname + location.search) {
+                    requestAnimationFrame(function () { window.scrollTo(0, saved.scrollY); });
+                }
+            } catch (e) { /* nothing to restore */ }
+        });
+    }
+
+    const backLink = document.getElementById("enclosure-back-link");
+    if (!backLink) return;
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(ENCLOSURE_BACK_KEY) || "null"); } catch (e) { /* default below */ }
+    if (!saved || !saved.url) saved = { url: "/", scrollY: 0, label: "Dashboard" };
+    backLink.href = saved.url;
+    backLink.textContent = "← Back to " + saved.label;
+    backLink.addEventListener("click", function () {
+        try { sessionStorage.setItem(ENCLOSURE_BACK_RESTORE_KEY, JSON.stringify(saved)); } catch (e) { /* just navigates */ }
+    });
+})();

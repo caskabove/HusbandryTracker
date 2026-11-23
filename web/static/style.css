@@ -586,8 +586,14 @@ button.danger {
 .panel { cursor: grab; }
 .panel.dragging, .room-section.dragging { opacity: 0.4; }
 .panel.dragging { cursor: grabbing; }
+.drag-handle { user-select: none; display: inline-block; }
 .room-header .drag-handle { cursor: grab; }
 .room-header .drag-handle:active { cursor: grabbing; }
+/* Rooms & Enclosures admin page's Rooms table — same reorder, one row per Room. */
+.room-row.dragging { opacity: 0.4; }
+.room-row.drop-target td { background: var(--drop-target-bg); }
+.room-row .drag-handle { cursor: grab; background: none; border: none; padding: 0 0.25rem; color: inherit; font-size: 1.1rem; }
+.room-row .drag-handle:active { cursor: grabbing; }
 
 /* Collapsible Rooms and Enclosure panels — a Room/Enclosure with no sensor data of its own starts
    collapsed (server-decided, fresh each page load) so the dashboard leads with what actually has
@@ -603,7 +609,7 @@ button.danger {
     flex-shrink: 0;
     transition: transform 0.15s;
 }
-.room-section.collapsed .collapse-toggle,
+.room-section.collapsed .collapse-toggle:not(.drag-handle),
 .panel.collapsed .collapse-toggle { transform: rotate(-90deg); }
 .room-section.collapsed .panel-grid { display: none; }
 .panel.collapsed .panel-body { display: none; }

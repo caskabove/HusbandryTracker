@@ -16,6 +16,9 @@
     </header>
 
     <main class="admin-main">
+        {# Back to whichever page opened this one, at the same scroll position — app.js's
+           initEnclosureBack() fills in the real href/label; this default is for a direct visit. #}
+        <p><a href="/" id="enclosure-back-link">&larr; Back to Dashboard</a></p>
         {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
 
         {# Enclosure Photo (see CONTEXT.md: Enclosure Photo) — the first thing shown on this page
