@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en"{{ html_theme_attr() }}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ plugin.display_name }} — Husbandry Tracker Admin</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <header class="page-header">
+        <img src="{{ logo_url() }}?v={{ asset_version }}" alt="CaskAbove Chameleons" class="header-logo">
+        <h1>Husbandry Tracker Admin</h1>
+        {% set nav_current = "app_admin" %}{% include "_nav.html" %}
+    </header>
+
+    {# A Plugin's own Settings page — see CONTEXT.md: Plugin Settings Page, Plugin Standard, Known
+       Device; ADR 0061. Everything shown here comes from the Plugin's manifest.json; nothing on
+       this page is written per-vendor. #}
+    <main class="admin-main">
+        <p><a href="/admin/app#plugins" class="back-link">&larr; Back to Admin</a></p>
+        {% if error %}<p class="error-banner">{{ error }}</p>{% endif %}
+        {% if notice %}<p class="notice-banner">{{ notice }}</p>{% endif %}
+
+        <section class="admin-card">
+            <div class="plugin-heading">
+                <div>
+                    <h2>{{ plugin.display_name }}</h2>
+                    <p class="empty"><code>{{ plugin.name }}</code>{% if plugin.version %} · version {{ plugin.version }}{% endif %}
+                        · {{ "Skill" if plugin.kind == "skill" else "Device Plugin" }}
+                        {% if plugin.device_types %} · {{ plugin.device_types | map("capitalize") | join(" and ") }}s{% endif %}</p>
+                </div>
+                <div class="plugin-heading-status">
+                    {% if not plugin.valid %}
+                    <span class="plugin-status plugin-status-invalid">Invalid</span>
+                    {% elif plugin.active %}
+                    <span class="plugin-status plugin-status-active">Active</span>
+                    {% else %}
+                    <span class="plugin-status">Inactive</span>
+                    {% endif %}
+                    {% if plugin.active %}
+                    <form method="post" action="/admin/plugins/{{ plugin.name }}/deactivate" class="inline-form admin-form">
+                        <button type="submit">Deactivate</button>
+                    </form>
+                    {% elif plugin.valid %}
+                    <form method="post" action="/admin/plugins/{{ plugin.name }}/activate" class="inline-form admin-form">
+                        <button type="submit">Activate</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            <p>{{ plugin.description }}</p>
+            {% if plugin.valid %}
+            <p class="empty">
+                {% if plugin.kind == "skill" and plugin.active %}
+                Deactivating removes its files from <code>.claude/skills/{{ plugin.name }}/</code>.
+                {% elif plugin.kind == "skill" %}
+                Activating installs a Claude Code skill into this install's own <code>.claude/skills/{{ plugin.name }}/</code> — nothing is written anywhere until you do this.
+                {% elif plugin.active %}
+                Deactivating stops background updates for every Sensor/Plug on this Plugin right away, and blocks Refresh and on/off commands for them. Nothing is deleted.
+                {% else %}
+                While inactive, its Sensors/Plugs don't update and their Refresh and on/off controls are blocked. Activating lifts all of that at once.
+                {% endif %}
+            </p>
+            {% endif %}
+        </section>
+
+        {% if not plugin.valid %}
+        <section class="admin-card">
+            <h2>Doesn't meet the Plugin Standard</h2>
+            <p class="empty">This Plugin can't be activated until these are fixed — see <code>docs/plugin-standard.md</code>.</p>
+            <ul class="plugin-errors">
+                {% for problem in plugin.errors %}<li>{{ problem }}</li>{% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        {% if plugin.how_it_works or plugin.can or plugin.cannot %}
+        <section class="admin-card">
+            <h2>How it works</h2>
+            {% if plugin.how_it_works %}<p>{{ plugin.how_it_works }}</p>{% endif %}
+            <div class="plugin-abilities">
+                {% if plugin.can %}
+                <div>
+                    <h3>It can</h3>
+                    <ul class="plugin-can">{% for item in plugin.can %}<li>{{ item }}</li>{% endfor %}</ul>
+                </div>
+                {% endif %}
+                {% if plugin.cannot %}
+                <div>
+                    <h3>It can't</h3>
+                    <ul class="plugin-cannot">{% for item in plugin.cannot %}<li>{{ item }}</li>{% endfor %}</ul>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if plugin.valid and plugin.settings %}
+        <section class="admin-card" id="settings">
+            <h2>Settings</h2>
+            {% if plugin.setup_help %}
+            <p class="empty">Where to get these — a one-time setup:</p>
+            <ol class="empty">{% for step in plugin.setup_help %}<li>{{ step }}</li>{% endfor %}</ol>
+            {% endif %}
+            <form method="post" action="/admin/plugins/{{ plugin.name }}/settings" class="admin-form">
+                {% for field in plugin.settings %}
+                {% set current = settings_view[field.key] %}
+                <label>{{ field.label }}
+                    {% if field.type == "select" %}
+                    <select name="{{ field.key }}">
+                        {% for option in field.options %}
+                        <option value="{{ option.value }}" {% if current.value == option.value %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                    {% elif field.type == "secret" %}
+                    <input type="password" name="{{ field.key }}" autocomplete="off"
+                           placeholder="{% if current.is_set %}(saved — leave blank to keep it){% else %}{{ field.help or '' }}{% endif %}">
+                    {% else %}
+                    <input type="text" name="{{ field.key }}" value="{{ current.value }}" placeholder="{{ field.help or '' }}">
+                    {% endif %}
+                </label>
+                {% if field.type == "secret" and current.is_set %}
+                <label class="checkbox"><input type="checkbox" name="clear__{{ field.key }}" value="1"> Clear saved {{ field.label }}</label>
+                {% endif %}
+                {% endfor %}
+                <button type="submit">Save</button>
+            </form>
+        </section>
+        {% endif %}
+
+        {% if plugin.kind == "device" and plugin.valid %}
+        <section class="admin-card" id="devices">
+            <h2>Devices</h2>
+            {% if plugin.discovery %}
+            <p class="empty">Scan to list every device this Plugin can reach right now, then give each a
+                name you'll recognise. Named devices show up as a pick-list on Add
+                {{ plugin.device_types | map("capitalize") | join("/") }}, so you don't have to type IDs.
+                Naming a device that's already registered renames it everywhere.</p>
+            <div class="plugin-scan">
+                <button type="button" id="plugin-scan-button" data-plugin="{{ plugin.name }}"
+                        onclick="onPluginScanClick(this)">{{ plugin.discovery.button_label }}</button>
+                {% if plugin.discovery.duration_hint %}<span class="empty">Takes {{ plugin.discovery.duration_hint }}.</span>{% endif %}
+            </div>
+            <div id="plugin-scan-results" class="plugin-scan-results" hidden></div>
+            {% endif %}
+
+            <h3>Named and registered devices</h3>
+            {% if known_devices %}
+                        <table class="admin-table plugin-devices">
+                <thead><tr><th>Name</th><th>Device ID</th><th>Registered as</th><th></th></tr></thead>
+                <tbody>
+                {% for device in known_devices %}
+                    <tr>
+                        <td>
+                            <form method="post" action="/admin/plugins/{{ plugin.name }}/devices" class="inline-form plugin-name-form">
+                                <input type="hidden" name="external_id" value="{{ device.external_id }}">
+                                <input type="text" name="name" value="{{ device.name }}" required aria-label="Name for {{ device.external_id }}">
+                                <button type="submit">Save</button>
+                            </form>
+                            {% if device.summary %}<br><span class="empty">{{ device.summary }}</span>{% endif %}
+                        </td>
+                        <td><code class="plugin-device-id">{{ device.external_id }}</code></td>
+                        <td>
+                            {% if device.registered %}
+                            <a href="{{ device.registered.edit_url }}">{{ device.registered.type|capitalize }}</a>
+                            {% else %}
+                            <span class="empty">Not yet — pick it on Add {{ plugin.device_types | map("capitalize") | join("/") }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if not device.registered %}
+                            <form method="post" action="/admin/plugins/{{ plugin.name }}/devices/forget" class="inline-form">
+                                <input type="hidden" name="external_id" value="{{ device.external_id }}">
+                                <button type="submit" class="danger-small">Forget</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty">None yet.{% if plugin.discovery %} Scan above, then name what it finds.{% endif %}</p>
+            {% endif %}
+        </section>
+        {% endif %}
+    </main>
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

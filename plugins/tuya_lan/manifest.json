@@ -1,5 +1,46 @@
 {
+  "schema_version": 1,
   "name": "tuya_lan",
+  "display_name": "Tuya / Gosund Smart Plugs",
+  "version": "1.0.0",
+  "kind": "device",
   "description": "Polls local Tuya/Gosund smart plugs over LAN for on/off state and telemetry (watts/volts/amps).",
-  "kind": "device"
+  "how_it_works": "Tuya-based smart plugs (Gosund, Treatlife, and most Smart Life brands) can be talked to directly over your home Wi-Fi once you know each plug's device ID and local key. Those two values only live in Tuya's cloud, so a scan asks Tuya's cloud (using the Access ID/Secret below) which plugs are linked to your Smart Life account. Day to day, the Plugin polls each registered Plug on your local network, never the cloud, and records its on/off state and power use. It also carries out on/off Commands you send from the Dashboard.",
+  "can": [
+    "Read each Plug's on/off state, plus watts/volts/amps on models that report them.",
+    "Turn a Plug on or off when you click its control.",
+    "List every plug linked to your Smart Life / Tuya Smart account, so you don't have to look up IDs by hand.",
+    "Keep working day to day with no internet connection, once a Plug is registered."
+  ],
+  "cannot": [
+    "Find plugs without the Tuya Cloud Access ID/Secret saved below.",
+    "Reach a plug on a different network, or one that's been re-paired since it was registered (its local key changes).",
+    "See or change the schedules saved inside the Smart Life app — those are detected from on/off history instead.",
+    "Guess the right outlet number on every multi-outlet strip — check it with the plug's Probe if a toggle hits the wrong outlet."
+  ],
+  "device_types": ["plug"],
+  "entry_point": "plugin.py",
+  "discovery": {
+    "button_label": "Find plugs on my Tuya account",
+    "duration_hint": "a few seconds",
+    "requires_settings": ["access_id", "access_secret"]
+  },
+  "setup_help": [
+    "Go to iot.tuya.com and create a free account.",
+    "Create a \"Cloud\" project there, then link it to your Smart Life (or Tuya Smart) account — this usually means scanning a QR code with your phone, in that app.",
+    "The project's page shows an Access ID and Access Secret — paste them in below."
+  ],
+  "settings": [
+    {"key": "access_id", "label": "Access ID", "type": "text", "help": "From your Tuya IoT Cloud project."},
+    {"key": "access_secret", "label": "Access Secret", "type": "secret", "help": "Never shown again once saved."},
+    {
+      "key": "api_region", "label": "API Region", "type": "select", "default": "us",
+      "options": [
+        {"value": "us", "label": "Americas"},
+        {"value": "eu", "label": "Europe"},
+        {"value": "cn", "label": "China"},
+        {"value": "in", "label": "India"}
+      ]
+    }
+  ]
 }

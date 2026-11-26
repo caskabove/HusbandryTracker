@@ -315,9 +315,17 @@ linking a free Tuya developer account to the same account you paired the plug wi
 1. Go to [iot.tuya.com](https://iot.tuya.com) and create a free account.
 2. Create a "Cloud" project there and link it to your Smart Life account (usually a QR-code scan
    from your phone).
-3. On Husbandry Tracker's **Admin** page, find the **Tuya Cloud Credentials** card and paste in the
-   **Access ID** and **Access Secret** the project's page shows you, pick the matching **API
-   Region**, and click **Save**. The Access Secret is never shown again once saved.
+3. On Husbandry Tracker's **Admin** page, find the **Plugins** card and click **Settings** next to
+   **Tuya / Gosund Smart Plugs**. Under **Settings**, paste in the **Access ID** and **Access
+   Secret** the project's page shows you, pick the matching **API Region**, and click **Save**. The
+   Access Secret is never shown again once saved.
+
+**Tip: name your plugs and sensors in one place.** Every Plugin's Settings page (Admin → Plugins →
+**Settings**) explains what that Plugin can and can't do, and has a **Devices** section. Click its
+scan button to list every plug or sensor it can reach, and give each a name you'll recognise
+("Basking lamp", "Cool-side hide"). After that, the **Add Plug** and **Add Sensor** forms show a
+**Named devices** pick-list, and choosing one fills in all the IDs and keys for you. Renaming a
+device that's already set up renames it everywhere.
 
 No Python, no Command Prompt. See [How To: Add a Gosund Smart Plug](HOWTO_ADD_GOSUND_PLUG.md) for
 the full walkthrough, including pairing the plug in Smart Life first — **this is the one setup step
@@ -342,7 +350,7 @@ control the same plug.
 
 **Already have a Manual Plug and just got the real Gosund hardware?** Open that Plug's **Edit**
 page, switch **Tracking Mode** to **Smart**, and the same **Discover Devices** button appears
-there too (once Tuya Cloud Credentials, above, are saved).
+there too (once the Tuya Cloud credentials, above, are saved).
 
 #### Manual Plug
 

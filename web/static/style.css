@@ -1398,3 +1398,58 @@ canvas.sparkline { display: block; }
 .lineage-slot h3 { margin: 0 0 0.4rem; }
 .lineage-copy { margin-top: 1rem; }
 .offspring-group { margin: 1rem 0 0.4rem; font-size: 1rem; }
+
+/* A Plugin's own Settings page (web/templates/admin_plugin.html; see CONTEXT.md: Plugin Settings
+   Page; ADR 0061) and the status pill shared with Admin's Plugins card. */
+.plugin-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+.plugin-heading h2 { margin-bottom: 0.25rem; }
+.plugin-heading p { margin: 0; }
+.plugin-heading-status { display: flex; align-items: center; gap: 0.6rem; }
+.plugin-status {
+    display: inline-block;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 0.1rem 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.plugin-status-active { background: var(--status-green); border-color: var(--status-green); color: var(--status-ink-light); }
+.plugin-status-invalid { background: var(--status-red); border-color: var(--status-red); color: var(--status-ink-light); }
+.plugin-errors { color: var(--status-red); margin: 0; padding-left: 1.2rem; }
+.plugin-abilities { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.plugin-abilities h3, .admin-card h3 { font-size: 0.9rem; margin: 0.75rem 0 0.4rem; }
+.plugin-abilities ul { margin: 0; padding-left: 1.2rem; }
+.plugin-abilities li { margin-bottom: 0.3rem; }
+.plugin-can li::marker { content: "✓  "; color: var(--status-green); }
+.plugin-cannot li::marker { content: "✕  "; color: var(--status-red); }
+.plugin-scan { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+.plugin-scan-results { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.plugin-scan-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+    border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem;
+}
+.plugin-scan-row .plugin-scan-info { flex: 1 1 220px; min-width: 0; font-size: 0.85rem; }
+.plugin-scan-row .plugin-scan-saved { color: var(--status-green); font-size: 0.8rem; font-weight: 600; }
+.plugin-name-form { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.plugin-name-form input, .plugin-scan-row input {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.9rem; min-width: 0; max-width: 14rem;
+}
+.plugin-name-form button, .plugin-scan button, .plugin-scan-row button {
+    background: var(--primary); color: var(--on-primary); border: 1px solid var(--primary-bright);
+    border-radius: 6px; padding: 0.3rem 0.8rem; cursor: pointer;
+}
+.plugin-name-form button:hover, .plugin-scan button:hover, .plugin-scan-row button:hover { background: var(--accent); color: var(--on-accent); }
+.plugin-device-id { overflow-wrap: anywhere; font-size: 0.8rem; }
+.known-device-picker select { max-width: 320px; }
+a.back-link { color: var(--primary-bright); }
+/* Phone width: the devices table stacks each device into a block instead of squeezing four
+   columns (and long Device IDs) past the card's edge. */
+@media (max-width: 600px) {
+    .plugin-devices thead { display: none; }
+    .plugin-devices, .plugin-devices tbody, .plugin-devices tr, .plugin-devices td { display: block; width: 100%; }
+    .plugin-devices tr { border-bottom: 1px solid var(--border); padding: 0.5rem 0; }
+    .plugin-devices td { border: none; padding: 0.2rem 0; }
+}

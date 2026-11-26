@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caskabove.local/husbandrytracker/plugin_manifest.schema.json",
+  "title": "Husbandry Tracker Plugin manifest (plugins/<name>/manifest.json)",
+  "description": "The Plugin Standard's manifest. See docs/plugin-standard.md, CONTEXT.md: Plugin Contract, ADR 0061. web/plugin_catalog.py validates every plugins/<name>/manifest.json against this on every listing; a Plugin that fails is shown as Invalid and can't be activated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "display_name", "version", "kind", "description", "how_it_works", "can", "cannot", "entry_point"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "name": {
+      "description": "Must equal the folder name under plugins/. Lowercase snake_case: it's also the Python package name, the Registry/Outbox file name, and the value stored in sensor.plugin/plug.plugin.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,39}$"
+    },
+    "display_name": {"type": "string", "minLength": 1, "maxLength": 60},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "kind": {"enum": ["device", "skill"]},
+    "description": {"description": "One line, shown on the Admin Plugins card.", "type": "string", "minLength": 1, "maxLength": 200},
+    "how_it_works": {"description": "A short paragraph for the Plugin's Settings page: how it reaches its devices (or what it does, for a Skill), and what it needs from the user.", "type": "string", "minLength": 1},
+    "can": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "cannot": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "device_types": {
+      "description": "Which Device Registration rows this Plugin backs. Required (non-empty) for kind=device, must be absent or empty for kind=skill.",
+      "type": "array",
+      "items": {"enum": ["sensor", "plug"]},
+      "uniqueItems": true
+    },
+    "entry_point": {"description": "The Plugin file itself, relative to the Plugin folder — plugin.py for a device Plugin, skill/SKILL.md for a Skill. Must exist.", "type": "string", "minLength": 1},
+    "discovery": {
+      "description": "Present only if the Plugin ships discover.py (see docs/plugin-standard.md). Drives the Settings page's Scan button.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["button_label"],
+      "properties": {
+        "button_label": {"type": "string", "minLength": 1, "maxLength": 40},
+        "duration_hint": {"type": "string", "maxLength": 60},
+        "requires_settings": {"description": "Setting keys that must be filled in before a scan can run.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "settings": {
+      "description": "Plugin-specific settings, rendered generically on the Settings page and stored in plugin_setting. Never put a value here — only the field definitions.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "label", "type"],
+        "properties": {
+          "key": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$"},
+          "label": {"type": "string", "minLength": 1},
+          "type": {"enum": ["text", "secret", "select"]},
+          "help": {"type": "string"},
+          "default": {"type": "string"},
+          "options": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "label"],
+              "properties": {"value": {"type": "string"}, "label": {"type": "string"}}
+            }
+          }
+        },
+        "allOf": [
+          {"if": {"properties": {"type": {"const": "select"}}}, "then": {"required": ["options"]}}
+        ]
+      }
+    },
+    "setup_help": {"description": "Optional ordered steps shown above the settings form (e.g. where to get credentials).", "type": "array", "items": {"type": "string", "minLength": 1}}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "device"}}},
+      "then": {"required": ["device_types"], "properties": {"device_types": {"minItems": 1}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "skill"}}},
+      "then": {"properties": {"device_types": {"maxItems": 0}, "discovery": false}}
+    }
+  ]
+}

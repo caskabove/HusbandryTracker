@@ -1,5 +1,26 @@
 {
+  "schema_version": 1,
   "name": "govee_ble",
+  "display_name": "Govee Bluetooth Sensors",
+  "version": "1.0.0",
+  "kind": "device",
   "description": "Listens for Govee H5074 BLE temperature/humidity broadcasts.",
-  "kind": "device"
+  "how_it_works": "Govee thermo-hygrometers broadcast their temperature, humidity, and battery level over Bluetooth Low Energy every few seconds. This Plugin runs in the background, listens for those broadcasts from every Sensor you've registered against it, and records a Reading for each. Nothing is ever sent to the sensor, and no Govee account or app is involved — the computer running Husbandry Tracker just needs Bluetooth turned on and to be within range (typically one room).",
+  "can": [
+    "Read temperature, humidity, and battery level from Govee H5074-style sensors.",
+    "Find every Govee sensor currently broadcasting in range, without registering it first.",
+    "Work with no internet connection and no Govee account."
+  ],
+  "cannot": [
+    "Control anything — Govee sensors are read-only.",
+    "Hear a sensor that's out of Bluetooth range, or on a different computer.",
+    "Read Wi-Fi-only Govee models, or ones that use a different broadcast format.",
+    "Fetch history the sensor stored while Husbandry Tracker wasn't running."
+  ],
+  "device_types": ["sensor"],
+  "entry_point": "plugin.py",
+  "discovery": {
+    "button_label": "Scan for sensors",
+    "duration_hint": "about 20 seconds"
+  }
 }
