@@ -55,10 +55,14 @@ def test_plugs_and_sensors_page_has_neither_the_enclosures_card_nor_the_rooms_ca
     assert _current_nav_item(html) == "Plugs and Sensors"
 
 
-def test_dashboard_nav_has_the_four_items_and_marks_dashboard(temp_db):
-    html = _html(main_routes.dashboard(_request("/")))
+def test_dashboard_nav_has_every_main_item_and_marks_dashboard(temp_db):
+    # An empty DB counts as a fresh install, which redirects to the Setup Wizard (ADR 0031);
+    # ?setup=skip is the Wizard's own "Skip for now" bypass, so the Dashboard itself renders.
+    html = _html(main_routes.dashboard(_request("/", "setup=skip")))
 
-    for label in ("Dashboard", "Rooms and Enclosures", "Plugs and Sensors", "Guide"):
+    # The Guide is linked from Help (ADR 0039) rather than from the menu.
+    for label in ("Dashboard", "Rooms and Enclosures", "Plugs and Sensors", "Admin", "Settings",
+                  "Help", "About"):
         assert f">{label}</a>" in html
     assert _current_nav_item(html) == "Dashboard"
 
