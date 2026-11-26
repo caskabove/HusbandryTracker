@@ -948,3 +948,166 @@ function enclosureBackOrigin(pathname) {
         try { sessionStorage.setItem(ENCLOSURE_BACK_RESTORE_KEY, JSON.stringify(saved)); } catch (e) { /* just navigates */ }
     });
 })();
+
+// A Plugin's Settings page Scan (web/templates/admin_plugin.html; see CONTEXT.md: Known Device,
+// Plugin Settings Page; ADR 0061) — lists every device the Plugin's discover() found, each with a
+// name box that saves on its own (JSON POST, no reload), so naming a long list doesn't lose the
+// scan. Device text comes from hardware/cloud responses, so it's only ever set via textContent.
+async function onPluginScanClick(button) {
+    const plugin = button.dataset.plugin;
+    const results = document.getElementById("plugin-scan-results");
+    const message = function (text) {
+        results.replaceChildren();
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = text;
+        results.appendChild(p);
+    };
+    results.hidden = false;
+    message("Scanning…");
+    button.disabled = true;
+    try {
+        const response = await fetch(`/admin/plugins/${encodeURIComponent(plugin)}/discover`, {method: "POST"});
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            message(data.error || "Scan failed — try again.");
+            return;
+        }
+        if (!data.devices.length) {
+            message("Nothing found. Check the device is powered, and in range or online, then scan again.");
+            return;
+        }
+        results.replaceChildren();
+        const heading = document.createElement("p");
+        heading.className = "empty";
+        heading.textContent = `Found ${data.devices.length} device${data.devices.length === 1 ? "" : "s"}. Name the ones you use:`;
+        results.appendChild(heading);
+        data.devices.forEach(function (device) { results.appendChild(_pluginScanRow(plugin, device)); });
+    } catch (err) {
+        message("Scan failed — try again.");
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function _pluginScanRow(plugin, device) {
+    const row = document.createElement("div");
+    row.className = "plugin-scan-row";
+    const info = document.createElement("div");
+    info.className = "plugin-scan-info";
+    const id = document.createElement("code");
+    id.className = "plugin-device-id";
+    id.textContent = device.external_id;
+    info.appendChild(id);
+    if (device.summary) {
+        info.appendChild(document.createElement("br"));
+        const summary = document.createElement("span");
+        summary.className = "empty";
+        summary.textContent = device.summary;
+        info.appendChild(summary);
+    }
+    if (device.registered) {
+        info.appendChild(document.createElement("br"));
+        const reg = document.createElement("span");
+        reg.className = "empty";
+        reg.textContent = `Registered as a ${device.registered.type}`;
+        info.appendChild(reg);
+    }
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = device.name || "";
+    input.placeholder = device.suggested_name || "Name";
+    input.setAttribute("aria-label", `Name for ${device.external_id}`);
+    const save = document.createElement("button");
+    save.type = "button";
+    save.textContent = device.name ? "Rename" : "Save name";
+    const status = document.createElement("span");
+    status.className = "plugin-scan-saved";
+    if (device.name) status.textContent = "Named";
+    save.onclick = async function () {
+        const name = input.value.trim() || input.placeholder;
+        save.disabled = true;
+        try {
+            const response = await fetch(`/admin/plugins/${encodeURIComponent(plugin)}/devices`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    external_id: device.external_id, name: name,
+                    plugin_config: device.plugin_config, summary: device.summary,
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok || data.error) {
+                status.textContent = data.error || "Couldn't save — try again.";
+                return;
+            }
+            input.value = name;
+            save.textContent = "Rename";
+            status.textContent = "Saved — reload to see it in the list below";
+        } catch (err) {
+            status.textContent = "Couldn't save — try again.";
+        } finally {
+            save.disabled = false;
+        }
+    };
+    row.append(info, input, save, status);
+    return row;
+}
+
+// Add Sensor/Add Plug forms' "Named devices" picker (see CONTEXT.md: Known Device; ADR 0061) —
+// added beside every existing Discover Devices button at page load rather than written into each
+// of the many Add-form templates. Which Plugin a form belongs to comes from which Discover
+// handler its button already calls. Picking a device fills that form's own fields (from the
+// Plugin's registration_fields, served by /admin/plugins/<name>/known-devices) and the Label, if
+// it's still empty. Shown only when that Plugin has named, unregistered devices.
+(function initKnownDevicePickers() {
+    const handlers = {onDiscoverGoveeClick: "govee_ble", onDiscoverTuyaClick: "tuya_lan"};
+    const containers = Array.from(document.querySelectorAll(".discover-device"));
+    if (!containers.length) return;
+    const cache = {};
+    const load = function (plugin) {
+        if (!cache[plugin]) {
+            cache[plugin] = fetch(`/admin/plugins/${plugin}/known-devices`)
+                .then(function (r) { return r.ok ? r.json() : {devices: []}; })
+                .then(function (d) { return d.devices || []; })
+                .catch(function () { return []; });
+        }
+        return cache[plugin];
+    };
+    containers.forEach(function (container) {
+        const button = container.querySelector("button[onclick]");
+        if (!button) return;
+        const handler = Object.keys(handlers).find(function (h) { return button.getAttribute("onclick").includes(h); });
+        if (!handler) return;
+        load(handlers[handler]).then(function (devices) {
+            if (!devices.length) return;
+            const label = document.createElement("label");
+            label.className = "known-device-picker";
+            label.textContent = "Named devices ";
+            const select = document.createElement("select");
+            const blank = document.createElement("option");
+            blank.value = "";
+            blank.textContent = "— pick one you named —";
+            select.appendChild(blank);
+            devices.forEach(function (device, i) {
+                const option = document.createElement("option");
+                option.value = String(i);
+                option.textContent = device.name;
+                select.appendChild(option);
+            });
+            select.onchange = function () {
+                const device = devices[Number(select.value)];
+                if (!device) return;
+                const form = container.closest("form");
+                Object.entries(device.fields).forEach(function ([field, value]) {
+                    const input = form.querySelector(`[name="${field}"]`);
+                    if (input) input.value = value;
+                });
+                const labelField = form.querySelector('[name="label"]');
+                if (labelField && !labelField.value) labelField.value = device.name;
+            };
+            label.appendChild(select);
+            container.insertBefore(label, container.firstChild);
+        });
+    });
+})();

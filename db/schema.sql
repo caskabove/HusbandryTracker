@@ -14,11 +14,39 @@ CREATE TABLE IF NOT EXISTS app_setting (
     ntfy_topic                     TEXT,
     schedule_drift_threshold_minutes INTEGER NOT NULL DEFAULT 15, -- see CONTEXT.md: Timer Warning, ADR 0012
     ingest_scan_interval_seconds   INTEGER NOT NULL DEFAULT 5,   -- see CONTEXT.md: Ingest; ADR 0013
+    -- Superseded by plugin_setting (tuya_lan's access_id/access_secret/api_region — see ADR 0061,
+    -- migration m0033). Kept only so older databases and this schema stay the same shape; unread.
     tuya_access_id                 TEXT,                         -- Tuya IoT Cloud project credentials — see ADR 0030
     tuya_access_secret             TEXT,                         -- never echoed back into any rendered page
     tuya_api_region                TEXT NOT NULL DEFAULT 'us'    -- one of: us, eu, cn, in
 );
 INSERT OR IGNORE INTO app_setting (id) VALUES (1);
+
+-- A Plugin's own settings, declared by the "settings" list in its manifest.json and edited on its
+-- Settings page (see CONTEXT.md: Plugin Setting; docs/plugin-standard.md; ADR 0061). Opaque to
+-- Core beyond the manifest's field types; a "secret" value is never rendered back into a page.
+CREATE TABLE IF NOT EXISTS plugin_setting (
+    plugin TEXT NOT NULL,
+    key    TEXT NOT NULL,
+    value  TEXT NOT NULL,
+    PRIMARY KEY (plugin, key)
+);
+
+-- A device a Plugin's discovery found and the user gave a name, whether or not it's registered as
+-- a Sensor/Plug yet (see CONTEXT.md: Known Device; ADR 0061). Registration is still sensor/plug —
+-- this is only the naming list the Add Sensor/Add Plug forms offer to pick from. Matched to a
+-- registered row by (plugin, external_id); never a foreign key, since either can exist alone.
+CREATE TABLE IF NOT EXISTS known_device (
+    id            INTEGER PRIMARY KEY,
+    plugin        TEXT NOT NULL,
+    external_id   TEXT NOT NULL,
+    name          TEXT NOT NULL CHECK (length(trim(name)) > 0),
+    plugin_config TEXT,       -- opaque JSON, same meaning as sensor/plug.plugin_config
+    summary       TEXT,       -- what the last scan said about it (a reading, a device category)
+    last_seen_at  TEXT,       -- when a scan last found it
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (plugin, external_id)
+);
 
 -- Login/roles (see CONTEXT.md: User Account, Role, Session, Audit Log; ADR 0058; RHA-99 Phase 1).
 -- is_active = 0 disables an account without losing its history (sessions, audit rows); the app

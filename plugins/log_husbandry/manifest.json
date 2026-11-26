@@ -1,5 +1,22 @@
 {
+  "schema_version": 1,
   "name": "log_husbandry",
+  "display_name": "Log Husbandry (Claude Code Skill)",
+  "version": "1.0.0",
+  "kind": "skill",
   "description": "Interprets natural-language husbandry notes (e.g. \"fed Bob a large mouse and cleaned his water\") into Care Events logged in Husbandry Tracker.",
-  "kind": "skill"
+  "how_it_works": "This is a Skill, not a device integration: it has no hardware to find. Activating it copies a Claude Code skill into this install's own .claude/skills/log_husbandry/ folder — nothing is written anywhere until you do. Then, in a Claude Code session opened in this install's folder, you can describe care in plain language and Claude turns it into Feeding, Watering, Spot-clean, or Deep-clean Care Events, using a snapshot of your Rooms, Enclosures, and Animals to match names. Husbandry Tracker re-checks every event when it arrives, and holds back any that no longer match instead of guessing.",
+  "can": [
+    "Turn one sentence into several Care Events (e.g. a Feeding and a Watering).",
+    "Match Enclosures and Animals by the names you already use.",
+    "Fill in Feeding details from the last Feeding when you leave them out."
+  ],
+  "cannot": [
+    "Run without Claude Code — it does nothing on its own.",
+    "Log anything other than Feeding, Watering, Spot-clean, or Deep-clean.",
+    "Create, rename, or delete Enclosures or Animals.",
+    "Find or control devices."
+  ],
+  "device_types": [],
+  "entry_point": "skill/SKILL.md"
 }

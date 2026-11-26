@@ -98,47 +98,32 @@
                 a code change.</p>
             <p><a href="/admin/app/gene-catalog" class="button-link">Open Gene Catalog</a></p>
         </section>
-        <section class="admin-card">
+        <section class="admin-card" id="plugins">
             <h2>Plugins</h2>
-            {# See CONTEXT.md: Plugin, Plugin Contract, Active Plugin, Skill, App Admin;
-               ADR 0045/0046/0047/0048. "Available" here means a plugins/<name>/ folder satisfies
-               the Plugin Contract (manifest.json + init.py) — every Plugin does now, including
-               tuya_lan/govee_ble. #}
-            <p class="empty">Independent integrations (device Plugins) and Skills (AI-driven helpers —
-                see Skill) that this install knows about. A deactivated Plugin is blocked outright,
-                immediately, not just eventually paused: its Sensors/Plugs stop being updated in the
-                background, the Dashboard's and Admin's own Refresh buttons for them are disabled, and
-                sending a Plug Command for one is refused rather than silently logged. Reactivating
-                lifts all of that back at once.</p>
+            {# See CONTEXT.md: Plugin, Plugin Standard, Plugin Settings Page, Active Plugin, Skill;
+               ADR 0045/0061. Everything about one Plugin — what it can and can't do, Activate/
+               Deactivate, its own settings, and finding/naming its devices — lives on that Plugin's
+               own Settings page now, so this card is only a directory. A folder under plugins/
+               that doesn't meet the Plugin Standard is still listed, as Invalid, so it's visible
+               instead of silently missing. #}
+            <p class="empty">Device Plugins connect Husbandry Tracker to a brand of sensor or smart
+                plug; Skills are optional AI helpers. Open a Plugin's Settings to see how it works,
+                turn it on or off, and find and name its devices.</p>
             {% if plugins %}
             <table class="admin-table">
-                <thead><tr><th>Name</th><th>Kind</th><th>Description</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Plugin</th><th>Kind</th><th>Description</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                 {% for plugin in plugins %}
                     <tr>
-                        <td class="admin-table-primary">{{ plugin.name }}</td>
+                        <td class="admin-table-primary">{{ plugin.display_name }}<br><span class="empty"><code>{{ plugin.name }}</code></span></td>
                         <td>{{ plugin.kind|capitalize }}</td>
-                        <td>{{ plugin.description }}
-                            {% if plugin.kind == "skill" and not plugin.active %}
-                            <br><span class="empty">Activating installs a Claude Code skill into this install's own <code>.claude/skills/{{ plugin.name }}/</code> — nothing is written anywhere until you do this.</span>
-                            {% elif plugin.kind == "device" and plugin.active %}
-                            <br><span class="empty">Deactivating stops background updates for every Sensor/Plug on this Plugin, and blocks Refresh/Plug commands for them.</span>
-                            {% elif plugin.kind == "device" and not plugin.active %}
-                            <br><span class="empty">Activating resumes background updates for every Sensor/Plug on this Plugin, and allows Refresh/Plug commands again.</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ "Active" if plugin.active else "Inactive" }}</td>
+                        <td>{{ plugin.description }}</td>
                         <td>
-                            {% if plugin.active %}
-                            <form method="post" action="/admin/plugins/{{ plugin.name }}/deactivate" class="inline-form">
-                                <button type="submit">Deactivate</button>
-                            </form>
-                            {% else %}
-                            <form method="post" action="/admin/plugins/{{ plugin.name }}/activate" class="inline-form">
-                                <button type="submit">Activate</button>
-                            </form>
-                            {% endif %}
+                            {% if not plugin.valid %}<span class="plugin-status plugin-status-invalid">Invalid</span>
+                            {% elif plugin.active %}<span class="plugin-status plugin-status-active">Active</span>
+                            {% else %}<span class="plugin-status">Inactive</span>{% endif %}
                         </td>
+                        <td><a class="button-link" href="/admin/plugins/{{ plugin.name }}">Settings</a></td>
                     </tr>
                 {% endfor %}
                 </tbody>
@@ -146,6 +131,8 @@
             {% else %}
             <p class="empty">No Plugins found under <code>plugins/</code>.</p>
             {% endif %}
+            <p class="empty">Building a new Plugin? It has to follow the Plugin Standard in
+                <code>docs/plugin-standard.md</code> before it can be activated.</p>
         </section>
 
         <section class="admin-card">
@@ -174,50 +161,8 @@
                 Schedule Drift Threshold is how far a Smart Plug's Target and Detected Schedule can disagree before a Timer Warning shows (see CONTEXT.md: Timer Warning).</p>
         </section>
 
-        {% set tuya_candidates = plugins | selectattr("name", "equalto", "tuya_lan") | list %}
-        {% set tuya_plugin = tuya_candidates[0] if tuya_candidates else None %}
-        <section class="admin-card" id="tuya-cloud-credentials">
-            <h2>Tuya Cloud Credentials</h2>
-            {% if tuya_plugin and tuya_plugin.active %}
-            {# Powers every Add Plug (on Plugs and Sensors)/Add Plug Group form's "Discover Devices"
-               button (see ADR 0030).
-               Instructions here are self-contained, not a cross-reference to
-               docs/HOWTO_ADD_GOSUND_PLUG.md — that file isn't bundled into the installer (see
-               packaging/husbandrytracker.spec, which only bundles USER_GUIDE.md), so an
-               installer-only user would have no way to open it. #}
-            <p class="empty">Where to get these — a one-time setup, done once no matter how many Tuya
-                plugs you add afterward:</p>
-            <ol class="empty">
-                <li>Go to <a href="https://iot.tuya.com" target="_blank" rel="noopener">iot.tuya.com</a> and create a free account.</li>
-                <li>Create a "Cloud" project there, then link it to your Smart Life (or Tuya Smart) account — this usually means scanning a QR code with your phone, in that app.</li>
-                <li>The project's page shows an <strong>Access ID</strong> and <strong>Access Secret</strong> — paste them in below.</li>
-            </ol>
-            <form method="post" action="/admin/settings/tuya-credentials" class="admin-form">
-                <label>Access ID
-                    <input type="text" name="tuya_access_id" value="{{ settings.tuya_access_id or '' }}" placeholder="from your Tuya IoT Cloud project">
-                </label>
-                <label>Access Secret
-                    <input type="password" name="tuya_access_secret" placeholder="{% if settings.tuya_access_secret %}(already set — leave blank to keep it){% else %}from your Tuya IoT Cloud project{% endif %}">
-                </label>
-                <label>API Region
-                    <select name="tuya_api_region">
-                        {% for region, region_label in [("us", "Americas"), ("eu", "Europe"), ("cn", "China"), ("in", "India")] %}
-                        <option value="{{ region }}" {% if settings.tuya_api_region == region %}selected{% endif %}>{{ region_label }}</option>
-                        {% endfor %}
-                    </select>
-                </label>
-                <button type="submit">Save</button>
-            </form>
-            <p class="empty">Needed only for the Discover Devices button on Add Plug (on "Plugs and
-                Sensors") and Add Plug Group, below — see
-                <a href="/guide#a-one-time-account-linking-step-for-a-smart-plug">the full walkthrough</a>
-                if you get stuck. Access Secret is never shown again once saved.</p>
-            {% else %}
-            <p class="empty">Hidden while tuya_lan is deactivated — reactivate it in Plugins above to
-                manage Tuya Cloud Credentials. Anything already saved stays stored, just not shown or
-                editable meanwhile.</p>
-            {% endif %}
-        </section>
+        {# Tuya Cloud Credentials moved to tuya_lan's own Settings page (/admin/plugins/tuya_lan) —
+           see ADR 0061. #}
 
         <section class="admin-card">
             <details>

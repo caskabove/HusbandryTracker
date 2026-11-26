@@ -14,7 +14,7 @@ from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -29,6 +29,7 @@ from web import genetics_queries as genq
 from web import lineage_queries as linq
 from web import graphs_queries as gq
 from web import plugin_catalog
+from web import plugin_queries as pq
 from web import species_kb_queries as skq
 from web import view_data_queries as vd
 from web.govee_refresh import discover_govee, refresh_sensors
@@ -260,8 +261,33 @@ def admin_reset_user_password(request: Request, user_id: int, new_password: str 
     return RedirectResponse(url=f"/admin/app/?notice={quote('Password reset.')}#users", status_code=303)
 
 
-def _plugin_kind(name: str) -> str:
-    return next((p.kind for p in plugin_catalog.list_plugins() if p.name == name), "device")
+def _plugin_page_url(name: str, *, error: str | None = None, notice: str | None = None, anchor: str = "") -> str:
+    query = f"?error={quote(error)}" if error else (f"?notice={quote(notice)}" if notice else "")
+    return f"/admin/plugins/{quote(name)}{query}{anchor}"
+
+
+def _plugin_or_404(name: str):
+    plugin = plugin_catalog.get_plugin(name)
+    if plugin is None:
+        raise HTTPException(status_code=404, detail=f"No such Plugin: {name}")
+    return plugin
+
+
+@router.get("/plugins/{name}")
+def admin_plugin_settings(request: Request, name: str):
+    """A Plugin's own Settings page (see CONTEXT.md: Plugin Settings Page; ADR 0061) — everything
+    about one Plugin in one place: what it does and doesn't do (from its manifest), Activate/
+    Deactivate, its own settings fields, and, for a Plugin with discovery, a Scan that lists every
+    reachable device so each can be named (a Known Device) before or after it's registered."""
+    plugin = _plugin_or_404(name)
+    context = {
+        "plugin": plugin,
+        "settings_view": pq.public_plugin_settings(name, plugin.settings) if plugin.valid else {},
+        "known_devices": pq.list_known_devices(name) if plugin.kind == "device" else [],
+        "error": request.query_params.get("error"),
+        "notice": request.query_params.get("notice"),
+    }
+    return templates.TemplateResponse(request, "admin_plugin.html", context)
 
 
 @router.post("/plugins/{name}/activate")
@@ -269,32 +295,131 @@ def admin_activate_plugin(name: str):
     # See CONTEXT.md: Active Plugin, Plugin Contract; ADR 0045 — activation is one atomic action:
     # the Plugin's own init.activate() runs first, and only on success does plugin_catalog actually
     # add it to data/active_plugins.json, so there's never a state where a Plugin is listed Active
-    # but its init never ran.
+    # but its init never ran. Refused outright for a Plugin that fails the Plugin Standard (ADR 0061).
+    plugin = _plugin_or_404(name)
     try:
         plugin_catalog.activate_plugin(name)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(url=_plugin_page_url(name, error=str(exc)), status_code=303)
     # A real action took place (a Skill's files land on disk; a device Plugin's Sensors/Plugs start
-    # being allowed to update again) — see ADR 0052, this gets a notice the same as activating used
-    # to leave entirely silent.
-    if _plugin_kind(name) == "skill":
+    # being allowed to update again) — see ADR 0052, this gets a notice.
+    if plugin.kind == "skill":
         notice = f"Installed the {name} Skill into .claude/skills/{name}/."
     else:
-        notice = f"{name} activated — its Sensors/Plugs will resume background updates, and Refresh/Plug commands are allowed again."
-    return RedirectResponse(url=f"/admin/app/?notice={quote(notice)}", status_code=303)
+        notice = f"{plugin.display_name} activated — its Sensors/Plugs will resume background updates, and Refresh/Plug commands are allowed again."
+    return RedirectResponse(url=_plugin_page_url(name, notice=notice), status_code=303)
 
 
 @router.post("/plugins/{name}/deactivate")
 def admin_deactivate_plugin(name: str):
+    plugin = _plugin_or_404(name)
     try:
         plugin_catalog.deactivate_plugin(name)
     except ValueError as exc:
-        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
-    if _plugin_kind(name) == "skill":
+        return RedirectResponse(url=_plugin_page_url(name, error=str(exc)), status_code=303)
+    if plugin.kind == "skill":
         notice = f"Removed the {name} Skill files from .claude/skills/{name}/."
     else:
-        notice = f"{name} deactivated — its Sensors/Plugs stop updating, and Refresh/Plug commands are now blocked."
-    return RedirectResponse(url=f"/admin/app/?notice={quote(notice)}", status_code=303)
+        notice = f"{plugin.display_name} deactivated — its Sensors/Plugs stop updating, and Refresh/Plug commands are now blocked."
+    return RedirectResponse(url=_plugin_page_url(name, notice=notice), status_code=303)
+
+
+@router.post("/plugins/{name}/settings")
+async def admin_save_plugin_settings(request: Request, name: str):
+    """Saves the fields declared in the Plugin's manifest "settings" (see
+    pq.save_plugin_settings for the blank-secret-keeps-it rule)."""
+    plugin = _plugin_or_404(name)
+    if not plugin.valid:
+        return RedirectResponse(url=_plugin_page_url(name, error="Fix this Plugin's problems before saving settings."), status_code=303)
+    form = await request.form()
+    submitted = {f["key"]: str(form.get(f["key"], "")) for f in plugin.settings}
+    clear = {f["key"] for f in plugin.settings if f["type"] == "secret" and form.get(f"clear__{f['key']}")}
+    try:
+        pq.save_plugin_settings(name, plugin.settings, submitted, clear)
+    except ValueError as exc:
+        return RedirectResponse(url=_plugin_page_url(name, error=str(exc), anchor="#settings"), status_code=303)
+    return RedirectResponse(url=_plugin_page_url(name, notice="Settings saved.", anchor="#settings"), status_code=303)
+
+
+@router.post("/plugins/{name}/discover")
+async def admin_plugin_discover(name: str):
+    """Backs the Settings page's Scan button — a JSON endpoint (same exception to the
+    redirect-and-redisplay convention as /sensors/discover, ADR 0029: the user may be partway
+    through naming a long list). Each found device is marked with its saved name/registration, if
+    any. Writes nothing; naming is a separate POST."""
+    plugin = _plugin_or_404(name)
+    if not plugin.valid or not plugin.discovery:
+        return JSONResponse({"error": f"{plugin.display_name} doesn't support scanning for devices."}, status_code=400)
+    settings = pq.get_plugin_settings(name)
+    missing = [k for k in plugin.discovery.get("requires_settings", []) if not settings.get(k)]
+    if missing:
+        labels = [f["label"] for f in plugin.settings if f["key"] in missing]
+        return JSONResponse({"error": f"Fill in {', '.join(labels)} under Settings below first."}, status_code=400)
+    try:
+        found = await plugin_catalog.run_discovery(name, settings)
+    except Exception as exc:  # a Plugin's own message is meant to be shown as-is (docs/plugin-standard.md)
+        return JSONResponse({"error": f"Scan failed: {exc}"}, status_code=502)
+    known = {d["external_id"]: d for d in pq.list_known_devices(name)}
+    devices = []
+    for device in found:
+        saved = known.get(device["external_id"])
+        devices.append({
+            "external_id": device["external_id"],
+            "name": saved["name"] if saved else "",
+            "suggested_name": device.get("suggested_name") or device["external_id"],
+            "summary": device.get("summary") or "",
+            "plugin_config": device.get("plugin_config"),
+            "registered": saved["registered"] if saved else None,
+        })
+    return JSONResponse({"devices": devices})
+
+
+@router.post("/plugins/{name}/devices")
+async def admin_save_known_device(request: Request, name: str):
+    """Names one device, from either a scan result (JSON, carries plugin_config/summary) or the
+    saved-devices table (a plain form, name only)."""
+    plugin = _plugin_or_404(name)
+    if plugin.kind != "device":
+        raise HTTPException(status_code=400, detail="Only device Plugins have devices.")
+    is_json = request.headers.get("content-type", "").startswith("application/json")
+    data = await request.json() if is_json else dict(await request.form())
+    try:
+        pq.save_known_device(
+            name, str(data.get("external_id", "")), str(data.get("name", "")),
+            plugin_config=data.get("plugin_config") if is_json else None,
+            summary=(data.get("summary") or None) if is_json else None,
+            seen=is_json,
+        )
+    except ValueError as exc:
+        if is_json:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return RedirectResponse(url=_plugin_page_url(name, error=str(exc), anchor="#devices"), status_code=303)
+    if is_json:
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url=_plugin_page_url(name, notice="Name saved.", anchor="#devices"), status_code=303)
+
+
+@router.post("/plugins/{name}/devices/forget")
+def admin_forget_known_device(name: str, external_id: str = Form(...)):
+    _plugin_or_404(name)
+    pq.forget_known_device(name, external_id)
+    return RedirectResponse(url=_plugin_page_url(name, notice="Removed from the named list.", anchor="#devices"), status_code=303)
+
+
+@router.get("/plugins/{name}/known-devices")
+def admin_plugin_known_devices(name: str):
+    """For the Add Sensor/Add Plug forms' "Named devices" picker (web/static/app.js): every named,
+    not-yet-registered device, with the form fields to fill in for it (from the Plugin's own
+    discover.registration_fields — Core never decodes an External ID itself)."""
+    plugin = plugin_catalog.get_plugin(name)
+    if plugin is None or not plugin.valid or not plugin.discovery:
+        return JSONResponse({"devices": []})
+    devices = [
+        {"name": d["name"], "external_id": d["external_id"],
+         "fields": plugin_catalog.registration_fields(name, d["external_id"], d["plugin_config"])}
+        for d in pq.unregistered_known_devices(name)
+    ]
+    return JSONResponse({"devices": devices})
 
 
 @router.post("/settings")
@@ -311,22 +436,6 @@ def admin_update_settings(
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/app/", status_code=303)
-
-
-@router.post("/settings/tuya-credentials")
-def admin_update_tuya_credentials(
-    tuya_access_id: str = Form(""),
-    tuya_access_secret: str = Form(""),
-    tuya_api_region: str = Form("us"),
-):
-    """See ADR 0030. A separate route/row-subset from admin_update_settings on purpose — see
-    update_tuya_credentials()'s own docstring for why a blank Access Secret here means "keep the
-    existing one," not "clear it"."""
-    try:
-        q.update_tuya_credentials(tuya_access_id or None, tuya_access_secret or None, tuya_api_region)
-    except ValueError as exc:
-        return RedirectResponse(url=f"/admin/app/?error={quote(str(exc))}#tuya-cloud-credentials", status_code=303)
-    return RedirectResponse(url="/admin/app/#tuya-cloud-credentials", status_code=303)
 
 
 @router.get("/enclosures")
@@ -1159,17 +1268,17 @@ async def admin_discover_tuya_plugs():
     JSON-endpoint exception to the redirect-and-redisplay convention as /sensors/discover (ADR
     0029). Needs Tuya Cloud Credentials saved first; never touches the database — see
     discover_tuya()."""
-    settings = q.get_settings()
-    access_id = settings.get("tuya_access_id")
-    access_secret = settings.get("tuya_access_secret")
+    settings = pq.get_plugin_settings("tuya_lan")  # see ADR 0061: moved off app_setting
+    access_id = settings.get("access_id")
+    access_secret = settings.get("access_secret")
     if not access_id or not access_secret:
         return JSONResponse(
-            {"error": 'Save your <a href="/admin/app#tuya-cloud-credentials">Tuya Cloud Credentials</a> first '
-                      '(Access ID and Access Secret, on Admin).'},
+            {"error": 'Save your Tuya Cloud Access ID and Access Secret on the '
+                      '<a href="/admin/plugins/tuya_lan#settings">Tuya Plugin Settings page</a> first.'},
             status_code=400,
         )
     try:
-        devices = await discover_tuya(access_id, access_secret, settings.get("tuya_api_region") or "us")
+        devices = await discover_tuya(access_id, access_secret, settings.get("api_region") or "us")
     except Exception as exc:  # Tuya's cloud can reject credentials or be unreachable
         return JSONResponse({"error": f"Discovery failed: {exc}"}, status_code=502)
     return JSONResponse({"devices": devices})
