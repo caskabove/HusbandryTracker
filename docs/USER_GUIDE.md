@@ -320,6 +320,22 @@ linking a free Tuya developer account to the same account you paired the plug wi
    Secret** the project's page shows you, pick the matching **API Region**, and click **Save**. The
    Access Secret is never shown again once saved.
 
+> **Heads-up: Tuya's free plan is a time-limited trial.** Getting a plug's device ID and local
+> key depends on the **IoT Core** service in your Tuya project. It's free, but only as a trial of
+> about a month. Tuya lets you extend it from **Cloud → Cloud Services → IoT Core → Extend Trial
+> Period**, but only a limited number of times. After that, Tuya refuses to list your devices until
+> you pay, and **Discover Devices** says "IoT Core service subscription has expired."
+>
+> **What stops working, and what doesn't.** Plugs you've already added **keep working** after the
+> trial ends. Husbandry Tracker talks to them directly over your Wi-Fi with the key it already
+> saved, and never asks the cloud. What stops working is adding a *new* plug, or re-adding one you
+> removed from Smart Life and paired again (that gives it a new local key).
+>
+> **So: while the trial is active, scan and name every plug you own,** including ones you're not
+> using yet. Go to Admin → Plugins → **Settings** next to Tuya / Gosund Smart Plugs → **Devices**,
+> click the scan button, and give each plug a name. Husbandry Tracker saves each plug's key when
+> you name it, so you can add those plugs any time later, with no cloud needed.
+
 **Tip: name your plugs and sensors in one place.** Every Plugin's Settings page (Admin → Plugins →
 **Settings**) explains what that Plugin can and can't do, and has a **Devices** section. Click its
 scan button to list every plug or sensor it can reach, and give each a name you'll recognise

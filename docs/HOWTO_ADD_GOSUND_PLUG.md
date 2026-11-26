@@ -11,6 +11,11 @@ it needs one extra step beyond just pairing it in the app — linking a free Tuy
 (see [Get Tuya Developer Credentials](#3-get-tuya-developer-credentials) below) — but once that's
 done **once**, every plug after it is just a button click; no Command Prompt needed.
 
+**Before you buy more plugs:** that Tuya developer account's free plan is a **time-limited trial**
+that can only be extended a limited number of times (see [The free trial runs
+out](#the-free-trial-runs-out)). Plugs you've already added keep working forever, but adding new
+ones needs the trial to still be active. Scan and name every plug while it is.
+
 **Contents**
 1. [What You Need](#1-what-you-need)
 2. [Add Tuya Device (Pairing the Plug in Smart Life)](#2-add-tuya-device-pairing-the-plug-in-smart-life)
@@ -84,6 +89,24 @@ Husbandry Tracker asks Tuya's cloud for every device linked to that account, lis
 click the one you mean and it fills in the device ID and local key for you. No Command Prompt, no
 `devices.json` file to protect — the Access Secret is saved once, server-side, and is never shown
 again once you've entered it.
+
+### The free trial runs out
+
+> **Heads-up: Tuya's free plan is a time-limited trial.** Getting a plug's device ID and local
+> key depends on the **IoT Core** service in your Tuya project. It's free, but only as a trial of
+> about a month. Tuya lets you extend it from **Cloud → Cloud Services → IoT Core → Extend Trial
+> Period**, but only a limited number of times. After that, Tuya refuses to list your devices until
+> you pay, and **Discover Devices** says "IoT Core service subscription has expired."
+>
+> **What stops working, and what doesn't.** Plugs you've already added **keep working** after the
+> trial ends. Husbandry Tracker talks to them directly over your Wi-Fi with the key it already
+> saved, and never asks the cloud. What stops working is adding a *new* plug, or re-adding one you
+> removed from Smart Life and paired again (that gives it a new local key).
+>
+> **So: while the trial is active, scan and name every plug you own,** including ones you're not
+> using yet. Go to Admin → Plugins → **Settings** next to Tuya / Gosund Smart Plugs → **Devices**,
+> click the scan button, and give each plug a name. Husbandry Tracker saves each plug's key when
+> you name it, so you can add those plugs any time later, with no cloud needed.
 
 ---
 

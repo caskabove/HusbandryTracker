@@ -33,6 +33,18 @@ def _switch_key_guess(code: str) -> str | None:
     return match.group(1) or "1"
 
 
+_IOT_CORE_EXPIRED = 28841002
+
+
+def _explain_cloud_refusal(response: dict) -> str:
+    """A user-readable reason for a Tuya API refusal. Never includes credentials."""
+    msg = response.get("msg") or "Tuya Cloud refused the request."
+    if response.get("code") == _IOT_CORE_EXPIRED:
+        return (f"{msg} Renew it at platform.tuya.com: Cloud → Cloud Services → IoT Core → "
+                "Extend Trial Period (free), then scan again.")
+    return msg
+
+
 def _discover_tuya_sync(access_id: str, access_secret: str, api_region: str) -> list[dict]:
     cloud = tinytuya.Cloud(apiRegion=api_region, apiKey=access_id, apiSecret=access_secret)
     if cloud.error:
@@ -40,6 +52,12 @@ def _discover_tuya_sync(access_id: str, access_secret: str, api_region: str) -> 
         # a token-less getdevices() below silently returns [] instead of surfacing it — so this has
         # to be checked here, right after construction, or a bad credential looks like "no devices."
         raise RuntimeError(cloud.error.get("Payload") or cloud.error.get("Error") or "Tuya Cloud rejected these credentials.")
+    # getdevices() also swallows an API-level refusal (e.g. code 28841002 "IoT Core service
+    # subscription has expired.") into a bare [] — the token is fine, but Tuya won't list anything.
+    # Ask once directly so that reason reaches the user instead of "No devices found".
+    probe = cloud.cloudrequest("/v1.0/iot-01/associated-users/devices", query={"size": 1})
+    if isinstance(probe, dict) and probe.get("success") is False:
+        raise RuntimeError(_explain_cloud_refusal(probe))
     devices = cloud.getdevices()
     if isinstance(devices, dict) and "Error" in devices:
         raise RuntimeError(devices.get("Error") or "Tuya Cloud rejected these credentials.")

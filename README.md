@@ -22,7 +22,9 @@ sensors and plugs, reading the dashboard, troubleshooting) are in
   app.
 - Optionally, Gosund smart plugs (for your lights, heat and cooling) set up through the Smart Life
   app. Husbandry Tracker monitors them — on/off state and schedules — but does not switch
-  them on or off in this version.
+  them on or off in this version. **Adding a plug needs a free Tuya developer account whose free
+  plan is a time-limited trial**: plugs already added keep working after it ends, but new ones
+  can't be added. See [How To: Add a Gosund Smart Plug](docs/HOWTO_ADD_GOSUND_PLUG.md#the-free-trial-runs-out).
 
 See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the complete walkthrough.
 
