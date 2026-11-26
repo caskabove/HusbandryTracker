@@ -69,6 +69,20 @@ def read_registry(plugin: str) -> list[dict]:
         return []  # a mid-write read; Ingest writes atomically, so this should be rare/transient
 
 
+def read_plugin_settings(plugin: str) -> dict[str, str]:
+    """This Plugin's runtime settings (see docs/plugin-standard.md section 6, ADR 0062): only the
+    manifest settings marked "runtime": true, copied here by Ingest while the Plugin is Active.
+    Missing or mid-write file means no settings saved yet, same tolerance as read_registry."""
+    path = REGISTRY_DIR / "settings" / f"{plugin}.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 @lru_cache(maxsize=1)
 def _command_validator() -> jsonschema.Draft202012Validator:
     schema = json.loads(_COMMAND_SCHEMA_PATH.read_text(encoding="utf-8"))

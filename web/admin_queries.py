@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from active_plugins import is_plugin_active
 from db.db import get_connection
 from plugins.govee_ble import identity as govee_identity
+from plugins.kasa_lan import identity as kasa_identity
 from plugins.tuya_lan import identity as tuya_identity
 from schemas import enclosure_types as et
 from web import genetics_queries as genq
@@ -54,6 +55,16 @@ def _decode_plug(row_dict: dict) -> dict:
         row_dict["tuya_local_key"] = None
         row_dict["tuya_ip_address"] = None
         row_dict["switch_dps_key"] = "1"
+    # Plug type on the Add/Edit Plug forms (ADR 0062): which device Plugin a Smart Plug uses, plus
+    # kasa_lan's own fields, decoded the same way as the tuya_* keys above.
+    row_dict["plug_plugin"] = row_dict.get("plugin") or tuya_identity.PLUGIN_NAME
+    if row_dict.get("plugin") == kasa_identity.PLUGIN_NAME and row_dict.get("external_id"):
+        mac, outlet = kasa_identity.decode_external_id(row_dict["external_id"])
+        row_dict["kasa_mac"] = mac
+        row_dict["kasa_outlet"] = str(outlet) if outlet else ""
+        row_dict["kasa_host"] = kasa_identity.unpack_config(row_dict.get("plugin_config"))["host"] or ""
+    else:
+        row_dict["kasa_mac"] = row_dict["kasa_outlet"] = row_dict["kasa_host"] = ""
     return row_dict
 
 
@@ -66,10 +77,26 @@ def _encode_sensor_identity(tracking_mode: str, mac_address: str | None) -> tupl
     return govee_identity.PLUGIN_NAME, govee_identity.encode_external_id(mac_address)
 
 
+PLUG_PLUGINS = (tuya_identity.PLUGIN_NAME, kasa_identity.PLUGIN_NAME)
+
+
 def _encode_plug_identity(tracking_mode: str, tuya_device_id: str | None, tuya_local_key: str | None,
-                           tuya_ip_address: str | None, switch_dps_key: str | None) -> tuple[str | None, str | None, str | None]:
-    """See CONTEXT.md: Plugin, External ID, Plugin Config; ADR 0013."""
-    if tracking_mode != "smart" or not tuya_device_id:
+                           tuya_ip_address: str | None, switch_dps_key: str | None,
+                           plugin: str = tuya_identity.PLUGIN_NAME, kasa_mac: str | None = None,
+                           kasa_outlet: str | None = None,
+                           kasa_host: str | None = None) -> tuple[str | None, str | None, str | None]:
+    """See CONTEXT.md: Plugin, External ID, Plugin Config; ADR 0013. plugin picks which device
+    Plugin a Smart Plug belongs to (ADR 0062); each encodes its own External ID."""
+    if tracking_mode != "smart":
+        return None, None, None
+    if plugin == kasa_identity.PLUGIN_NAME:
+        if not (kasa_mac or "").strip():
+            raise ValueError("A Kasa/Tapo Plug needs its MAC address. Use Discover Devices to fill it in.")
+        external_id = kasa_identity.encode_external_id(kasa_mac, (kasa_outlet or "").strip() or None)
+        return kasa_identity.PLUGIN_NAME, external_id, kasa_identity.pack_config(kasa_host)
+    if plugin != tuya_identity.PLUGIN_NAME:
+        raise ValueError(f"Unknown plug type: {plugin!r}")
+    if not tuya_device_id:
         return None, None, None
     external_id = tuya_identity.encode_external_id(tuya_device_id, switch_dps_key)
     plugin_config = tuya_identity.pack_config(tuya_local_key, tuya_ip_address)
@@ -93,7 +120,7 @@ def _check_external_id_available(conn, plugin: str | None, external_id: str | No
     existing = conn.execute(query, params).fetchone()
     if existing is not None:
         raise ValueError(
-            f"That device_id/DPS key is already registered as Plug {existing['label']!r} "
+            f"That device (and outlet) is already registered as Plug {existing['label']!r} "
             f"(id {existing['id']}) — edit that existing Plug instead of creating a new one for it."
         )
 
@@ -1063,7 +1090,8 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
                     controller_kind: str, target_temp_c: float | None,
                     target_humidity_pct: float | None, always_on: bool = False,
                     target_on_time_2: str | None = None, target_off_time_2: str | None = None,
-                    target_on_time_3: str | None = None, target_off_time_3: str | None = None) -> None:
+                    target_on_time_3: str | None = None, target_off_time_3: str | None = None,
+                    plugin: str = tuya_identity.PLUGIN_NAME) -> None:
     """See CONTEXT.md: Tracking Mode, Target Schedule, Plug, Controller Kind, Always On. Raised as
     ValueError so the Admin route can show a friendly message instead of a raw SQLite CHECK failure
     (the Room-XOR-Enclosure-set rule can't be a CHECK at all — it depends on plug_enclosure row
@@ -1073,7 +1101,9 @@ def _validate_plug(tracking_mode: str, tuya_device_id: str | None, tuya_local_ke
     if controller_kind not in ("none", "timer", "thermostat", "hydrostat"):
         raise ValueError(f"Unknown Controller Kind: {controller_kind!r}")
     if tracking_mode == "smart":
-        if not tuya_device_id or not tuya_local_key:
+        if plugin != tuya_identity.PLUGIN_NAME:
+            pass  # checked by _encode_plug_identity, which knows that Plugin's own fields
+        elif not tuya_device_id or not tuya_local_key:
             raise ValueError("A Smart Plug needs both a Tuya device_id and local_key.")
     else:
         if tuya_device_id or tuya_local_key:
@@ -1111,7 +1141,9 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
                  target_humidity_pct: float | None = None, always_on: bool = False,
                  plug_group_id: int | None = None,
                  target_on_time_2: str | None = None, target_off_time_2: str | None = None,
-                 target_on_time_3: str | None = None, target_off_time_3: str | None = None) -> int:
+                 target_on_time_3: str | None = None, target_off_time_3: str | None = None,
+                 plugin: str = tuya_identity.PLUGIN_NAME, kasa_mac: str | None = None,
+                 kasa_outlet: str | None = None, kasa_host: str | None = None) -> int:
     enclosure_ids = enclosure_ids or []
     # Always On only means anything alongside controller_kind = 'none' — see CONTEXT.md: Always On.
     # Normalized (not an error) the same way a stray Target Schedule alongside a Controller Kind is
@@ -1120,7 +1152,7 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
         always_on = False
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
                    room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on,
-                   target_on_time_2, target_off_time_2, target_on_time_3, target_off_time_3)
+                   target_on_time_2, target_off_time_2, target_on_time_3, target_off_time_3, plugin=plugin)
     if controller_kind != "timer":
         # Target Schedule only means anything for a Timer-Controlled Plug (see CONTEXT.md:
         # Controller Kind, Timer-Controlled; RHA-95) — not meaningful for 'none' (nothing to
@@ -1134,7 +1166,8 @@ def create_plug(label: str, purpose: str, tracking_mode: str, tuya_device_id: st
     if controller_kind != "hydrostat":
         target_humidity_pct = None
     plugin, external_id, plugin_config = _encode_plug_identity(
-        tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
+        tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key,
+        plugin, kasa_mac, kasa_outlet, kasa_host,
     )
     with get_connection() as conn:
         _check_external_id_available(conn, plugin, external_id)
@@ -1411,7 +1444,9 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
                  target_humidity_pct: float | None = None, auto_update_enabled: bool = True,
                  always_on: bool = False,
                  target_on_time_2: str | None = None, target_off_time_2: str | None = None,
-                 target_on_time_3: str | None = None, target_off_time_3: str | None = None) -> None:
+                 target_on_time_3: str | None = None, target_off_time_3: str | None = None,
+                 plugin: str = tuya_identity.PLUGIN_NAME, kasa_mac: str | None = None,
+                 kasa_outlet: str | None = None, kasa_host: str | None = None) -> None:
     """auto_update_enabled: see CONTEXT.md: Auto-Update. Pausing has no effect on a Manual Plug
     (there's no background collection to pause), but the column and toggle stay uniform regardless."""
     enclosure_ids = enclosure_ids or []
@@ -1419,7 +1454,7 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
         always_on = False  # see create_plug's identical normalization, and CONTEXT.md: Always On
     _validate_plug(tracking_mode, tuya_device_id, tuya_local_key, target_on_time, target_off_time,
                    room_id, enclosure_ids, controller_kind, target_temp_c, target_humidity_pct, always_on,
-                   target_on_time_2, target_off_time_2, target_on_time_3, target_off_time_3)
+                   target_on_time_2, target_off_time_2, target_on_time_3, target_off_time_3, plugin=plugin)
     if controller_kind != "timer":
         # see create_plug's identical normalization; clears all 3 cycles (ADR 0057).
         target_on_time = target_off_time = None
@@ -1430,7 +1465,8 @@ def update_plug(plug_id: int, label: str, purpose: str, tracking_mode: str, swit
     if controller_kind != "hydrostat":
         target_humidity_pct = None
     plugin, external_id, plugin_config = _encode_plug_identity(
-        tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key
+        tracking_mode, tuya_device_id, tuya_local_key, tuya_ip_address, switch_dps_key,
+        plugin, kasa_mac, kasa_outlet, kasa_host,
     )
     with get_connection() as conn:
         _check_external_id_available(conn, plugin, external_id, exclude_plug_id=plug_id)

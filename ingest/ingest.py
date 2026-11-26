@@ -117,6 +117,45 @@ def _export_registry() -> None:
         (REGISTRY_DIR / f"{stale}.json").unlink(missing_ok=True)
 
 
+def _export_runtime_settings() -> None:
+    """See docs/plugin-standard.md section 6; ADR 0062. A Plugin's background process never reads
+    the database, so the manifest settings it marks "runtime": true are copied to
+    data/registry/settings/<name>.json while it's Active, and removed when it isn't (or it has
+    none saved). Only runtime-marked keys are written, so e.g. tuya_lan's cloud secret, which only
+    the web process's Scan needs, never lands on disk outside the database."""
+    from web import plugin_catalog  # deferred: keeps the import cheap for tests that don't need it
+
+    active = set(read_active_plugins())
+    wanted: dict[str, dict[str, str]] = {}
+    with get_connection() as conn:
+        for plugin in plugin_catalog.list_plugins():
+            keys = [f["key"] for f in plugin.settings if f.get("runtime")]
+            if not keys or plugin.name not in active or not plugin.valid:
+                continue
+            placeholders = ",".join("?" * len(keys))
+            rows = conn.execute(
+                f"SELECT key, value FROM plugin_setting WHERE plugin = ? AND key IN ({placeholders})",
+                (plugin.name, *keys),
+            ).fetchall()
+            values = {row["key"]: row["value"] for row in rows if row["value"]}
+            if values:
+                wanted[plugin.name] = values
+    # A subfolder, so _export_registry's *.json stale-file cleanup never sees these files.
+    settings_dir = REGISTRY_DIR / "settings"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    for name, values in wanted.items():
+        path = settings_dir / f"{name}.json"
+        try:
+            if json.loads(path.read_text(encoding="utf-8")) == values:
+                continue  # unchanged; skip rewriting it every scan
+        except (OSError, json.JSONDecodeError):
+            pass
+        _atomic_write_json(path, values)
+    for path in settings_dir.glob("*.json"):
+        if path.stem not in wanted:
+            path.unlink(missing_ok=True)
+
+
 def _export_log_husbandry_registry() -> None:
     """See CONTEXT.md: Skill, Registry; ADR 0046. Unlike _export_registry() above — fully generic,
     one device list per device Plugin — log_husbandry's Registry export is specific to what this
@@ -424,6 +463,7 @@ def main() -> None:
         while True:
             _export_registry()
             _export_log_husbandry_registry()
+            _export_runtime_settings()
             _drain_inbox(validator)
             _run_periodic_unreachable_checks()
             _run_backup_check()

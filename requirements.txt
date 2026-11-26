@@ -1,5 +1,6 @@
 bleak>=0.22
 tinytuya>=1.14
+python-kasa>=0.12  # plugins/kasa_lan (ADR 0062): local Kasa/Tapo control; upgrade it if a TP-Link firmware update breaks login
 fastapi>=0.115
 uvicorn[standard]>=0.32
 jinja2>=3.1

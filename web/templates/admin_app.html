@@ -382,7 +382,7 @@
                     <label>Tracking Mode
                         <select id="admin-add-plug-tracking-mode" name="tracking_mode"
                                 onchange="onAddPlugGroupChange(document.getElementById('admin-add-plug-group-select'), 'admin-add-plug-belongs-to', 'admin-add-plug-tuya-creds'); updatePlugFieldVisibility('admin-add-plug-tracking-mode','admin-add-plug-controller-kind','admin-add-plug-smart','admin-add-plug-always-on','admin-add-plug-schedule','admin-add-plug-thermostat-fields','admin-add-plug-hydrostat-fields')">
-                            <option value="smart">Smart (Tuya-controlled)</option>
+                            <option value="smart">Smart (Wi-Fi plug read automatically)</option>
                             <option value="manual" selected>Manual (hand-switched, e.g. a timer)</option>
                         </select>
                     </label>
@@ -396,6 +396,8 @@
                         </select>
                     </label>
                     <div id="admin-add-plug-smart" class="mode-fields" style="display:none">
+                        {% include "_plug_type_select.html" %}
+                        <div data-plug-hw="tuya_lan">
                         <div id="admin-add-plug-tuya-creds">
                             <label>Tuya device_id <input type="text" name="tuya_device_id" required></label>
                             <label>Tuya local_key <input type="text" name="tuya_local_key" required></label>
@@ -406,6 +408,8 @@
                             <label>LAN IP (optional) <input type="text" name="tuya_ip_address" placeholder="leave blank for auto-discovery"></label>
                         </div>
                         <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="1" style="width:3em"></label>
+                        </div>
+                        {% include "_kasa_plug_fields.html" %}
                     </div>
                     <div id="admin-add-plug-always-on" class="mode-fields">
                         <label class="checkbox">

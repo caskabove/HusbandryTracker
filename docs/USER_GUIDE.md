@@ -353,7 +353,8 @@ worth doing with an extra pair of hands the first time.**
 Google Home has no way to hand Husbandry Tracker the credentials it needs, even though it can also
 control the same plug.
 
-1. On the **"Add Plug"** form, set **Tracking Mode** to **Smart**, give it a label (e.g. "UTH",
+1. On the **"Add Plug"** form, set **Tracking Mode** to **Smart** and **Plug type** to **Tuya /
+   Gosund**, give it a label (e.g. "UTH",
    "basking bulb"), and pick a **Purpose** (light/heat/cooling/etc. — free text, type whatever fits).
 2. Click **Discover Devices**, then click this plug from the list — that fills in the **device ID**
    and **local key**, plus a best guess at **Outlet / DPS key** (double-check against
@@ -363,6 +364,11 @@ control the same plug.
 3. Leave the IP address blank unless a plug keeps failing to connect, in which case pinning its IP
    can help.
 4. Set **Belongs to** (above), and click **Create**.
+
+**Have TP-Link Kasa or Tapo plugs instead?** They don't need a Tuya account, or any developer
+account: choose **TP-Link Kasa / Tapo** as the **Plug type** on the Add Plug form, then click
+**Discover Devices** to find them on your Wi-Fi. See [How To: Add a Kasa or Tapo
+Plug](HOWTO_ADD_KASA_TAPO_PLUG.md).
 
 **Already have a Manual Plug and just got the real Gosund hardware?** Open that Plug's **Edit**
 page, switch **Tracking Mode** to **Smart**, and the same **Discover Devices** button appears

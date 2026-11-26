@@ -48,7 +48,7 @@ plugins/<name>/
 | `device_types` | device: yes | `["sensor"]`, `["plug"]`, or both. A Skill leaves it out or uses `[]`. |
 | `entry_point` | yes | Path to the Plugin file, relative to the folder. Must exist. |
 | `discovery` | no | `{"button_label", "duration_hint"?, "requires_settings"?}`. Include it only if you ship `discover.py`. Not allowed on a Skill. Every key in `requires_settings` must be one of your `settings`. |
-| `settings` | no | The Plugin's own settings fields (section 6). |
+| `settings` | no | The Plugin's own settings fields (section 6), each optionally `"runtime": true`. |
 | `setup_help` | no | Ordered steps shown above the settings form, e.g. where to get an API key. |
 
 No other top-level fields are allowed. If you need a new one, change the schema in the same change
@@ -123,15 +123,21 @@ the `plugin_setting` table. Never add a column to `app_setting` for a Plugin.
   "Clear saved …" checkbox removes it.
 - `select`: needs `options`; Core rejects any value not listed.
 - `key` is lowercase `snake_case`. Values are always strings, so parse them yourself.
-- Your `discover()` receives the values. Your background Plugin process doesn't read the database,
-  so if it needs a setting at runtime, ask for it to be added to your Registry export (Ingest) in
-  the same change.
+- Your `discover()` receives every value.
+- `"runtime": true` (optional): your **background process** needs this value too. Your process
+  never reads the database, so while your Plugin is Active, Ingest copies just the runtime-marked
+  keys to `data/registry/settings/<name>.json`. Read them with
+  `plugins.common.read_plugin_settings("<name>")`, and re-read them when you re-read your Registry.
+  An empty dict means nothing is saved yet. Only mark what you actually need while running, so
+  secrets that only a Scan uses stay in the database. See ADR 0062; `kasa_lan` uses this for the
+  TP-Link login.
 
 ## 7. The runtime contract (device Plugins)
 
 These rules come from ADR 0013/0014 and haven't changed:
 
-- **Never open the database.** Read `data/registry/<name>.json` for what to watch, and write
+- **Never open the database.** Read `data/registry/<name>.json` for what to watch (and
+  `data/registry/settings/<name>.json` for runtime settings, section 6), and write
   Plugin Events into `data/inbox/<kind>/` (validated against `schemas/plugin_event.schema.json`).
   If you accept Commands, read them from `data/outbox/<name>/`.
 - **Only run while Active.** Ingest stops exporting your Registry and rejects your events when
@@ -140,6 +146,13 @@ These rules come from ADR 0013/0014 and haven't changed:
   Python Plugins.
 - Report on every poll, not only on change. Core works out the transitions.
 - Log to stdout/stderr. The Supervisor captures it.
+- Add your process to `tray/supervisor.py`'s `COMPONENTS` and `packaging/husbandrytracker.spec`
+  (an Analysis, EXE, and COLLECT entry, your `manifest.json` in `DATAS`, and your package in
+  `HIDDEN_IMPORTS`/`_REQUIRED_PLUGIN_MODULES`), or it won't run in the installed app.
+- **For a Plug Plugin:** add your registration fields as a `[data-plug-hw="<name>"]` block (see
+  `web/templates/_kasa_plug_fields.html`), an option in `_plug_type_select.html`, and an encoder in
+  `web/admin_queries.py`'s `_encode_plug_identity`. Use `onDiscoverPluginClick(this, '<name>')` for
+  the Discover button, so no new JavaScript is needed.
 
 ## 8. Checklist before opening a PR
 

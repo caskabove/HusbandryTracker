@@ -25,6 +25,9 @@ sensors and plugs, reading the dashboard, troubleshooting) are in
   them on or off in this version. **Adding a plug needs a free Tuya developer account whose free
   plan is a time-limited trial**: plugs already added keep working after it ends, but new ones
   can't be added. See [How To: Add a Gosund Smart Plug](docs/HOWTO_ADD_GOSUND_PLUG.md#the-free-trial-runs-out).
+- Or TP-Link **Kasa** / **Tapo** smart plugs and power strips, found and controlled on your own
+  Wi-Fi with no developer account (new, not yet tested on real hardware). See [How To: Add a Kasa or
+  Tapo Plug](docs/HOWTO_ADD_KASA_TAPO_PLUG.md).
 
 See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the complete walkthrough.
 

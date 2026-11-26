@@ -96,6 +96,11 @@ COMPONENTS = {
         "args": ["-u", "plugins/tuya_lan/plugin.py"],
         "frozen_exe": "HusbandryTrackerTuya.exe",
     },
+    "kasa": {
+        "label": "Plug Plugin (Kasa/Tapo)",
+        "args": ["-u", "plugins/kasa_lan/plugin.py"],
+        "frozen_exe": "HusbandryTrackerKasa.exe",
+    },
 }
 
 

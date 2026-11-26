@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "name": "kasa_lan",
+  "display_name": "TP-Link Kasa / Tapo Smart Plugs",
+  "version": "0.1.0",
+  "kind": "device",
+  "description": "Reads and switches TP-Link Kasa and Tapo smart plugs and power strips over your home Wi-Fi, with power use on models that report it.",
+  "how_it_works": "Kasa and Tapo plugs answer directly on your home Wi-Fi, so a scan finds every one on the same network as this computer without asking any cloud service. Older Kasa plugs need nothing else. Newer Kasa plugs and all Tapo plugs check your TP-Link login (the email and password you use in the Kasa or Tapo app) before they'll answer. You save it below once, and it's only ever sent to your own plugs, on your own network. Day to day, the Plugin checks each registered Plug every few seconds, records whether it's on and how much power it's drawing, and carries out on/off Commands you send from the Dashboard. Each Plug is tracked by its MAC address, so it's found again if your router gives it a new IP address.",
+  "can": [
+    "Find every Kasa and Tapo plug, power strip, and wall switch on the same Wi-Fi as this computer, with no developer account or cloud trial.",
+    "Read each Plug's on/off state, plus watts, volts, and amps on models with an energy meter (e.g. Kasa KP115, EP25, HS300; Tapo P110, P115).",
+    "Turn a Plug on or off when you click its control, including each outlet of a power strip separately.",
+    "Find a Plug again by itself after your router gives it a new IP address.",
+    "Keep working with no internet connection once a Plug is registered."
+  ],
+  "cannot": [
+    "Reach a plug on a different network or Wi-Fi from this computer (for example a guest network, or a separate 2.4 GHz network your router keeps apart).",
+    "Read newer Kasa or any Tapo plugs without the TP-Link email and password you use in their app.",
+    "Promise to keep working after a TP-Link firmware update. TP-Link has changed how these plugs log in before, and an update can break local control until the python-kasa library catches up.",
+    "See or change the schedules, timers, or away modes saved in the Kasa or Tapo app. Those are detected from on/off history instead.",
+    "Control smart bulbs, cameras, or Tapo hub sensors. Scans skip them.",
+    "Show power use on models without an energy meter (most basic plugs, like the Kasa EP10 or Tapo P100)."
+  ],
+  "device_types": ["plug"],
+  "entry_point": "plugin.py",
+  "discovery": {
+    "button_label": "Find plugs on my network",
+    "duration_hint": "about 5 seconds"
+  },
+  "setup_help": [
+    "Set each plug up in the Kasa or Tapo app first, on the same Wi-Fi network this computer uses.",
+    "If you have newer Kasa plugs or any Tapo plugs, enter the email and password you use in that app below and click Save. Older Kasa plugs work without it.",
+    "Click the scan button under Devices, and give each plug a name. Then add it from Add Plug, choosing Kasa / Tapo as the plug type."
+  ],
+  "settings": [
+    {"key": "username", "label": "TP-Link email", "type": "text", "runtime": true,
+     "help": "The email you log in to the Kasa or Tapo app with. Leave blank if all your plugs are older Kasa models."},
+    {"key": "password", "label": "TP-Link password", "type": "secret", "runtime": true,
+     "help": "Only ever sent to your own plugs, on your own network. Never shown again once saved."}
+  ]
+}

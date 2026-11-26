@@ -14,6 +14,8 @@ active_plugins.json — never a state where a Plugin is listed Active but its in
 from __future__ import annotations
 
 import importlib
+import importlib.util
+import sys
 import json
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -60,6 +62,24 @@ def _manifest_validator() -> jsonschema.Draft202012Validator:
     return jsonschema.Draft202012Validator(schema)
 
 
+def _has_file(plugin_dir: Path, relative: str) -> bool:
+    """Whether a Plugin ships `relative`. From a source checkout that's simply the file on disk. An
+    installed (PyInstaller-frozen, ADR 0018) build keeps only data files (manifest.json, a Skill's
+    files) on disk and packs Python modules into the executable, so a missing .py there is looked
+    up as a bundled module instead. find_spec only locates the module; it doesn't run it (it does
+    import the Plugin's empty package __init__, which is part of the contract anyway)."""
+    if (plugin_dir / relative).exists():
+        return True
+    if not getattr(sys, "frozen", False) or not relative.endswith(".py") or "/" in relative:
+        return False
+    stem = relative[:-3]
+    module = f"plugins.{plugin_dir.name}" if stem == "__init__" else f"plugins.{plugin_dir.name}.{stem}"
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def validate_plugin_dir(plugin_dir: Path) -> tuple[dict, list[str]]:
     """Checks one plugins/<name>/ folder against the Plugin Standard. Returns the manifest (empty if
     unreadable) and a list of human-readable problems — empty means it conforms. Never imports the
@@ -81,16 +101,17 @@ def validate_plugin_dir(plugin_dir: Path) -> tuple[dict, list[str]]:
 
     if manifest.get("name") and manifest["name"] != plugin_dir.name:
         errors.append(f"manifest.json name {manifest['name']!r} must match its folder name {plugin_dir.name!r}")
-    if not (plugin_dir / "__init__.py").exists():
+    if not _has_file(plugin_dir, "__init__.py"):
         errors.append("missing __init__.py (the folder must be an importable package)")
-    if not (plugin_dir / "init.py").exists():
+    if not _has_file(plugin_dir, "init.py"):
         errors.append("missing init.py (activate()/deactivate() hooks)")
     entry_point = manifest.get("entry_point")
-    if isinstance(entry_point, str) and entry_point and not (plugin_dir / entry_point).exists():
+    if isinstance(entry_point, str) and entry_point and not _has_file(plugin_dir, entry_point):
         errors.append(f"entry_point {entry_point!r} doesn't exist")
-    if manifest.get("discovery") and not (plugin_dir / "discover.py").exists():
+    has_discover = _has_file(plugin_dir, "discover.py")
+    if manifest.get("discovery") and not has_discover:
         errors.append("manifest.json declares discovery but discover.py is missing")
-    if (plugin_dir / "discover.py").exists() and not manifest.get("discovery"):
+    if has_discover and not manifest.get("discovery"):
         errors.append("discover.py exists but manifest.json has no discovery section")
     setting_keys = {s.get("key") for s in manifest.get("settings", []) if isinstance(s, dict)}
     for key in (manifest.get("discovery") or {}).get("requires_settings", []):

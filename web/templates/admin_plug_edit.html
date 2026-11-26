@@ -60,7 +60,7 @@
                 <label>Tracking Mode
                     <select id="edit-plug-tracking-mode" name="tracking_mode"
                             onchange="updatePlugFieldVisibility('edit-plug-tracking-mode','edit-plug-controller-kind','edit-plug-smart','edit-plug-always-on','edit-plug-schedule','edit-plug-thermostat-fields','edit-plug-hydrostat-fields')">
-                        <option value="smart" {% if plug.tracking_mode == "smart" %}selected{% endif %}>Smart (Tuya-controlled)</option>
+                        <option value="smart" {% if plug.tracking_mode == "smart" %}selected{% endif %}>Smart (Wi-Fi plug read automatically)</option>
                         <option value="manual" {% if plug.tracking_mode == "manual" %}selected{% endif %}>Manual (hand-switched, e.g. a timer)</option>
                     </select>
                 </label>
@@ -74,6 +74,8 @@
                     </select>
                 </label>
                 <div id="edit-plug-smart" class="mode-fields" {% if plug.tracking_mode != "smart" %}style="display:none"{% endif %}>
+                    {% include "_plug_type_select.html" %}
+                    <div data-plug-hw="tuya_lan">
                     <label>Tuya device_id <input type="text" name="tuya_device_id" value="{{ plug.tuya_device_id or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% else %}required{% endif %}></label>
                     <label>Tuya local_key <input type="text" name="tuya_local_key" value="{{ plug.tuya_local_key or '' }}" {% if plug.tracking_mode != "smart" %}disabled{% else %}required{% endif %}></label>
                     <label>Outlet / DPS key <input type="text" name="switch_dps_key" value="{{ plug.switch_dps_key }}" style="width:3em" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
@@ -82,6 +84,8 @@
                         <div class="discover-results" style="display:none"></div>
                     </div>
                     <label>LAN IP (optional) <input type="text" name="tuya_ip_address" value="{{ plug.tuya_ip_address or '' }}" placeholder="leave blank for auto-discovery" {% if plug.tracking_mode != "smart" %}disabled{% endif %}></label>
+                    </div>
+                    {% include "_kasa_plug_fields.html" %}
                     <label class="checkbox">
                         <input type="checkbox" name="auto_update_enabled" value="true" {% if plug.auto_update_enabled %}checked{% endif %} {% if plug.tracking_mode != "smart" %}disabled{% endif %}>
                         Auto-Update (uncheck to pause background polling without losing this Plug's setup)

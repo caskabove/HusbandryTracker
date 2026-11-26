@@ -1,0 +1,17 @@
+{# kasa_lan's registration fields (ADR 0062), shown when Plug type is Kasa / Tapo. Discover Devices
+   scans the local network through the Plugin's own discover.py (onDiscoverPluginClick in app.js)
+   and fills these in. `plug` is the Plug being edited, or undefined on an Add form. #}
+{% set kasa_plug = plug if plug is defined and plug else none %}
+<div data-plug-hw="kasa_lan" style="display:none">
+    <div class="discover-device">
+        <button type="button" data-plugin="kasa_lan" onclick="onDiscoverPluginClick(this, 'kasa_lan')">Discover Devices</button>
+        <div class="discover-results" style="display:none"></div>
+    </div>
+    <label>MAC address <input type="text" name="kasa_mac" value="{{ kasa_plug.kasa_mac if kasa_plug else '' }}" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+    <label>Outlet (power strips only) <input type="number" name="kasa_outlet" min="1" value="{{ kasa_plug.kasa_outlet if kasa_plug else '' }}" style="width:4em"></label>
+    <label>LAN IP (optional) <input type="text" name="kasa_host" value="{{ kasa_plug.kasa_host if kasa_plug else '' }}" placeholder="leave blank to find it automatically"></label>
+    {% if not is_plugin_active("kasa_lan") %}
+    <p class="empty">The Kasa / Tapo plugin is turned off, so this Plug won't be read until you
+        <a href="/admin/plugins/kasa_lan">activate it on its Settings page</a>.</p>
+    {% endif %}
+</div>

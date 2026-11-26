@@ -57,6 +57,91 @@ function updatePlugFieldVisibility(trackingSelectId, controllerSelectId, smartBl
     setToggleBlock(document.getElementById(scheduleBlockId), controllerKind === "timer");
     setToggleBlock(document.getElementById(thermostatBlockId), controllerKind === "thermostat");
     setToggleBlock(document.getElementById(hydrostatBlockId), controllerKind === "hydrostat");
+    // setToggleBlock just re-enabled every field in the Smart block, both Plug types' included.
+    const smartBlock = document.getElementById(smartBlockId);
+    if (smartBlock) applyPlugHardware(smartBlock.closest("form"));
+}
+
+// Plug forms' "Plug type" (ADR 0062): shows only the fields of the device Plugin picked in
+// select[name="plug_plugin"] — each Plugin's block is a [data-plug-hw="<plugin>"] inside the Smart
+// block — and disables the other blocks' inputs so their `required` fields don't block submitting.
+// A Plug Group is Tuya-only (see CONTEXT.md: Plug Group), so picking one forces Tuya, hides the
+// choice, and keeps the Group-inherited Tuya credential fields hidden as onAddPlugGroupChange left them.
+function applyPlugHardware(form) {
+    if (!form) return;
+    const select = form.querySelector('select[name="plug_plugin"]');
+    if (!select) return;
+    const smartBlock = select.closest(".mode-fields");
+    const smartOn = !smartBlock || smartBlock.style.display !== "none";
+    const groupSelect = form.querySelector('select[name="plug_group_id"]');
+    const inGroup = !!(groupSelect && groupSelect.value);
+    if (inGroup) select.value = "tuya_lan";
+    select.closest("label").style.display = inGroup ? "none" : "";
+    select.disabled = !smartOn;
+    form.querySelectorAll("[data-plug-hw]").forEach(function (block) {
+        setToggleBlock(block, smartOn && block.dataset.plugHw === select.value);
+    });
+    if (inGroup) {
+        form.querySelectorAll('[id$="-tuya-creds"]').forEach(function (block) { setToggleBlock(block, false); });
+    }
+}
+
+document.querySelectorAll('select[name="plug_plugin"]').forEach(function (select) {
+    applyPlugHardware(select.form);
+});
+
+// A Plug/Sensor form's Discover Devices button for any Plugin with a discover.py (ADR 0062) —
+// runs the same scan as that Plugin's Settings page and fills the form from the picked device's
+// registration fields. Vendor-specific handlers (onDiscoverGoveeClick, onDiscoverTuyaClick) predate it.
+async function onDiscoverPluginClick(button, pluginName) {
+    const form = button.closest("form");
+    const results = button.parentElement.querySelector(".discover-results");
+    const message = function (text) {
+        results.textContent = "";
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = text;
+        results.appendChild(p);
+    };
+    results.style.display = "";
+    message("Looking for devices on your network…");
+    button.disabled = true;
+    try {
+        const response = await fetch(`/admin/plugins/${pluginName}/discover`, {method: "POST"});
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            message(data.error || "Discovery failed. Try again.");
+            return;
+        }
+        const devices = (data.devices || []).filter(function (d) { return !d.registered; });
+        if (!devices.length) {
+            message(data.devices && data.devices.length
+                ? "Every device found is already set up as a Plug."
+                : "No devices found. Check the plug is on the same Wi-Fi as this computer.");
+            return;
+        }
+        results.textContent = "";
+        devices.forEach(function (device) {
+            const pick = document.createElement("button");
+            pick.type = "button";
+            const name = device.name || device.suggested_name;
+            pick.textContent = device.summary ? `${name} (${device.summary})` : name;
+            pick.onclick = function () {
+                Object.entries(device.fields || {}).forEach(function ([field, value]) {
+                    const input = form.querySelector(`[name="${field}"]`);
+                    if (input) input.value = value;
+                });
+                const labelField = form.querySelector('[name="label"]');
+                if (labelField && !labelField.value) labelField.value = name;
+                results.style.display = "none";
+            };
+            results.appendChild(pick);
+        });
+    } catch (err) {
+        message("Discovery failed. Try again.");
+    } finally {
+        button.disabled = false;
+    }
 }
 
 // Plug form only: Always On (see CONTEXT.md: Plug, Always On) is mutually exclusive with Target
@@ -80,6 +165,7 @@ function onAddPlugGroupChange(select, belongsToBlockId, tuyaCredsBlockId) {
     // now so only whichever side is actually visible stays enabled.
     const parentTypeSelect = belongsToBlock && belongsToBlock.querySelector('select[name="parent_type"]');
     if (parentTypeSelect) parentTypeSelect.dispatchEvent(new Event("change"));
+    applyPlugHardware(select.form);  // a Plug Group is Tuya-only; see applyPlugHardware
 }
 
 // Add Plug / Add Plug Group: the "exactly one parent" rule (see CONTEXT.md: Plug, Plug Group) is
@@ -1077,9 +1163,11 @@ function _pluginScanRow(plugin, device) {
     containers.forEach(function (container) {
         const button = container.querySelector("button[onclick]");
         if (!button) return;
+        // A generic Discover button (onDiscoverPluginClick) names its Plugin in data-plugin.
         const handler = Object.keys(handlers).find(function (h) { return button.getAttribute("onclick").includes(h); });
-        if (!handler) return;
-        load(handlers[handler]).then(function (devices) {
+        const pluginName = button.dataset.plugin || (handler && handlers[handler]);
+        if (!pluginName) return;
+        load(pluginName).then(function (devices) {
             if (!devices.length) return;
             const label = document.createElement("label");
             label.className = "known-device-picker";

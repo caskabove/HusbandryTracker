@@ -370,6 +370,9 @@ async def admin_plugin_discover(name: str):
             "summary": device.get("summary") or "",
             "plugin_config": device.get("plugin_config"),
             "registered": saved["registered"] if saved else None,
+            # For a Plug/Sensor form's own Discover Devices button (onDiscoverPluginClick in
+            # app.js): which form fields to fill when this device is picked.
+            "fields": plugin_catalog.registration_fields(name, device["external_id"], device.get("plugin_config")),
         })
     return JSONResponse({"devices": devices})
 
@@ -1306,6 +1309,10 @@ def admin_create_plug(
     target_temp_f: float | None = Form(None),
     target_humidity_pct: float | None = Form(None),
     plug_group_id: str = Form(""),
+    plug_plugin: str = Form("tuya_lan"),
+    kasa_mac: str = Form(""),
+    kasa_outlet: str = Form(""),
+    kasa_host: str = Form(""),
 ):
     try:
         if plug_group_id:
@@ -1318,7 +1325,8 @@ def admin_create_plug(
                            int(room_id) if room_id else None, enclosure_ids,
                            controller_kind, _f_to_c(target_temp_f), target_humidity_pct, always_on,
                            target_on_time_2=target_on_time_2 or None, target_off_time_2=target_off_time_2 or None,
-                           target_on_time_3=target_on_time_3 or None, target_off_time_3=target_off_time_3 or None)
+                           target_on_time_3=target_on_time_3 or None, target_off_time_3=target_off_time_3 or None,
+                           plugin=plug_plugin, kasa_mac=kasa_mac, kasa_outlet=kasa_outlet, kasa_host=kasa_host)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)
@@ -1427,6 +1435,7 @@ def admin_probe_plug(
     tuya_device_id: str = Form(""),
     tuya_local_key: str = Form(""),
     tuya_ip_address: str = Form(""),
+    plug_plugin: str = Form("tuya_lan"),
 ):
     """Diagnostic, read-only — see CONTEXT.md: Probe, ADR 0016. Uses whatever's currently in the
     edit form (formnovalidate, same <form> as Save — see admin_plug_edit.html), even if unsaved, so
@@ -1434,7 +1443,10 @@ def admin_probe_plug(
     here is persisted. Renders the edit page directly rather than redirecting."""
     error = None
     probe_result = None
-    if tracking_mode != "smart" or not tuya_device_id or not tuya_local_key:
+    if plug_plugin != "tuya_lan":
+        error = ("Probe only works with Tuya plugs. For a Kasa/Tapo plug, its Plugin's Settings page "
+                 "scan shows whether it's reachable and on or off.")
+    elif tracking_mode != "smart" or not tuya_device_id or not tuya_local_key:
         error = "Probe needs a Smart Plug with a Tuya device_id and local_key filled in."
     else:
         try:
@@ -1470,6 +1482,10 @@ def admin_update_plug(
     target_temp_f: float | None = Form(None),
     target_humidity_pct: float | None = Form(None),
     auto_update_enabled: bool = Form(False),
+    plug_plugin: str = Form("tuya_lan"),
+    kasa_mac: str = Form(""),
+    kasa_outlet: str = Form(""),
+    kasa_host: str = Form(""),
 ):
     try:
         q.update_plug(plug_id, label, purpose, tracking_mode, switch_dps_key,
@@ -1479,7 +1495,8 @@ def admin_update_plug(
                        controller_kind, _f_to_c(target_temp_f), target_humidity_pct, auto_update_enabled,
                        always_on,
                        target_on_time_2=target_on_time_2 or None, target_off_time_2=target_off_time_2 or None,
-                       target_on_time_3=target_on_time_3 or None, target_off_time_3=target_off_time_3 or None)
+                       target_on_time_3=target_on_time_3 or None, target_off_time_3=target_off_time_3 or None,
+                       plugin=plug_plugin, kasa_mac=kasa_mac, kasa_outlet=kasa_outlet, kasa_host=kasa_host)
     except ValueError as exc:
         return RedirectResponse(url=f"/admin/plugs/{plug_id}/edit?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(url="/admin/", status_code=303)

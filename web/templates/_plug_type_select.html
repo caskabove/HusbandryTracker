@@ -1,0 +1,10 @@
+{# Plug type (ADR 0062): which device Plugin a Smart Plug uses. Shown inside a Plug form's Smart
+   block; applyPlugHardware() in app.js shows only the matching [data-plug-hw] block below it.
+   `plug` is the Plug being edited, or undefined on an Add form. #}
+{% set current_plug_plugin = plug.plug_plugin if plug is defined and plug else "tuya_lan" %}
+<label>Plug type
+    <select name="plug_plugin" onchange="applyPlugHardware(this.form)">
+        <option value="tuya_lan" {% if current_plug_plugin == "tuya_lan" %}selected{% endif %}>Tuya / Gosund (Smart Life app)</option>
+        <option value="kasa_lan" {% if current_plug_plugin == "kasa_lan" %}selected{% endif %}>TP-Link Kasa / Tapo</option>
+    </select>
+</label>

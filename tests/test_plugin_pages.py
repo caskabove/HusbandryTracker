@@ -20,7 +20,7 @@ from web import admin_queries as q
 from web import plugin_catalog
 from web import plugin_queries as pq
 
-SHIPPED = ["govee_ble", "log_husbandry", "tuya_lan"]
+SHIPPED = ["govee_ble", "kasa_lan", "log_husbandry", "tuya_lan"]
 
 
 def _request(path: str) -> Request:

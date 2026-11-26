@@ -40,6 +40,9 @@ DATAS = [
     (str(REPO_ROOT / "db" / "schema.sql"), "db"),
     (str(REPO_ROOT / "schemas" / "plugin_event.schema.json"), "schemas"),
     (str(REPO_ROOT / "schemas" / "plug_command.schema.json"), "schemas"),
+    # web/plugin_catalog.py validates every manifest against this (the Plugin Standard, ADR 0061);
+    # without it the installed build can't list Plugins at all.
+    (str(REPO_ROOT / "schemas" / "plugin_manifest.schema.json"), "schemas"),
     # web/plugin_catalog.py's list_plugins() scans plugins/<name>/manifest.json straight off disk
     # (Path.iterdir() + .exists()), not via Python import — PyInstaller's Analysis never collects
     # non-code files like these, or log_husbandry's bundled skill/, just because something imports
@@ -47,6 +50,7 @@ DATAS = [
     # build's Admin "Plugins" card finds nothing.
     (str(REPO_ROOT / "plugins" / "govee_ble" / "manifest.json"), "plugins/govee_ble"),
     (str(REPO_ROOT / "plugins" / "tuya_lan" / "manifest.json"), "plugins/tuya_lan"),
+    (str(REPO_ROOT / "plugins" / "kasa_lan" / "manifest.json"), "plugins/kasa_lan"),
     (str(REPO_ROOT / "plugins" / "log_husbandry" / "manifest.json"), "plugins/log_husbandry"),
     (str(REPO_ROOT / "plugins" / "log_husbandry" / "skill"), "plugins/log_husbandry/skill"),
 ]
@@ -75,10 +79,15 @@ HIDDEN_IMPORTS = (
     # needs to be named explicitly or it's missing from the frozen build entirely.
     + collect_submodules("plugins.govee_ble")
     + collect_submodules("plugins.tuya_lan")
+    + collect_submodules("plugins.kasa_lan")
+    # python-kasa picks protocol/transport classes per device family at runtime.
+    + collect_submodules("kasa")
     + collect_submodules("plugins.log_husbandry")
     # Named explicitly as well, so they're resolved through Analysis's own PATHEX even if
     # collect_submodules above ever comes back empty again.
-    + ["plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.log_husbandry.init"]
+    + ["plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.kasa_lan.init", "plugins.log_husbandry.init"]
+    # discover.py is also loaded by name (web/plugin_catalog.py's run_discovery), for the Scan button.
+    + ["plugins.govee_ble.discover", "plugins.tuya_lan.discover", "plugins.kasa_lan.discover"]
     # Schema migrations (RHA-101; ADR 0059): every exe that opens the database runs them at startup
     # (the Supervisor first, then init_db() everywhere else). db/migrations/__init__.py imports each
     # module statically, and these entries are a safety net so a missing one can't silently ship
@@ -87,7 +96,10 @@ HIDDEN_IMPORTS = (
     + collect_submodules("db.migrations")
 )
 
-_REQUIRED_PLUGIN_MODULES = {"plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.log_husbandry.init"}
+_REQUIRED_PLUGIN_MODULES = {
+    "plugins.govee_ble.init", "plugins.tuya_lan.init", "plugins.kasa_lan.init", "plugins.log_husbandry.init",
+    "plugins.govee_ble.discover", "plugins.tuya_lan.discover", "plugins.kasa_lan.discover",
+}
 UVICORN_DATAS, UVICORN_BINARIES, _ = collect_all("uvicorn")
 WINRT_DATAS, WINRT_BINARIES, _ = collect_all("winrt")
 DATAS += UVICORN_DATAS + WINRT_DATAS
@@ -119,6 +131,7 @@ if _missing:
 a_ingest = _analysis("ingest/ingest.py")
 a_govee = _analysis("plugins/govee_ble/plugin.py")
 a_tuya = _analysis("plugins/tuya_lan/plugin.py")
+a_kasa = _analysis("plugins/kasa_lan/plugin.py")
 
 MERGE(
     (a_supervisor, "supervisor", "HusbandryTrackerSupervisor"),
@@ -126,6 +139,7 @@ MERGE(
     (a_ingest, "ingest", "HusbandryTrackerIngest"),
     (a_govee, "plugin", "HusbandryTrackerGovee"),
     (a_tuya, "plugin", "HusbandryTrackerTuya"),
+    (a_kasa, "plugin", "HusbandryTrackerKasa"),
 )
 
 
@@ -156,6 +170,7 @@ exe_web = _exe(a_web, "HusbandryTrackerWeb", console=True)
 exe_ingest = _exe(a_ingest, "HusbandryTrackerIngest", console=True)
 exe_govee = _exe(a_govee, "HusbandryTrackerGovee", console=True)
 exe_tuya = _exe(a_tuya, "HusbandryTrackerTuya", console=True)
+exe_kasa = _exe(a_kasa, "HusbandryTrackerKasa", console=True)
 
 COLLECT(
     exe_supervisor, a_supervisor.binaries, a_supervisor.zipfiles, a_supervisor.datas,
@@ -163,6 +178,7 @@ COLLECT(
     exe_ingest, a_ingest.binaries, a_ingest.zipfiles, a_ingest.datas,
     exe_govee, a_govee.binaries, a_govee.zipfiles, a_govee.datas,
     exe_tuya, a_tuya.binaries, a_tuya.zipfiles, a_tuya.datas,
+    exe_kasa, a_kasa.binaries, a_kasa.zipfiles, a_kasa.datas,
     strip=False,
     upx=False,
     name="HusbandryTracker",

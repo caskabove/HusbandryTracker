@@ -30,3 +30,12 @@ services:
                           # On Docker Desktop (Windows/Mac), host networking isn't supported the same way —
                           # if plug discovery fails, pin each plug's IP (register_device.py plug-add
                           # --ip, stored in its Plugin Config) instead of relying on broadcast discovery.
+
+  kasa-lan-plugin:
+    build: .
+    command: python -u plugins/kasa_lan/plugin.py
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    network_mode: host   # same as tuya-lan-plugin: Kasa/Tapo plugs are found by LAN broadcast. On Docker
+                          # Desktop, enter each Plug's LAN IP on its Edit page instead.
